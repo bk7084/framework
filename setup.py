@@ -5,7 +5,7 @@ with open("README.md", "r", encoding="utf-8") as fh:
 
 setuptools.setup(
     name='bk7084',
-    version='0.1.0',
+    version='0.1.1',
     author='Yang Chen, Ruben Wiersma, Ricardo Marroquim',
     author_email="matthiasychen@gmail.com, rubenwiersma@gmail.com, R.Marroquim@tudelft.nl",
     description='Python framework for BK7084 Computational Simulations',
@@ -20,8 +20,7 @@ setuptools.setup(
         "License :: OSI Approved :: Apache Software License",
         "Operating System :: OS Independent",
     ],
-    package_dir={"": "bk7084"},
-    packages=setuptools.find_packages(where="bk7084"),
+    packages=setuptools.find_packages(where=".", include=["bk7084", "bk7084.*"]),
     python_requires='>=3.9',
     install_requires=[
         'numpy',

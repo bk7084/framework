@@ -8,4 +8,4 @@ from .app.window import *
 from . import ui
 from . import math
 
-__version__ = (0, 1, 0)
+__version__ = (0, 1, 1)
