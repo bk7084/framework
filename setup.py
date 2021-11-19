@@ -5,7 +5,7 @@ with open("README.md", "r", encoding="utf-8") as fh:
 
 setuptools.setup(
     name='bk7084',
-    version='0.1.1',
+    version='0.1.2',
     author='Yang Chen, Ruben Wiersma, Ricardo Marroquim',
     author_email="matthiasychen@gmail.com, rubenwiersma@gmail.com, R.Marroquim@tudelft.nl",
     description='Python framework for BK7084 Computational Simulations',

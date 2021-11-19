@@ -1,7 +1,7 @@
 # TODO: supports other kind of shaders
 # TODO: parse uniforms and generate its getter and setter
 import platform
-from collections import Sequence
+from collections.abc import Sequence
 
 import OpenGL.GL as gl
 
