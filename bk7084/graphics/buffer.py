@@ -4,18 +4,18 @@ import sys
 import glfw
 import numpy as np
 
-from .util import DataUsage, BufferBindingTarget
+from .util import DataUsage, BufferBindingTarget, GpuObject, BindSemanticObject
 from .vertex_layout import VertexLayout
 from .. import gl
 
 
-class Buffer:
+class Buffer(GpuObject, BindSemanticObject):
     """Representation of an OpenGL buffer object.
 
     Doesn't hold a memory from cpu side.
     """
-
     def __init__(self, size: int, target: BufferBindingTarget, usage: DataUsage, mutable=True):
+        super().__init__(target.value, -1)
         self._size = size
 
         if target not in BufferBindingTarget:
@@ -30,9 +30,7 @@ class Buffer:
         self._mutable = mutable
 
         # Creates a OpenGL buffer object.
-        buffer_id = gl.GLuint()
-        gl.glGenBuffers(1, buffer_id)
-        self._id = buffer_id
+        self._id = gl.glGenBuffers(1)
 
         # Setup its internal state.
         gl.glBindBuffer(self._target, self._id)
@@ -42,16 +40,19 @@ class Buffer:
         else:
             gl.glBufferData(self._target, self._size, None, self._usage)
 
-    def __del__(self):
-        gl.glDeleteBuffers(1, (self._id, ))
+    def _delete(self):
+        if self.is_valid():
+            gl.glDeleteBuffers(1, [self._id])
+
+    def _activate(self):
+        self.bind()
+
+    def _deactivate(self):
+        self.unbind()
 
     @property
     def target(self) -> gl.Constant:
         return self._target
-
-    @property
-    def raw_id(self):
-        return self._id
 
     @property
     def size(self):

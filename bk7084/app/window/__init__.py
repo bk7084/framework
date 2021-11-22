@@ -1,3 +1,5 @@
+import atexit
+import logging
 import os
 import platform
 import sys
@@ -133,6 +135,8 @@ class Window(event.EventDispatcher):
         self._clear_color = kwargs.get('clear_color', misc.PaletteDefault.Background)
         self._camera = None
 
+        atexit.register(self._delete)
+
         if not glfw.init():
             raise RuntimeError("Failed to initialize GLFW!")
 
@@ -210,7 +214,7 @@ class Window(event.EventDispatcher):
         if self.current_context_version >= (3, 3):
             self._default_shader = ShaderProgram(VertexShader(_default_vertex_shader_str),
                                                  PixelShader(_default_pixel_shader_str))
-            print("Default shader created.")
+            logging.info("Default shader created.")
 
         self._start_time = time.time()
         self._previous_time = self._start_time
@@ -219,7 +223,9 @@ class Window(event.EventDispatcher):
     def shut_down(self):
         glfw.destroy_window(self._native_window)
 
-    def __del__(self):
+    @staticmethod
+    def _delete():
+        logging.info("GLFW clean up.")
         glfw.terminate()
 
     def _on_glfw_framebuffer_resize(self, _window, width, height):

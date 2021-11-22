@@ -1,4 +1,9 @@
+import logging
+import os
+
 from . import window
+
+logging.basicConfig(level=os.environ.get('LOGLEVEL', 'ERROR'))
 
 __window__ = None
 

@@ -99,7 +99,7 @@ class Camera:
         shader = app.current_window().default_shader
         if shader is not None:
             with shader:
-                mvp_loc = gl.glGetUniformLocation(shader.raw_id, 'mvp')
+                mvp_loc = gl.glGetUniformLocation(shader.handle, 'mvp')
                 mvp = self._proj_mat * self._view_mat
                 gl.glUniformMatrix4fv(mvp_loc, 1, gl.GL_TRUE, mvp)
         else:

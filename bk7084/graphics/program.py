@@ -6,7 +6,7 @@ from collections.abc import Sequence
 import OpenGL.GL as gl
 
 from .shader import Shader
-from .util import DrawingMode
+from .util import DrawingMode, GpuObject, BindSemanticObject
 
 
 def check_validity(program_id) -> bool:
@@ -22,7 +22,7 @@ def check_link_status(program_id) -> bool:
     return False if link_status == gl.GL_FALSE else True
 
 
-class ShaderProgram:
+class ShaderProgram(GpuObject, BindSemanticObject):
     def __init__(self, *shaders):
         """Creates an OpenGL ShaderProgram from multiple shaders.
 
@@ -31,6 +31,7 @@ class ShaderProgram:
         Args:
             *shaders:
         """
+        super().__init__(None, -1)
         assert len(shaders) > 1, "At least two Shader objects(vertex shader, fragment shader) are required."
         self._id = self._create_and_link(shaders)
         self._is_active = False
@@ -41,26 +42,20 @@ class ShaderProgram:
         self._uniforms = {}
         self._attributes = {}
 
-    def __enter__(self):
-        """Start use of the program."""
-        self.use()
-
-    def __exit__(self, exc_type, exc_val, exc_tb):
-        """Stop use of the program"""
-        self.unuse()
-
-    def __del__(self):
-        gl.glDeleteProgram(self._id)
-
     def __getitem__(self, uniform: str):
         pass
 
     def __setitem__(self, uniform: str, value):
         pass
 
-    @property
-    def raw_id(self):
-        return self._id
+    def _delete(self):
+        gl.glDeleteProgram(self._id)
+
+    def _activate(self):
+        self.use()
+
+    def _deactivate(self):
+        self.unuse()
 
     @property
     def is_active(self):

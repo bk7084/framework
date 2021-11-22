@@ -15,7 +15,8 @@ vertex_count = 50000
 
 dummy_vertices = np.zeros(vertex_count * 3, dtype=np.float32)
 
-shader = ShaderProgram(VertexShader('./shaders/point_cloud.vert'), PixelShader('./shaders/basic.frag'))
+shader = ShaderProgram(VertexShader.from_file('./shaders/point_cloud.vert'),
+                       PixelShader.from_file('./shaders/basic.frag'))
 
 vbo = VertexBuffer(vertex_count, VertexLayout((VertexAttrib.Position, VertexAttribFormat.Float32, 3)))
 
@@ -29,8 +30,8 @@ vao.bind_vertex_buffer(vbo)
 @window.event
 def on_draw(dt):
     with shader:
-        time_loc = gl.glGetUniformLocation(shader.raw_id, 'time')
-        resolution_loc = gl.glGetUniformLocation(shader.raw_id, 'resolution')
+        time_loc = gl.glGetUniformLocation(shader.handle, 'time')
+        resolution_loc = gl.glGetUniformLocation(shader.handle, 'resolution')
         with vao:
             gl.glUniform1f(time_loc, window.elapsed_time)
             gl.glUniform2f(resolution_loc, window.width, window.height)

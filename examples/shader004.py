@@ -21,8 +21,8 @@ colors = np.array([0.833, 0.276, 0.333,
                    0.100, 0.586, 0.925], dtype=np.float32)
 
 shader = ShaderProgram(
-    VertexShader('./shaders/basic.vert'),
-    PixelShader('./shaders/basic.frag')
+    VertexShader.from_file('./shaders/basic.vert'),
+    PixelShader.from_file('./shaders/basic.frag')
 )
 
 vao = VertexArrayObject()

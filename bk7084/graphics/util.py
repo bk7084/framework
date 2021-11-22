@@ -1,6 +1,48 @@
+import abc
+import atexit
+import ctypes
 import enum
 import re
 from .. import gl
+
+
+class BindSemanticObject(metaclass=abc.ABCMeta):
+    def __enter__(self):
+        self._activate()
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self._deactivate()
+
+    @abc.abstractmethod
+    def _activate(self):
+        raise NotImplementedError
+
+    @abc.abstractmethod
+    def _deactivate(self):
+        raise NotImplementedError
+
+
+class GpuObject:
+    def __init__(self, gl_type, gl_id):
+        self._id = gl_id
+        self._type = gl_type
+        atexit.register(self._delete)
+
+    @abc.abstractmethod
+    def _delete(self):
+        raise NotImplementedError
+
+    @property
+    def handle(self):
+        return self._id
+
+    @property
+    def gl_type(self):
+        return self._type
+
+    def is_valid(self):
+        return self._id > 0
 
 
 @enum.unique
