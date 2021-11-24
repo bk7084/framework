@@ -12,6 +12,7 @@ class Shape(metaclass=abc.ABCMeta):
                hasattr(subclass, 'vertices') and callable(subclass.vertices) and \
                hasattr(subclass, 'vertex_count') and callable(subclass.vertex_count) and \
                hasattr(subclass, 'indices') and callable(subclass.indices) and \
+               hasattr(subclass, 'index_count') and callable(subclass.index_count) and \
                hasattr(subclass, 'drawing_mode') and callable(subclass.drawing_mode)
 
     @property
