@@ -11,6 +11,7 @@ class Shape(metaclass=abc.ABCMeta):
         return hasattr(subclass, 'color') and callable(subclass.color) and \
                hasattr(subclass, 'vertices') and callable(subclass.vertices) and \
                hasattr(subclass, 'vertex_count') and callable(subclass.vertex_count) and \
+               hasattr(subclass, 'indices') and callable(subclass.indices) and \
                hasattr(subclass, 'drawing_mode') and callable(subclass.drawing_mode)
 
     @property
@@ -31,6 +32,16 @@ class Shape(metaclass=abc.ABCMeta):
     @property
     @abc.abstractmethod
     def vertex_count(self) -> int:
+        raise NotImplementedError
+
+    @property
+    @abc.abstractmethod
+    def indices(self):
+        raise NotImplementedError
+
+    @property
+    @abc.abstractmethod
+    def index_count(self):
         raise NotImplementedError
 
     @property

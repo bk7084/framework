@@ -51,3 +51,12 @@ class Ray(Shape):
     @color.setter
     def color(self, value):
         self._c = value
+
+    @property
+    def indices(self):
+        return np.array([0, 1], dtype=int)
+
+    @property
+    def index_count(self):
+        return 2
+

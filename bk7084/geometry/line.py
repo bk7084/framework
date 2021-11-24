@@ -47,3 +47,12 @@ class Line(Shape):
     @property
     def vertices(self) -> np.ndarray:
         return np.array(self._points).ravel()
+
+    @property
+    def indices(self):
+        return np.array(list(range(0, self._points_count)), dtype=int)
+
+    @property
+    def index_count(self):
+        return self._points_count
+

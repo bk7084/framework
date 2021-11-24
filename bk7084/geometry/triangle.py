@@ -87,3 +87,11 @@ class Triangle(Shape):
             return False
 
         return True
+
+    @property
+    def indices(self):
+        return np.array([0, 1, 2], dtype=int)
+
+    @property
+    def index_count(self):
+        return 3
