@@ -69,7 +69,7 @@ gl.glBindVertexArray(0)
 
 @window.event
 def on_draw(dt):
-    gl.glUseProgram(shader.raw_id)
+    gl.glUseProgram(shader.handle)
     gl.glBindVertexArray(vao)
     gl.glDrawArrays(gl.GL_TRIANGLES, 0, 3)
     gl.glBindVertexArray(0)
