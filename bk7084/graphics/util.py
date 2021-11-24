@@ -1,8 +1,9 @@
 import abc
 import atexit
-import ctypes
 import enum
 import re
+import OpenGL.error
+
 from .. import gl
 
 
@@ -27,7 +28,15 @@ class GpuObject:
     def __init__(self, gl_type, gl_id):
         self._id = gl_id
         self._type = gl_type
-        atexit.register(self._delete)
+        atexit.register(self.__delete)
+        
+    def __delete(self):
+        try:
+            # if the context is alive, delete the resource from GPU
+            self._delete()
+        except OpenGL.error.NullFunctionError as error:
+            # do nothing; context is not existing anymore
+            pass
 
     @abc.abstractmethod
     def _delete(self):
