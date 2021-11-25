@@ -12,7 +12,7 @@ from ..math import Vec3, Vec4, Mat4
 
 
 class Camera:
-    def __init__(self, pos, look_at, up, aspect_ratio, fov_v=45.0, near=0.1, far=1000., degrees=True):
+    def __init__(self, pos, look_at, up, aspect_ratio, fov_v=45.0, near=0.1, far=1000., degrees=True, zoom_enabled=False):
         self._pos = Vec3(pos)
         self._look_at = Vec3(look_at)
         self._up = Vec3(up)
@@ -24,6 +24,7 @@ class Camera:
         self._view_mat = Mat4.look_at_gl(self._pos, self._look_at, self._up)
         self._d_angle_x = 0.
         self._d_angle_y = 0.
+        self._zoom_enabled = zoom_enabled
 
     @property
     def position(self):
@@ -136,4 +137,5 @@ class Camera:
             self.update_view(pos, self.look_at, self.up)
 
     def on_mouse_scroll(self, x, y, x_offset, y_offset):
-        self.update_view(self.position + Vec3.unit_z() * y_offset * 5, self.look_at, self.up)
+        if self._zoom_enabled:
+            self.update_view(self.position + Vec3.unit_z() * y_offset * 5, self.look_at, self.up)
