@@ -26,6 +26,17 @@ class VertexAttrib(enum.Enum):
     TexCoord6 = 16,
     TexCoord7 = 17,
 
+    @property
+    def default_dimension(self):
+        if self is VertexAttrib.Position or self is VertexAttrib.Normal:
+            return 3
+        elif VertexAttrib.TexCoord0 <= self.value <= VertexAttrib.TexCoord7:
+            return 2
+        elif self is VertexAttrib.Tangent or VertexAttrib.Color0 <= self.value <= VertexAttrib.Color3:
+            return 4
+        else:
+            raise Exception(f"{self.name} doesn't have default dimension.")
+
 
 @enum.unique
 class VertexAttribFormat(enum.Enum):
@@ -53,7 +64,6 @@ class VertexAttribFormat(enum.Enum):
     @property
     def gl_type(self):
         return self.value
-
 
 
 @dataclass
@@ -125,6 +135,10 @@ class VertexLayout:
     def stride(self):
         """Returns vertex stride (size of a single vertex in bytes)."""
         return self._stride
+
+    @property
+    def attrib_count(self):
+        return len(self._description)
 
     def compute_buffer_size(self, count):
         """Returns the size of vertex buffer in bytes for a certain count of vertices.

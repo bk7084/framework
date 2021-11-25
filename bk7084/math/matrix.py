@@ -73,15 +73,18 @@ class Matrix(np.ndarray):
 
     def __mul__(self, other):
         if isinstance(other, numbers.Number):
-            return np.multiply(self, other)
+            print('yes')
+            return np.multiply(self, other).view(type(self))
         elif isinstance(other, np.ndarray) and self.shape[1] == other.shape[0]:
-            result = self @ other
+            result = np.matmul(self, other)
             if isinstance(other, Vec2):
                 return result.view(Vec2)
             elif isinstance(other, Vec3):
                 return result.view(Vec3)
             elif isinstance(other, Vec4):
                 return result.view(Vec4)
+            elif isinstance(other, Matrix):
+                return result.view(type(self))
             else:
                 return result.view(np.ndarray)
         else:
@@ -89,7 +92,8 @@ class Matrix(np.ndarray):
 
     def __rmul__(self, other):
         if isinstance(other, numbers.Number):
-            return np.multiply(other, self)
+            print('yes')
+            return np.multiply(other, self).view(type(self))
         elif isinstance(other, np.ndarray) and other.shape[1] == self.shape[0]:
             return np.matmul(other, self)
         else:
@@ -139,7 +143,7 @@ class Matrix(np.ndarray):
 
     @classmethod
     def identity(cls, dtype=float):
-        return np.identity(cls._shape[0], dtype=dtype)
+        return np.identity(cls._shape[0], dtype=dtype).view(cls)
 
     @classmethod
     def from_mat2(cls, mat: np.ndarray, dtype=None):
@@ -151,7 +155,7 @@ class Matrix(np.ndarray):
             intype = float if mat.dtype is None else mat.dtype
         m = cls.identity(intype)
         m[:2, :2] = mat[:, :]
-        return m
+        return m.view(cls)
 
     @classmethod
     def from_mat3(cls, mat: np.ndarray, dtype=None):
@@ -166,7 +170,7 @@ class Matrix(np.ndarray):
             m[:, :] = mat[:cls._shape[0], :cls._shape[1]]
         else:
             m[:3, :3] = mat[:, :]
-        return m
+        return m.view(cls)
 
     @classmethod
     def from_mat4(cls, mat: np.ndarray, dtype=None):
@@ -178,13 +182,14 @@ class Matrix(np.ndarray):
             intype = float if mat.dtype is None else mat.dtype
         m = cls.identity(intype)
         m[:, :] = m[:cls._shape[0], :cls._shape[1]]
+        return m.view(cls)
 
     @classmethod
     def from_diagonal(cls, diagonal: np.ndarray, dtype=float):
         """Creates a matrix from a vector."""
         m = np.zeros(cls._shape, dtype=dtype)
         np.fill_diagonal(m, diagonal)
-        return m
+        return m.view(cls)
 
     def apply(self, vec):
         """Apply the rotation onto a vector."""
@@ -289,6 +294,7 @@ class Mat3(Matrix):
         """
         if seq is None or len(seq) == 0:
             raise ValueError('Not a valid sequence.')
+        angles = list([angles]) if not isinstance(angles, (tuple, list, np.ndarray)) else angles
         if len(angles) != len(seq):
             raise ValueError('Provided values don\'t match the length of rotation sequence.')
         if seq.count('x') > 1 or seq.count('y') > 1 or seq.count('z') > 1:
@@ -456,7 +462,7 @@ class Mat4(Matrix):
 
                 >>> m = Mat3.from_euler_angles('yzx', [30, 60, 90], degrees=True)
         """
-        return cls.from_mat3(Mat3.from_euler_angles(seq, angles, degrees, dtype), dtype)
+        return cls.from_mat3(Mat3.from_euler_angles(seq, angles, degrees, dtype), dtype).view(cls)
 
     @classmethod
     def from_axis_angle(cls, axis: Vec3, angle, degrees=False, dtype=float):
@@ -580,5 +586,5 @@ class Mat4(Matrix):
 
     def apply(self, vec):
         if not isinstance(vec, Vec4):
-            raise ValueError('Mat2 can only be applied to 2-D vector.')
+            raise ValueError('Mat4 can only be applied to 4-D vector.')
         return (self * vec).view(Vec4)

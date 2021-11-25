@@ -27,6 +27,7 @@ setuptools.setup(
         'pyopengl',
         'glfw',
         'pypng',
-        'imgui[glfw]'
+        'imgui[glfw]',
+        'pywavefront'
     ],
 )

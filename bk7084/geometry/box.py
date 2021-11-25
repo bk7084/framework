@@ -1,3 +1,5 @@
+from typing import Sequence
+
 import numpy as np
 
 from dataclasses import dataclass
@@ -9,13 +11,12 @@ from ..misc import Color, PaletteDefault
 
 
 class Box(Shape):
-    def __init__(self, width: np.float32 = 1.0, height: np.float32 = 1.0, depth: np.float32 = 1.0,
-                 width_segments: int = 1, height_segments: int = 1, depth_segments: int = 1,
-                 color: Color = PaletteDefault.BrownA.as_color()):
+    def __init__(self, width: float = 1.0, height: float = 1.0, depth: float = 1.0,
+                 colors: Sequence[Color] = (PaletteDefault.YellowB.as_color(),)):
+        super().__init__(8, colors)
         self._width = width
         self._height = height
         self._depth = depth
-        self._color = color
 
         self._vertices, self._indices = Box.gen_vertices_and_indices(width, height, depth)
 
@@ -35,9 +36,9 @@ class Box(Shape):
                             6, 7, 4, 4, 7, 5,
                             2, 3, 6, 6, 3, 7,
                             5, 7, 1, 1, 7, 3,
-                            6, 4, 2, 2, 4, 0], dtype=int)
+                            6, 4, 2, 2, 4, 0], dtype=np.uint32)
 
-        return np.array(vertices).view(dtype=np.flaot32), indices
+        return np.asarray(vertices, dtype=np.float32).ravel(), indices
 
     @property
     def vertices(self) -> np.ndarray:
@@ -58,7 +59,3 @@ class Box(Shape):
     @property
     def index_count(self):
         return len(self._indices)
-
-    @property
-    def color(self) -> Color:
-        return self._color

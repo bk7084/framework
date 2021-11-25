@@ -22,12 +22,13 @@ _default_vertex_shader_str = '''
 layout (location = 0) in vec3 a_position;
 layout (location = 1) in vec4 a_color;
 
-uniform mat4 mvp;
+uniform mat4 model_mat;
+uniform mat4 view_proj_mat;
 
 out vec4 v_color;
 
 void main() {
-    gl_Position = mvp * vec4(a_position, 1.0);
+    gl_Position = view_proj_mat * model_mat * vec4(a_position, 1.0);
     v_color = a_color;
 }
 '''
@@ -219,6 +220,8 @@ class Window(event.EventDispatcher):
         self._start_time = time.time()
         self._previous_time = self._start_time
         self._current_time = self._start_time
+
+        gl.glEnable(gl.GL_DEPTH_TEST)
 
     def shut_down(self):
         glfw.destroy_window(self._native_window)

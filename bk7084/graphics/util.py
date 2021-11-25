@@ -29,7 +29,7 @@ class GpuObject:
         self._id = gl_id
         self._type = gl_type
         atexit.register(self.__delete)
-        
+
     def __delete(self):
         try:
             # if the context is alive, delete the resource from GPU

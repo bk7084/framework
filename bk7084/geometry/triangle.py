@@ -1,6 +1,6 @@
 import numbers
+from typing import Sequence
 
-import OpenGL.GL as gl
 import numpy as np
 
 from .shape import Shape
@@ -11,15 +11,24 @@ from ..misc import Color, PaletteDefault
 
 
 class Triangle(Shape):
-    def __init__(self, p0, p1, p2, color: Color = PaletteDefault.BlueB.as_color()):
-        """"
+    def __init__(self, p0, p1, p2, colors: Sequence[Color] = (PaletteDefault.BrownB.as_color(),)):
+        """"Creates a triangle from three positions and colors.
+
         Args:
-            p0 (array_like, shape (3,) or list): First point of the triangle.
-            p1 (array_like, shape (3,) or list): Second point of the triangle.
-            p2 (array_like, shape (3,) or list): Third point of the triangle.
+            p0 (array_like, shape (3,) or list):
+                First point of the triangle.
+
+            p1 (array_like, shape (3,) or list):
+                Second point of the triangle.
+
+            p2 (array_like, shape (3,) or list):
+                Third point of the triangle.
+
+            colors (Sequence[Color]):
+                Specifies the color of each point of triangle.
         """
+        super(Triangle, self).__init__(3, colors)
         self._points = np.array([p0, p1, p2]).reshape((3, 3))
-        self._color = color
 
     def __str__(self):
         _str = 'Triangle [{}, {}, {}]'
@@ -49,14 +58,6 @@ class Triangle(Shape):
     @property
     def drawing_mode(self) -> DrawingMode:
         return DrawingMode.Triangles
-
-    @property
-    def color(self):
-        return self._color
-
-    @color.setter
-    def color(self, new_color: Color):
-        self._color = new_color
 
     @property
     def p0(self) -> Vec3:

@@ -17,7 +17,8 @@ __all__ = [
     'VertexLayout',
     'VertexAttrib',
     'VertexAttribFormat',
-    'VertexAttribDescriptor'
+    'VertexAttribDescriptor',
+    'draw'
 ]
 
 from . import legacy

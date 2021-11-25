@@ -99,9 +99,9 @@ class Camera:
         shader = app.current_window().default_shader
         if shader is not None:
             with shader:
-                mvp_loc = gl.glGetUniformLocation(shader.handle, 'mvp')
-                mvp = self._proj_mat * self._view_mat
-                gl.glUniformMatrix4fv(mvp_loc, 1, gl.GL_TRUE, mvp)
+                vp_loc = gl.glGetUniformLocation(shader.handle, 'view_proj_mat')
+                vp = self._proj_mat * self._view_mat
+                gl.glUniformMatrix4fv(vp_loc, 1, gl.GL_TRUE, vp)
         else:
             gl.glMatrixMode(gl.GL_PROJECTION)
             gl.glLoadTransposeMatrixf(self._proj_mat)
@@ -133,3 +133,6 @@ class Camera:
             pos = rot_y * (pos - pivot) + pivot
 
             self.update_view(pos, self.look_at, self.up)
+
+    def on_mouse_scroll(self, x, y, x_offset, y_offset):
+        self.update_view(self.position + Vec3.unit_z() * y_offset * 10, self.look_at, self.up)

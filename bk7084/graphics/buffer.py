@@ -136,10 +136,6 @@ class Buffer(GpuObject, BindSemanticObject):
         """Unmaps mapped memory."""
         gl.glUnmapBuffer(self._target)
 
-    def delete(self):
-        gl.glDeleteBuffers(1, gl.GLuint(self._id))
-        self._id = None
-
     def resize(self, new_size):
         # map -> copy -> init
         dst = (ctypes.c_byte * new_size)()
@@ -173,8 +169,32 @@ class VertexBuffer(Buffer):
     def layout(self, new_layout: VertexLayout):
         self._layout = new_layout
 
+    @staticmethod
+    def empty():
+        return IndexBuffer(0, DataUsage.DynamicDraw)
+
 
 class IndexBuffer(Buffer):
     """Buffer for index data."""
-    def __init__(self, size, usage=DataUsage.StaticDraw):
+    def __init__(self, count, usage=DataUsage.StaticDraw):
+        """Creates a Buffer object holding indices for drawing. By default, use `np.uint32` as index data type.
+
+        Args:
+            count (int): Number of indices.
+            usage (DataUsage): Data usage of index buffer.
+        """
+        self._index_count = count
+        size = count * np.dtype(np.uint32).itemsize
         super(IndexBuffer, self).__init__(size, BufferBindingTarget.ElementArrayBuffer, usage)
+
+    @property
+    def index_count(self):
+        return self._index_count
+    
+    def set_data(self, data: np.ndarray, offset: int = 0, size: int = -1):
+        super(IndexBuffer, self).set_data(data, offset, size)
+        self._index_count = len(data.ravel())
+
+    @staticmethod
+    def empty():
+        return IndexBuffer(0, DataUsage.DynamicDraw)

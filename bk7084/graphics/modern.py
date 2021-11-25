@@ -1,43 +1,66 @@
+import ctypes
+import logging
+from typing import Union
+
 import numpy as np
 
 from .array import VertexArrayObject
-from .buffer import VertexBuffer
+from .buffer import VertexBuffer, IndexBuffer
 from .vertex_layout import VertexLayout, VertexAttrib, VertexAttribFormat
 from .. import gl
 from .. import app
-from ..geometry import Shape, Ray, Triangle, Line
+from ..geometry import Shape
+from ..math import Mat4
+from ..scene import Mesh
 
 
-def draw(shape: Shape, update=True):
+def draw(obj: Union[Shape, Mesh], update=False):
     """Draws a shape object."""
     # record shape and its associated vbo. avoid to create multiple vertex buffer object
     # for the same object each time the function is called.
-    if not hasattr(draw, 'created'):
-        draw.created = {}
+    if isinstance(obj, Shape):
+        if not hasattr(draw, 'created'):
+            draw.shapes_created_gpu_objects = {}
 
-    colors = np.tile(shape.color.rgba, shape.vertex_count)
-    buffer_data = np.zeros(7 * shape.vertex_count, dtype=np.float32)
+        colors = np.tile(obj.color.rgba, obj.vertex_count)
+        vertices_data = np.zeros(7 * obj.vertex_count, dtype=np.float32)
 
-    for i in range(0, shape.vertex_count):
-        index = i * 7
-        buffer_data.put(list(range(index, index + 3)), shape.vertices[i * 3: i * 3 + 3])
-        buffer_data.put(list(range(index + 3, index + 7)), colors[i * 4: i * 4 + 4])
+        for i in range(0, obj.vertex_count):
+            index = i * 7
+            vertices_data.put(list(range(index, index + 3)), obj.vertices[i * 3: i * 3 + 3])
+            vertices_data.put(list(range(index + 3, index + 7)), colors[i * 4: i * 4 + 4])
 
-    if shape not in draw.created:
-        vbo = VertexBuffer(shape.vertex_count, VertexLayout((VertexAttrib.Position, VertexAttribFormat.Float32, 3),
-                                                            (VertexAttrib.Color0, VertexAttribFormat.Float32, 4)))
-        vbo.set_data(buffer_data)
+        if obj not in draw.shapes_created_gpu_objects:
+            vbo = VertexBuffer(obj.vertex_count, VertexLayout((VertexAttrib.Position, VertexAttribFormat.Float32, 3),
+                                                              (VertexAttrib.Color0, VertexAttribFormat.Float32, 4)))
+            vbo.set_data(vertices_data)
 
-        vao = VertexArrayObject()
+            ibo = IndexBuffer(obj.index_count)
+            ibo.set_data(obj.indices)
 
-        vao.bind_vertex_buffer(vbo)
+            vao = VertexArrayObject()
 
-        draw.created[shape] = (vao, vbo)
+            vao.bind_vertex_buffer(vbo)
 
-    vao, vbo = draw.created[shape]
+            draw.shapes_created_gpu_objects[obj] = (vao, vbo, ibo)
 
-    vbo.set_data(buffer_data)
+        vao, vbo, ibo = draw.shapes_created_gpu_objects[obj]
 
-    with app.current_window().default_shader:
-        with vao:
-            gl.glDrawArrays(shape.drawing_mode.value, 0, shape.vertex_count)
+        if update:
+            vbo.set_data(vertices_data)
+            ibo.set_data(obj.indices)
+
+        with app.current_window().default_shader:
+            model_loc = gl.glGetUniformLocation(app.current_window().default_shader.handle, 'model_mat')
+            model = Mat4.identity()
+            gl.glUniformMatrix4fv(model_loc, 1, gl.GL_TRUE, model)
+            with vao:
+                with ibo:
+                    gl.glDrawElements(obj.drawing_mode.value, ibo.index_count, gl.GL_UNSIGNED_INT, ctypes.c_void_p(0))
+
+    elif isinstance(obj, Mesh):
+        obj.draw_with_shader(app.current_window().default_shader)
+
+    else:
+        logging.info('Nothing to draw.')
+

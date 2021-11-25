@@ -1,3 +1,5 @@
+from typing import Sequence
+
 import numpy as np
 
 from .shape import Shape
@@ -7,10 +9,10 @@ from ..misc import Color, PaletteDefault
 
 
 class Ray(Shape):
-    def __init__(self, origin, direction, color: Color = PaletteDefault.GreenB.as_color()):
+    def __init__(self, origin, direction, colors: Sequence[Color] = (PaletteDefault.GreenB.as_color(),)):
+        super().__init__(2, colors)
         self._o = Vec3(origin) if not isinstance(origin, Vec3) else origin
         self._d = Vec3(direction) if not isinstance(direction, Vec3) else direction
-        self._c = color
 
     def __str__(self):
         _str = 'Ray ⚬ {} ⟶ {}'
@@ -18,7 +20,7 @@ class Ray(Shape):
 
     @property
     def vertices(self) -> np.ndarray:
-        return np.concatenate([self._o, self._o + self._d])
+        return np.concatenate([self._o, self._o + self._d]).ravel()
 
     @property
     def vertex_count(self) -> int:
@@ -43,14 +45,6 @@ class Ray(Shape):
     @direction.setter
     def direction(self, value: Vec3):
         self._d = value
-
-    @property
-    def color(self):
-        return self._c
-
-    @color.setter
-    def color(self, value):
-        self._c = value
 
     @property
     def indices(self):
