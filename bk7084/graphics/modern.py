@@ -20,12 +20,12 @@ def draw(*objs: Union[Shape, Mesh], **kwargs):
     # for the same object each time the function is called.
     update = kwargs.get('update', False)
 
+    if not hasattr(draw, 'shapes_created_gpu_objects'):
+        draw.shapes_created_gpu_objects = {}
+
     for obj in objs:
         if isinstance(obj, Shape):
-            if not hasattr(draw, 'created'):
-                draw.shapes_created_gpu_objects = {}
-
-            colors = np.tile(obj.color.rgba, obj.vertex_count)
+            colors = obj.colors
             vertices_data = np.zeros(7 * obj.vertex_count, dtype=np.float32)
 
             for i in range(0, obj.vertex_count):
@@ -40,7 +40,7 @@ def draw(*objs: Union[Shape, Mesh], **kwargs):
                 vbo.set_data(vertices_data)
 
                 ibo = IndexBuffer(obj.index_count)
-                ibo.set_data(obj.indices)
+                ibo.set_data(obj.indices.astype(np.uint32))
 
                 vao = VertexArrayObject()
 
@@ -54,11 +54,12 @@ def draw(*objs: Union[Shape, Mesh], **kwargs):
                 vbo.set_data(vertices_data)
                 ibo.set_data(obj.indices)
 
-            with app.current_window().default_shader:
-                model_loc = gl.glGetUniformLocation(app.current_window().default_shader.handle, 'model_mat')
-                do_shading_loc = gl.glGetUniformLocation(app.current_window().default_shader.handle, 'do_shading')
-                model = Mat4.identity()
-                gl.glUniformMatrix4fv(model_loc, 1, gl.GL_TRUE, model)
+            shader = app.current_window().default_shader
+
+            with shader:
+                model_loc = gl.glGetUniformLocation(shader.handle, 'model_mat')
+                do_shading_loc = gl.glGetUniformLocation(shader.handle, 'do_shading')
+                gl.glUniformMatrix4fv(model_loc, 1, gl.GL_TRUE, Mat4.identity())
                 gl.glUniform1i(do_shading_loc, 0)
                 with vao:
                     with ibo:
