@@ -92,7 +92,7 @@ class Mesh:
         self._contain_geometries = False
 
         if filepath is not None:
-            self.read_from_file(filepath)
+            self.read_from_file(filepath, kwargs.get('color', PaletteDefault.BrownB.as_color()))
             self._contain_geometries = False
         else:
             shapes = kwargs.get('shapes', None)
@@ -100,7 +100,7 @@ class Mesh:
                 self.from_geometry(*shapes)
                 self._contain_geometries = True
 
-    def read_from_file(self, filepath):
+    def read_from_file(self, filepath, color):
         mesh = trimesh.load(filepath, force='mesh')
 
         self._vertex_count = len(mesh.vertices)
@@ -110,7 +110,7 @@ class Mesh:
         self._vertex_array_objects.append(VertexArrayObject())
         self._indices = np.asarray(mesh.faces, dtype=np.uint32).ravel()
         self._index_count = len(self._indices)
-        self._colors = np.tile(PaletteDefault.RedA.as_color().rgba, self._vertex_count).ravel()
+        self._colors = np.tile(color.rgba, self._vertex_count).ravel()
 
         # todo: deal with texture, normal ...
         self._sub_meshes.append(SubMesh(vertices_range=(0, len(self._positions)),
@@ -134,7 +134,6 @@ class Mesh:
 
         vertices = np.zeros(10 * self._sub_meshes[0].vertex_count, dtype=np.float32)
         # iterate over each vertex
-        print(self._sub_meshes[0].indices_range)
         for i in range(0, self._sub_meshes[0].vertex_count):
             index = i * 10
             vertices.put(list(range(index, index + 3)),
@@ -300,7 +299,7 @@ class Mesh:
     #     raise NotImplementedError
     #
     def apply_transformation(self, matrix: Mat4):
-        self._transformation = self._transformation * matrix
+        self._transformation = matrix * self._transformation
 
     def reset_transformation(self):
         self._transformation = Mat4.identity()

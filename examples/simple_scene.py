@@ -21,8 +21,8 @@ box = Box(2.0, 2.0, 2.0)
 
 mesh0 = Mesh(shapes=[tri0])
 
-mesh1 = Mesh("./poly-tree.obj")
-mesh1.initial_transformation = Mat4.from_translation(Vec3(0, -100, 0))
+mesh1 = Mesh("./abc000.obj")
+# mesh1.initial_transformation = Mat4.from_translation(Vec3(0, -100, 0))
 
 animate = True
 
@@ -34,7 +34,7 @@ def on_draw(dt):
     #     draw(Line([Vec3(-10, -10 + i, 0), Vec3(10, -10 + i, 0)]))
     #     draw(Line([Vec3(-10 + i, -10, 0), Vec3(-10 + i, 10, 0)]))
     # draw(mesh)
-    draw(mesh0, box)
+    draw(mesh1)
 
 
 # mat_rot = Mat4(

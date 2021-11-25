@@ -136,4 +136,4 @@ class Camera:
             self.update_view(pos, self.look_at, self.up)
 
     def on_mouse_scroll(self, x, y, x_offset, y_offset):
-        self.update_view(self.position + Vec3.unit_z() * y_offset * 10, self.look_at, self.up)
+        self.update_view(self.position + Vec3.unit_z() * y_offset * 5, self.look_at, self.up)
