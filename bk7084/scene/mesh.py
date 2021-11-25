@@ -3,6 +3,7 @@ from dataclasses import dataclass
 
 import numpy as np
 import pywavefront
+import trimesh
 
 from .. import gl
 from ..geometry.shape import Shape
@@ -32,6 +33,7 @@ class SubMesh:
     vertices_range: (int, int) = (0, 0)
     indices_range: (int, int) = (0, 0)
     colors_range: (int, int) = (0, 0)
+    normals_range: (int, int) = (0, 0)
 
 
 class Mesh:
@@ -83,26 +85,33 @@ class Mesh:
         self._index_buffer = None
         self._vertex_array_objects: [VertexArrayObject] = []
 
+        self._initial_transformation: Mat4 = Mat4.identity()
         self._transformation: Mat4 = Mat4.identity()
+
+        self._do_shading = False
+
+        self._contain_geometries = False
 
         if filepath is not None:
             self.read_from_file(filepath)
+            self._contain_geometries = False
         else:
             shapes = kwargs.get('shapes', None)
             if shapes is not None:
                 self.from_geometry(*shapes)
+                self._contain_geometries = True
 
     def read_from_file(self, filepath):
-        mesh_data = pywavefront.Wavefront(filepath, collect_faces=True, create_materials=True)
-        self._vertex_count = len(mesh_data.vertices)
-        self._positions = np.asarray(mesh_data.vertices, dtype=np.float32).ravel()
+        mesh = trimesh.load(filepath, force='mesh')
 
-        mesh = mesh_data.mesh_list[0]
+        self._vertex_count = len(mesh.vertices)
+        self._positions = mesh.vertices.ravel()
+        self._vertex_normals = mesh.vertex_normals.ravel()
+
         self._vertex_array_objects.append(VertexArrayObject())
-
         self._indices = np.asarray(mesh.faces, dtype=np.uint32).ravel()
         self._index_count = len(self._indices)
-        self._colors = np.tile(PaletteDefault.GreyA.as_color().rgba, self._vertex_count).ravel()
+        self._colors = np.tile(PaletteDefault.RedA.as_color().rgba, self._vertex_count).ravel()
 
         # todo: deal with texture, normal ...
         self._sub_meshes.append(SubMesh(vertices_range=(0, len(self._positions)),
@@ -111,7 +120,8 @@ class Mesh:
                                         colors_range=(0, len(self._colors)),
                                         drawing_mode=DrawingMode.Triangles,
                                         vertex_count=self._vertex_count,
-                                        index_count=self._index_count))
+                                        index_count=self._index_count,
+                                        normals_range=(0, len(self._vertex_normals))))
 
         self._index_buffer = IndexBuffer(self._index_count)
         self._index_buffer.set_data(self._indices)
@@ -120,15 +130,20 @@ class Mesh:
         self._vertex_layout = VertexLayout(
             VertexAttribDescriptor(VertexAttrib.Position, VertexAttribFormat.Float32, 3),
             VertexAttribDescriptor(VertexAttrib.Color0, VertexAttribFormat.Float32, 4),
+            VertexAttribDescriptor(VertexAttrib.Normal, VertexAttribFormat.Float32, 3)
         )
 
-        vertices = np.zeros(7 * self._sub_meshes[0].vertex_count, dtype=np.float32)
+        vertices = np.zeros(10 * self._sub_meshes[0].vertex_count, dtype=np.float32)
+        # iterate over each vertex
+        print(self._sub_meshes[0].indices_range)
         for i in range(0, self._sub_meshes[0].vertex_count):
-            index = i * 7
+            index = i * 10
             vertices.put(list(range(index, index + 3)),
                          self._positions[i * 3: i * 3 + 3])
             vertices.put(list(range(index + 3, index + 7)),
                          self._colors[i * 4: i * 4 + 4])
+            vertices.put(list(range(index + 7, index + 10)),
+                         self._vertex_normals[i * 3: i * 3 + 3])
 
         vbo = VertexBuffer(self._sub_meshes[0].vertex_count, self._vertex_layout)
         self._vertex_buffers.append(vbo)
@@ -137,6 +152,8 @@ class Mesh:
 
         vao = self._vertex_array_objects[self._sub_meshes[0].vao_idx]
         vao.bind_vertex_buffer(vbo)
+
+        self._do_shading = True
 
     def from_geometry(self, *shapes):
         """Construct a mesh from a collection of geometry objects."""
@@ -198,6 +215,8 @@ class Mesh:
 
             vao = self._vertex_array_objects[sub_mesh.vao_idx]
             vao.bind_vertex_buffer(vbo)
+
+        self._do_shading = False
 
     @property
     def vertex_layout(self) -> VertexLayout:
@@ -295,6 +314,14 @@ class Mesh:
     def transformation(self, value: Mat4):
         self._transformation = value
 
+    @property
+    def initial_transformation(self):
+        return self._initial_transformation
+
+    @initial_transformation.setter
+    def initial_transformation(self, value: Mat4):
+        self._initial_transformation = value
+
     #
     # def compute_tangents(self):
     #     """Calculates and adds a tangent attribute to the geometry."""
@@ -315,7 +342,9 @@ class Mesh:
         if len(self._sub_meshes) > 0:
             with shader:
                 model_loc = gl.glGetUniformLocation(shader.handle, 'model_mat')
-                gl.glUniformMatrix4fv(model_loc, 1, gl.GL_TRUE, self._transformation)
+                do_shading_loc = gl.glGetUniformLocation(shader.handle, 'do_shading')
+                gl.glUniformMatrix4fv(model_loc, 1, gl.GL_TRUE, self._transformation * self._initial_transformation)
+                gl.glUniform1i(do_shading_loc, int(self._do_shading))
                 for mesh in self._sub_meshes:
                     with self._vertex_array_objects[mesh.vao_idx]:
                         with self._index_buffer:

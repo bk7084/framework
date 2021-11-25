@@ -99,9 +99,10 @@ class Camera:
         shader = app.current_window().default_shader
         if shader is not None:
             with shader:
-                vp_loc = gl.glGetUniformLocation(shader.handle, 'view_proj_mat')
-                vp = self._proj_mat * self._view_mat
-                gl.glUniformMatrix4fv(vp_loc, 1, gl.GL_TRUE, vp)
+                v_loc = gl.glGetUniformLocation(shader.handle, 'view_mat')
+                p_loc = gl.glGetUniformLocation(shader.handle, 'proj_mat')
+                gl.glUniformMatrix4fv(v_loc, 1, gl.GL_TRUE, self._view_mat)
+                gl.glUniformMatrix4fv(p_loc, 1, gl.GL_TRUE, self._proj_mat)
         else:
             gl.glMatrixMode(gl.GL_PROJECTION)
             gl.glLoadTransposeMatrixf(self._proj_mat)

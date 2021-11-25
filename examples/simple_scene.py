@@ -19,9 +19,10 @@ tri1 = Triangle([-2, -2, -1.5], [2, -2, -1.5], [0, 2, -1.5],
 ray = Ray([1, 1, 1], [1, 1, 2])
 box = Box(2.0, 2.0, 2.0)
 
-# mesh = Mesh(shapes=[tri0, tri1, box, ray])
+mesh0 = Mesh(shapes=[tri0])
 
-mesh = Mesh("./tree.obj")
+mesh1 = Mesh("./poly-tree.obj")
+mesh1.initial_transformation = Mat4.from_translation(Vec3(0, -100, 0))
 
 animate = True
 
@@ -33,7 +34,7 @@ def on_draw(dt):
     #     draw(Line([Vec3(-10, -10 + i, 0), Vec3(10, -10 + i, 0)]))
     #     draw(Line([Vec3(-10 + i, -10, 0), Vec3(-10 + i, 10, 0)]))
     # draw(mesh)
-    draw(mesh)
+    draw(mesh0, box)
 
 
 # mat_rot = Mat4(
@@ -51,19 +52,31 @@ def on_key_press(key, mods):
     global animate
     if key == KeyCode.A:
         animate = not animate
-    if key == KeyCode.T:
-        mesh.apply_transformation(Mat4.from_translation(Vec3(2.0, 0.0, 0.0)))
+
+    if key == KeyCode.Up:
+        mesh1.apply_transformation(Mat4.from_translation(Vec3(0.0, 1.0, 0.0)))
+    if key == KeyCode.Down:
+        mesh1.apply_transformation(Mat4.from_translation(Vec3(0.0, -1.0, 0.0)))
+    if key == KeyCode.Left:
+        mesh1.apply_transformation(Mat4.from_translation(Vec3(-1.0, 0.0, 0.0)))
+    if key == KeyCode.Right:
+        mesh1.apply_transformation(Mat4.from_translation(Vec3(1.0, 0.0, 0.0)))
+    if key == KeyCode.F:
+        mesh1.apply_transformation(Mat4.from_translation(Vec3(0.0, 0.0, -1.0)))
+    if key == KeyCode.B:
+        mesh1.apply_transformation(Mat4.from_translation(Vec3(0.0, 0.0, 1.0)))
+
     if key == KeyCode.S:
-        mesh.apply_transformation(Mat4.from_scale(Vec3(0.5, 0.5, 0.5)))
+        mesh1.apply_transformation(Mat4.from_scale(Vec3(0.5, 0.5, 0.5)))
     if key == KeyCode.R:
-        mesh.apply_transformation(Mat4.from_axis_angle(Vec3.unit_y(), 45.0, True))
+        mesh1.apply_transformation(Mat4.from_axis_angle(Vec3.unit_y(), 45.0, True))
     if key == KeyCode.I:
-        mesh.reset_transformation()
+        mesh1.reset_transformation()
 
 
 @window.event
 def on_update(dt):
-    mesh.apply_transformation(Mat4.from_axis_angle(Vec3.unit_y(), 45.0 * dt, True))
+    mesh1.apply_transformation(Mat4.from_axis_angle(Vec3.unit_y(), 45.0 * dt, True))
 
 
 app.init(window)
