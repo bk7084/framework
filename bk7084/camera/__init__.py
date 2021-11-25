@@ -79,6 +79,14 @@ class Camera:
     def look_at(self) -> Vec3:
         return self._look_at
 
+    @property
+    def zoom_enabled(self):
+        return self._zoom_enabled
+
+    @zoom_enabled.setter
+    def zoom_enabled(self, value):
+        self._zoom_enabled = value
+
     def __enter__(self):
         self._update_matrices()
         return self

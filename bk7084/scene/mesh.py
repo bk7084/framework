@@ -300,6 +300,11 @@ class Mesh:
     #
     def apply_transformation(self, matrix: Mat4):
         self._transformation = matrix * self._transformation
+        return self
+
+    def then(self, matrix: Mat4):
+        self._transformation = matrix * self._transformation
+        return self
 
     def reset_transformation(self):
         self._transformation = Mat4.identity()
@@ -341,7 +346,8 @@ class Mesh:
             with shader:
                 model_loc = gl.glGetUniformLocation(shader.handle, 'model_mat')
                 do_shading_loc = gl.glGetUniformLocation(shader.handle, 'do_shading')
-                gl.glUniformMatrix4fv(model_loc, 1, gl.GL_TRUE, self._transformation * self._initial_transformation)
+                mat = self._transformation * self._initial_transformation
+                gl.glUniformMatrix4fv(model_loc, 1, gl.GL_TRUE, mat)
                 gl.glUniform1i(do_shading_loc, int(self._do_shading))
                 for mesh in self._sub_meshes:
                     with self._vertex_array_objects[mesh.vao_idx]:
