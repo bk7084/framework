@@ -2,7 +2,6 @@ import ctypes
 from dataclasses import dataclass
 
 import numpy as np
-import pywavefront
 import trimesh
 
 from .. import gl

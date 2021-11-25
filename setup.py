@@ -29,7 +29,6 @@ setuptools.setup(
         'pypng',
         'imgui[glfw]',
         'scipy',
-        'trimesh',
-        'pywavefront'
+        'trimesh'
     ],
 )
