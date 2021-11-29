@@ -376,6 +376,10 @@ class Window(event.EventDispatcher):
     def default_shader(self):
         return self._default_shader
 
+    @default_shader.setter
+    def default_shader(self, shader):
+        self._shader = shader
+
     @property
     def delta_time(self):
         self._current_time = time.time()
