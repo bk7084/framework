@@ -108,10 +108,8 @@ class Camera:
         shader = app.current_window().default_shader
         if shader is not None:
             with shader:
-                v_loc = gl.glGetUniformLocation(shader.handle, 'view_mat')
-                p_loc = gl.glGetUniformLocation(shader.handle, 'proj_mat')
-                gl.glUniformMatrix4fv(v_loc, 1, gl.GL_TRUE, self._view_mat)
-                gl.glUniformMatrix4fv(p_loc, 1, gl.GL_TRUE, self._proj_mat)
+                shader.view_mat = self._view_mat
+                shader.proj_mat = self._proj_mat
         else:
             gl.glMatrixMode(gl.GL_PROJECTION)
             gl.glLoadTransposeMatrixf(self._proj_mat)
@@ -122,6 +120,8 @@ class Camera:
     def on_resize(self, width, height):
         self._d_angle_x = 2.0 * math.pi / width
         self._d_angle_y = math.pi / height
+        self._aspect_ratio = width / height
+        self._update_matrices()
 
     def on_mouse_drag(self, x, y, dx, dy, btn):
         if btn == MouseButton.Left:

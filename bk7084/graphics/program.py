@@ -63,13 +63,18 @@ class ShaderProgram(GpuObject, BindSemanticObject):
     def __getitem__(self, uniform: str):
         return self.get_uniform(uniform)
 
-    def __setitem__(self, uniform: str, value):
-        self.set_uniform(uniform, value)
+    def __setitem__(self, uniform: str, value, transpose=True):
+        self.set_uniform(uniform, value, transpose=True)
 
-    def set_uniform(self, name, value):
+    def set_uniform(self, name, value, transpose=True):
         if name in self._uniforms:
             typ, loc = self._uniforms[name]
-            gl_set_uniform[typ](loc, 1, value)
+            if typ == gl.GL_FLOAT_MAT2 or typ == gl.GL_FLOAT_MAT3 or typ == gl.GL_FLOAT_MAT4:
+                gl_set_uniform[typ](loc, 1, transpose, value)
+            else:
+                gl_set_uniform[typ](loc, 1, value)
+        else:
+            raise ValueError(f"Shader program has no uniform '{name}'")
 
     def get_uniform(self, name):
         if name in self._uniforms:
@@ -77,7 +82,9 @@ class ShaderProgram(GpuObject, BindSemanticObject):
             type_info = gl_type_info[typ]
             buffer = np.zeros(type_info[0], dtype=type_info[2])
             gl_get_uniform[typ](self._id, loc, buffer.nbytes, buffer.data)
-        return buffer
+            return buffer
+        else:
+            raise ValueError(f"Shader program has no uniform '{name}'")
 
     @property
     def uniforms(self):
