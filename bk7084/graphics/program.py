@@ -4,9 +4,11 @@ import platform
 from collections.abc import Sequence
 
 import OpenGL.GL as gl
+import numpy as np
 
 from .shader import Shader
 from .util import DrawingMode, GpuObject, BindSemanticObject
+from .variable import gl_get_uniform, glsl_types, gl_set_uniform, gl_type_info
 
 
 def check_validity(program_id) -> bool:
@@ -23,10 +25,8 @@ def check_link_status(program_id) -> bool:
 
 
 class ShaderProgram(GpuObject, BindSemanticObject):
-    def __init__(self, *shaders):
+    def __init__(self, *shaders: Shader):
         """Creates an OpenGL ShaderProgram from multiple shaders.
-
-        TODO
 
         Args:
             *shaders:
@@ -37,16 +37,51 @@ class ShaderProgram(GpuObject, BindSemanticObject):
         self._is_active = False
 
         self._buffers = None
-        self._shaders = [*shaders]
+        self._shaders = list(shaders)
 
-        self._uniforms = {}
+        self._uniforms = {k: v for k, v in
+                          [(x[0], (glsl_types[x[1]], gl.glGetUniformLocation(self._id, x[0]))) for s in self._shaders
+                           for x in s.uniforms]}
+
         self._attributes = {}
 
+        # Allows get/set shader uniform as if it is an attribute of the class.
+        for uniform in self._uniforms.keys():
+            setattr(self.__class__, uniform, self.__create_uniform_prop(uniform))
+
+    def __create_uniform_prop(self, name):
+        @property
+        def prop(self):
+            return self.get_uniform(name)
+
+        @prop.setter
+        def prop(self, value):
+            self.set_uniform(name, value)
+
+        return prop
+
     def __getitem__(self, uniform: str):
-        pass
+        return self.get_uniform(uniform)
 
     def __setitem__(self, uniform: str, value):
-        pass
+        self.set_uniform(uniform, value)
+
+    def set_uniform(self, name, value):
+        if name in self._uniforms:
+            typ, loc = self._uniforms[name]
+            gl_set_uniform[typ](loc, 1, value)
+
+    def get_uniform(self, name):
+        if name in self._uniforms:
+            typ, loc = self._uniforms[name]
+            type_info = gl_type_info[typ]
+            buffer = np.zeros(type_info[0], dtype=type_info[2])
+            gl_get_uniform[typ](self._id, loc, buffer.nbytes, buffer.data)
+        return buffer
+
+    @property
+    def uniforms(self):
+        return self._uniforms
 
     def _delete(self):
         gl.glDeleteProgram(self._id)
@@ -61,13 +96,10 @@ class ShaderProgram(GpuObject, BindSemanticObject):
     def is_active(self):
         return self._is_active
 
-    def update_uniform(self, name, value):
-        pass
-
     def _create_and_link(self, shaders: Sequence[Shader]):
         program_id = gl.glCreateProgram()
         for shader in shaders:
-            gl.glAttachShader(program_id, shader.id)
+            gl.glAttachShader(program_id, shader.handle)
         gl.glLinkProgram(program_id)
 
         # MacOs requires that the vao is bound before checking validity.
@@ -79,7 +111,7 @@ class ShaderProgram(GpuObject, BindSemanticObject):
             raise RuntimeError(
                 f'Shader program link failure : {gl.glGetProgramInfoLog(program_id)}')
         for shader in shaders:
-            gl.glDetachShader(program_id, shader.id)
+            gl.glDetachShader(program_id, shader.handle)
         return program_id
 
     def use(self):

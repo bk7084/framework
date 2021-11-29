@@ -42,10 +42,10 @@ class Shader(GpuObject):
             if not (os.path.isfile(code) and os.path.exists(code)):
                 raise ValueError(f'Shader source file {code} does not exist or is not a valid file path.')
             with open(code, 'rt') as file:
-                self._code = ShaderCodeParser.preprocess(file.read())
+                self._code, self._uniforms, self._attribs = ShaderCodeParser.preprocess(file.read())
                 self._origin = origin
         else:
-            self._code = ShaderCodeParser.preprocess(code)
+            self._code, self._uniforms, self._attribs = ShaderCodeParser.preprocess(code)
             self._origin = origin
 
         self._create()
@@ -74,14 +74,25 @@ class Shader(GpuObject):
 
     @property
     def uniforms(self):
-        return NotImplementedError
+        """
+        Shader uniforms obtained from source code.
+
+        Returns:
+            A list of names of uniforms.
+        """
+        return self._uniforms
 
     @property
     def attributes(self):
-        return NotImplementedError
+        """Shader input vertex attributes.
+
+        Returns:
+            A list of names of vertex attributes.
+        """
+        return self._attribs
 
     @property
-    def id(self):
+    def handle(self):
         return self._id
 
     def _create(self):
@@ -149,7 +160,7 @@ class Shader(GpuObject):
 
 class VertexShader(Shader):
     def __init__(self, code: str):
-        super(VertexShader, self).__init__(ShaderType.Vertex, code, False)
+        super(VertexShader, self).__init__(ShaderType.Vertex, code, '<string>', False)
 
     @classmethod
     def from_file(cls, filepath):
@@ -161,7 +172,7 @@ class VertexShader(Shader):
 
 class FragmentShader(Shader):
     def __init__(self, code: str):
-        super(FragmentShader, self).__init__(ShaderType.Fragment, code, False)
+        super(FragmentShader, self).__init__(ShaderType.Fragment, code, '<string>', False)
 
     @classmethod
     def from_file(cls, filepath):
@@ -173,7 +184,7 @@ class FragmentShader(Shader):
 
 class PixelShader(Shader):
     def __init__(self, code: str):
-        super(PixelShader, self).__init__(ShaderType.Fragment, code, False)
+        super(PixelShader, self).__init__(ShaderType.Fragment, code, '<string>', False)
 
     @classmethod
     def from_file(cls, filepath):

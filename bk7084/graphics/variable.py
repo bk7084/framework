@@ -5,6 +5,27 @@ import numpy as np
 
 from .. import gl
 
+glsl_types = {
+    'float': gl.GL_FLOAT,
+    'vec2': gl.GL_FLOAT_VEC2,
+    'vec3': gl.GL_FLOAT_VEC3,
+    'vec4': gl.GL_FLOAT_VEC4,
+    'int': gl.GL_INT,
+    'ivec2': gl.GL_INT_VEC2,
+    'ivec3': gl.GL_INT_VEC3,
+    'ivec4': gl.GL_INT_VEC4,
+    'bool': gl.GL_BOOL,
+    'bvec2': gl.GL_BOOL_VEC2,
+    'bvec3': gl.GL_BOOL_VEC3,
+    'bvec4': gl.GL_BOOL_VEC4,
+    'mat2': gl.GL_FLOAT_MAT2,
+    'mat3': gl.GL_FLOAT_MAT3,
+    'mat4': gl.GL_FLOAT_MAT4,
+    'sampler1D': gl.GL_SAMPLER_1D,
+    'sampler2D': gl.GL_SAMPLER_2D,
+    'samplerCube': gl.GL_SAMPLER_CUBE,
+}
+
 gl_type_info = {
     gl.GL_FLOAT: (1, gl.GL_FLOAT, np.float32),
     gl.GL_FLOAT_VEC2: (2, gl.GL_FLOAT, np.float32),
@@ -27,7 +48,7 @@ gl_type_info = {
 }
 
 # A lookup table to specify the value of a uniform variable for shader program.
-gl_uniform = {
+gl_set_uniform = {
     gl.GL_FLOAT: gl.glUniform1fv,
     gl.GL_FLOAT_VEC2: gl.glUniform2fv,
     gl.GL_FLOAT_VEC3: gl.glUniform3fv,
@@ -43,9 +64,30 @@ gl_uniform = {
     gl.GL_FLOAT_MAT2: gl.glUniformMatrix2fv,
     gl.GL_FLOAT_MAT3: gl.glUniformMatrix3fv,
     gl.GL_FLOAT_MAT4: gl.glUniformMatrix4fv,
-    gl.GL_SAMPLER_1D: gl.glUniform1i,
-    gl.GL_SAMPLER_2D: gl.glUniform1i,
-    gl.GL_SAMPLER_CUBE: gl.glUniform1i
+    gl.GL_SAMPLER_1D: gl.glUniform1iv,
+    gl.GL_SAMPLER_2D: gl.glUniform1iv,
+    gl.GL_SAMPLER_CUBE: gl.glUniform1iv
+}
+
+gl_get_uniform = {
+    gl.GL_FLOAT: gl.glUniform1fv,
+    gl.GL_FLOAT_VEC2: gl.glGetnUniformfv,
+    gl.GL_FLOAT_VEC3: gl.glGetnUniformfv,
+    gl.GL_FLOAT_VEC4: gl.glGetnUniformfv,
+    gl.GL_INT: gl.glGetnUniformiv,
+    gl.GL_INT_VEC2: gl.glGetnUniformiv,
+    gl.GL_INT_VEC3: gl.glGetnUniformiv,
+    gl.GL_INT_VEC4: gl.glGetnUniformiv,
+    gl.GL_BOOL: gl.glGetnUniformiv,
+    gl.GL_BOOL_VEC2: gl.glGetnUniformiv,
+    gl.GL_BOOL_VEC3: gl.glGetnUniformiv,
+    gl.GL_BOOL_VEC4: gl.glGetnUniformiv,
+    gl.GL_FLOAT_MAT2: gl.glGetnUniformfv,
+    gl.GL_FLOAT_MAT3: gl.glGetnUniformfv,
+    gl.GL_FLOAT_MAT4: gl.glGetnUniformfv,
+    gl.GL_SAMPLER_1D: gl.glGetnUniformiv,
+    gl.GL_SAMPLER_2D: gl.glGetnUniformiv,
+    gl.GL_SAMPLER_CUBE: gl.glGetnUniformiv
 }
 
 # gl_vertex_attrib = {

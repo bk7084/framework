@@ -68,9 +68,10 @@ displacement = np.array([0.0, 0.0, 0.0], dtype=np.float32)
 def on_draw(dt):
     global displacement
     with shader:
-        displacement_loc = gl.glGetUniformLocation(shader.handle, 'displacement')
         displacement += np.array([0.0, dt * 0.1, 0.0])
-        gl.glUniform3fv(displacement_loc, 1, displacement)
+        shader.set_uniform('displacement', displacement)
+        shader.displacement = displacement
+        shader['displacement'] = displacement
         with vao:
             gl.glDrawArrays(gl.GL_TRIANGLES, 0, 3)
 

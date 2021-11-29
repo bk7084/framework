@@ -152,11 +152,14 @@ class ShaderCodeParser:
         pass
 
     @classmethod
-    def preprocess(cls, code: str) -> str:
+    def preprocess(cls, code: str):
+        uniforms = []
+        attribs = []
         if code:
             cls.remove_comments(code)
-            # cls.remove_version(code)
-        return code
+            uniforms = cls.parse_declarations(code, 'uniform')
+            attribs = cls.parse_declarations(code, 'in')
+        return code, uniforms, attribs
 
     @classmethod
     def remove_comments(cls, code: str) -> str:
@@ -189,3 +192,35 @@ class ShaderCodeParser:
         """
         regex = re.compile('\#\s*version[^\r\n]*\n', re.MULTILINE | re.DOTALL)
         return regex.sub('\n', code)
+
+    @classmethod
+    def parse_declarations(cls, code, qualifiers=''):
+        """Extract declaraions of different types (type qualifiers) inside of shader.
+
+        Note:
+              Do NOT pass multiple qualifiers (not working for the moment).
+
+        Args:
+            code (str):
+                Shader source code string.
+
+            qualifier (str):
+                GLSL type qualifiers. See https://www.khronos.org/opengl/wiki/Type_Qualifier_(GLSL).
+                A string of qualifier(s) separated by comma.
+
+        Returns:
+            list of parsed declarations.
+        """
+        # todo: deal with multiple qualifiers.
+        if qualifiers != '':
+            variables = []
+            # qualifiers = f"({'|'.join(list(map(str.strip, qualifiers.split(','))))})"
+            regex = re.compile(f'{qualifiers}\s+(?P<type>\w+)\s+(?P<names>[\w,\[\]\n = \.$]+);')
+            for matched in re.finditer(regex, code):
+                var_type = matched.group('type')
+                var_names = list(map(str.strip, matched.group('names').split(',')))
+                for var_name in var_names:
+                    variables.append((var_name, var_type))
+            return variables
+        else:
+            return ''
