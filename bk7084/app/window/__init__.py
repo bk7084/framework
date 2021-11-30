@@ -496,7 +496,7 @@ class Window(event.EventDispatcher):
             h, w = self.size
             framebuffer = np.zeros((h, w * 3), dtype=np.uint8)
             gl.glReadPixels(0, 0, w, h, gl.GL_RGB, gl.GL_UNSIGNED_BYTE, framebuffer)
-            filename = f'{datetime.datetime.now().strftime("%Y-%m-%d_%H:%M:%S")}.png'
+            filename = f'{datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")}.png'
             filepath = os.path.join(os.getcwd(), filename)
             png.from_array(framebuffer[::-1], 'RGB').save(filepath)
             print(f'Screenshot saved to {filepath}')
