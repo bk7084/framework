@@ -58,7 +58,7 @@ class Shader(GpuObject):
 
         with open(filepath, 'rt') as file:
             return Shader(shader_type,
-                          code=ShaderCodeParser.preprocess(file.read()),
+                          code=file.read(),
                           origin=os.path.basename(filepath),
                           is_file=False)
 
