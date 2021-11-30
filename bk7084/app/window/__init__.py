@@ -242,6 +242,9 @@ class Window(event.EventDispatcher):
         self._width, self._height = glfw.get_framebuffer_size(self._native_window)
         self._x, self._y = glfw.get_window_pos(self._native_window)
 
+        self._old_width, self._old_height, self._old_pos = self._width, self._height, glfw.get_window_pos(self._native_window)
+        self._is_fullscreen = False
+
         imgui.create_context()
         # TODO: UI rendering
         # self._gui = GlfwRenderer(self._native_window) if gl_major >= 3 else None
@@ -318,6 +321,20 @@ class Window(event.EventDispatcher):
 
     def _on_glfw_error(self, error, desc):
         print(f'GLFW Error: {desc}', file=sys.stderr)
+
+    def toggle_fullscreen(self):
+        monitor = glfw.get_primary_monitor()
+        mode = glfw.get_video_mode(monitor)
+        if not self._is_fullscreen:
+            self._old_width, self._old_height = self.width, self.height
+            self._old_pos = glfw.get_window_pos(self._native_window)
+            glfw.set_window_size(self._native_window, mode.size.width, mode.size.height)
+            glfw.set_window_pos(self._native_window, 0, 0)
+        else:
+            glfw.set_window_size(self._native_window, self._old_width, self._old_height)
+            glfw.set_window_pos(self._native_window, self._old_pos[0], self._old_pos[1])
+
+        self._is_fullscreen = not self._is_fullscreen
 
     @property
     def title(self):
@@ -483,7 +500,10 @@ class Window(event.EventDispatcher):
             filepath = os.path.join(os.getcwd(), filename)
             png.from_array(framebuffer[::-1], 'RGB').save(filepath)
             print(f'Screenshot saved to {filepath}')
-
+        elif key == KeyCode.F11:
+            self.toggle_fullscreen()
+            self.dispatch('on_resize', self.width, self.height)
+            
         return True
 
     def mouse_position(self):
