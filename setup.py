@@ -29,6 +29,7 @@ setuptools.setup(
         'pypng',
         'imgui[glfw]',
         'scipy',
-        'trimesh'
+        'trimesh',
+        'Pillow'
     ],
 )
