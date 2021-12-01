@@ -44,7 +44,7 @@ def draw(*objs: Union[Shape, Mesh], **kwargs):
 
                 vao = VertexArrayObject()
 
-                vao.bind_vertex_buffer(vbo)
+                vao.bind_vertex_buffer(vbo, [0, 1])
 
                 draw.shapes_created_gpu_objects[obj] = (vao, vbo, ibo)
 
@@ -57,10 +57,9 @@ def draw(*objs: Union[Shape, Mesh], **kwargs):
             shader = app.current_window().default_shader
 
             with shader:
-                model_loc = gl.glGetUniformLocation(shader.handle, 'model_mat')
-                do_shading_loc = gl.glGetUniformLocation(shader.handle, 'do_shading')
-                gl.glUniformMatrix4fv(model_loc, 1, gl.GL_TRUE, Mat4.identity())
-                gl.glUniform1i(do_shading_loc, 0)
+                shader.model_mat = Mat4.identity()
+                shader.do_shading = False
+                shader['mtl.enabled'] = False
                 with vao:
                     with ibo:
                         gl.glDrawElements(obj.drawing_mode.value, ibo.index_count, gl.GL_UNSIGNED_INT,

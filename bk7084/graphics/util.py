@@ -4,6 +4,7 @@ import enum
 import re
 import OpenGL.error
 
+from .variable import glsl_types
 from .. import gl
 
 
@@ -37,6 +38,10 @@ class GpuObject:
         except OpenGL.error.NullFunctionError as error:
             # do nothing; context is not existing anymore
             pass
+        except gl.GLError as error:
+            # do nothing, context doesn't exists anymore
+            if error.err != 1282:
+                raise error
 
     @abc.abstractmethod
     def _delete(self):
@@ -157,7 +162,8 @@ class ShaderCodeParser:
         attribs = []
         if code:
             cls.remove_comments(code)
-            uniforms = cls.parse_declarations(code, 'uniform')
+            structs = cls.parse_defined_struct(code)
+            uniforms = cls.parse_declarations(code, 'uniform', user_defined_types=structs)
             attribs = cls.parse_declarations(code, 'in')
         return code, uniforms, attribs
 
@@ -180,6 +186,21 @@ class ShaderCodeParser:
         )
 
     @classmethod
+    def parse_defined_struct(cls, code: str):
+        struct_regex = re.compile(r"(?s)struct\s*(?P<sname>\w+)\s*\{(?P<sdef>.*?)\};", re.MULTILINE)
+        struct_field_regex = re.compile(r"\s+(?P<type>\w+)\s+(?P<name>[\w,\[\]\n = \.$]+);")
+        structs = {}
+        for matched in re.finditer(struct_regex, code):
+            sname = matched.group('sname')
+            structs[sname] = []
+            for field in re.finditer(struct_field_regex, matched.group('sdef')):
+                var_type = field.group('type')
+                var_name = field.group('name')
+                structs[sname].append((var_type, var_name))
+
+        return structs
+
+    @classmethod
     def remove_version(cls, code: str) -> str:
         """
         Remove OpenGL version directive.
@@ -194,7 +215,7 @@ class ShaderCodeParser:
         return regex.sub('\n', code)
 
     @classmethod
-    def parse_declarations(cls, code, qualifiers=''):
+    def parse_declarations(cls, code, qualifiers='', user_defined_types={}):
         """Extract declaraions of different types (type qualifiers) inside of shader.
 
         Note:
@@ -219,8 +240,15 @@ class ShaderCodeParser:
             for matched in re.finditer(regex, code):
                 var_type = matched.group('type')
                 var_names = list(map(str.strip, matched.group('names').split(',')))
-                for var_name in var_names:
-                    variables.append((var_name, var_type))
+
+                if var_type not in glsl_types and var_type in user_defined_types:
+                    user_defined = user_defined_types[var_type]
+                    for var_name in var_names:
+                        for field_type, field_name in user_defined:
+                            variables.append((f'{var_name}.{field_name}', field_type))
+                else:
+                    for var_name in var_names:
+                        variables.append((var_name, var_type))
             return variables
         else:
             return ''

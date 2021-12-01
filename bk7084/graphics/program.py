@@ -73,8 +73,6 @@ class ShaderProgram(GpuObject, BindSemanticObject):
                 gl_set_uniform[typ](loc, 1, transpose, value)
             else:
                 gl_set_uniform[typ](loc, 1, value)
-        else:
-            raise ValueError(f"Shader program has no uniform '{name}'")
 
     def get_uniform(self, name):
         if name in self._uniforms:
@@ -83,8 +81,10 @@ class ShaderProgram(GpuObject, BindSemanticObject):
             buffer = np.zeros(type_info[0], dtype=type_info[2])
             gl_get_uniform[typ](self._id, loc, buffer.nbytes, buffer.data)
             return buffer
-        else:
-            raise ValueError(f"Shader program has no uniform '{name}'")
+
+    def active_texture_unit(self, index: int):
+        if self.is_valid():
+            gl.glActiveTexture(gl.GL_TEXTURE0 + index)
 
     @property
     def uniforms(self):

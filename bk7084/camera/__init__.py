@@ -146,4 +146,4 @@ class Camera:
 
     def on_mouse_scroll(self, x, y, x_offset, y_offset):
         if self._zoom_enabled:
-            self.update_view(self.position + Vec3.unit_z() * y_offset * 5, self.look_at, self.up)
+            self.update_view(self.position + Vec3.unit_z() * y_offset * 0.25, self.look_at, self.up)

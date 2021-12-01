@@ -11,76 +11,11 @@ import numpy as np
 
 from . import event
 from .input import KeyCode, MouseButton, KeyModifier
+from ...assets import assets_dir
 from ... import misc, gl
 from ...camera import Camera
 from ...graphics import VertexShader, PixelShader, ShaderProgram
 from ...math import Vec2
-
-_default_vertex_shader_str = '''
-#version 330
-
-layout (location = 0) in vec3 a_position;
-layout (location = 1) in vec4 a_color;
-layout (location = 2) in vec3 a_normal;
-
-out vec4 v_color;
-out vec3 v_normal;
-out vec3 light_pos;
-out vec3 frag_pos;
-out vec3 world_pos;
-
-uniform mat4 model_mat;
-uniform mat4 view_mat;
-uniform mat4 proj_mat;
-
-void main() {
-    gl_Position = proj_mat * view_mat * model_mat * vec4(a_position, 1.0);
-    v_color = a_color;
-    
-    frag_pos = vec3(view_mat * model_mat * vec4(a_position, 1.0));
-    world_pos = (model_mat * vec4(a_position, 1.0)).xyz;
-    light_pos = vec3(view_mat * vec4(800.0, 800.0, 800.0, 1.0));
-    v_normal = mat3(transpose(inverse(view_mat * model_mat))) * a_normal;
-}
-'''
-
-_default_pixel_shader_str = '''
-# version 330
-
-in vec4 v_color;
-in vec3 v_normal;
-in vec3 light_pos;
-in vec3 frag_pos;
-in vec3 world_pos;
-
-out vec4 frag_color;
-
-uniform bool do_shading;
-
-vec4 simple_shading() {
-    vec3 light_color = vec3(1.0, 1.0, 1.0);
-    
-    // face normal approximation
-    vec3 x = dFdx(world_pos);
-    vec3 y = dFdy(world_pos);
-    vec3 face_normal = cross(x, y);
-    
-    // diffuse
-    vec3 light_dir = normalize(light_pos - frag_pos);
-    float diff = max(dot(normalize(face_normal), light_dir), 0.0);
-    vec3 diffuse = 0.4 * (diff * light_color * v_color.xyz) + v_color.xyz * 0.5;
-     
-    return vec4(diffuse, 1.0); 
-}
-
-void main() {
-    if (do_shading) {
-        frag_color = simple_shading();
-    } else {
-        frag_color = v_color;
-    }
-}
-'''
 
 
 # TODO: detailed description of event listener parameters
@@ -253,8 +188,8 @@ class Window(event.EventDispatcher):
         self._default_shader = None
 
         if self.current_context_version >= (3, 3):
-            self._default_shader = ShaderProgram(VertexShader(_default_vertex_shader_str),
-                                                 PixelShader(_default_pixel_shader_str))
+            self._default_shader = ShaderProgram(VertexShader.from_file(os.path.join(assets_dir(), 'shaders/default.vert')),
+                                                 PixelShader.from_file(os.path.join(assets_dir(), 'shaders/default.frag')))
             logging.info("Default shader created.")
 
         self._start_time = time.time()

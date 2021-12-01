@@ -32,15 +32,17 @@ class VertexArrayObject(GpuObject, BindSemanticObject):
     def _delete(self):
         gl.glDeleteVertexArrays(1, (self._id,))
 
-    def bind_vertex_buffer(self, buffer: VertexBuffer, attrib_index_offset: int = 0):
+    def bind_vertex_buffer(self, buffer: VertexBuffer, attrib_locations=None):
         """
         Args:
             buffer (VertexBuffer):
                 Specifies the buffer used to define the array of vertex attribute data.
 
-            attrib_index_offset (int):
-                Specifies the index offset of the generic vertex attribute to be enabled or disabled.
+            attrib_locations (int or list[int]):
+                Specifies the location of the generic vertex attribute to be enabled or disabled.
                 This is helpful when you are using multiple buffers for different vertex attribute.
+                If passed as a list, each attribute of the vertex will be bind to the corresponding
+                location.
 
         Returns:
             None
@@ -49,9 +51,22 @@ class VertexArrayObject(GpuObject, BindSemanticObject):
 
         buffer.bind()
 
+        locations = []
+
+        if attrib_locations is None:
+            locations = list(range(0, buffer.layout.attrib_count))
+        if isinstance(attrib_locations, int):
+            locations = list(i + attrib_locations for i in range(0, buffer.layout.attrib_count))
+        elif isinstance(attrib_locations, list):
+            if len(attrib_locations) < buffer.layout.attrib_count:
+                raise ValueError('Not sufficient attribute locations.')
+            locations = attrib_locations[:buffer.layout.attrib_count]
+        else:
+            raise ValueError('Wrong attribute locations.')
+
         for i, (attrib, (fmt, dim)) in enumerate(buffer.layout.description.items()):
-            gl.glEnableVertexAttribArray(i + attrib_index_offset)
-            gl.glVertexAttribPointer(i + attrib_index_offset, dim, fmt.gl_type, gl.GL_FALSE,
+            gl.glEnableVertexAttribArray(locations[i])
+            gl.glVertexAttribPointer(locations[i], dim, fmt.gl_type, gl.GL_FALSE,
                                      buffer.layout.stride,
                                      ctypes.c_void_p(buffer.layout.offset_of(attrib)))
 

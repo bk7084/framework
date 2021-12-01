@@ -26,7 +26,6 @@ class Buffer(GpuObject, BindSemanticObject):
 
         self._target = target.value
         self._usage = usage.value
-        self._context = glfw.get_current_context()
         self._mutable = mutable
 
         # Creates a OpenGL buffer object.
