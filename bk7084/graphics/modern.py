@@ -19,6 +19,7 @@ def draw(*objs: Union[Shape, Mesh], **kwargs):
     # record shape and its associated vbo. avoid to create multiple vertex buffer object
     # for the same object each time the function is called.
     update = kwargs.get('update', False)
+    shader = kwargs.get('shader', app.current_window().default_shader)
 
     if not hasattr(draw, 'shapes_created_gpu_objects'):
         draw.shapes_created_gpu_objects = {}
@@ -54,8 +55,6 @@ def draw(*objs: Union[Shape, Mesh], **kwargs):
                 vbo.set_data(vertices_data)
                 ibo.set_data(obj.indices)
 
-            shader = app.current_window().default_shader
-
             with shader:
                 shader.model_mat = Mat4.identity()
                 shader.do_shading = False
@@ -66,7 +65,7 @@ def draw(*objs: Union[Shape, Mesh], **kwargs):
                                           ctypes.c_void_p(0))
 
         elif isinstance(obj, Mesh):
-            obj.draw_with_shader(app.current_window().default_shader)
+            obj.draw_with_shader(shader)
 
         else:
             logging.info('Nothing to draw.')
