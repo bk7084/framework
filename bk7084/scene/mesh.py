@@ -1,9 +1,7 @@
 import ctypes
 from dataclasses import dataclass
-from pprint import pprint
 
 import numpy as np
-import trimesh
 
 from .loader.obj import WavefrontReader
 from .. import gl
@@ -46,25 +44,25 @@ MtlRenderRecord = namedtuple('MtlRenderRecord', ['mtl_idx', 'vao_idx', 'vbo_idx'
 
 
 class SubMesh2:
-    name: str = ''
+    def __init__(self):
+        self.name: str = ''
+        self.drawing_mode: DrawingMode = DrawingMode.Triangles
+        self.vertex_count: int = 0
+        self.vertex_range: (int, int) = (-1, -1)
 
-    drawing_mode: DrawingMode = None
-    vertex_count: int = 0
-    vertex_range: (int, int) = (-1, -1)
+        self.index_count: int = 0
+        self.index_range: (int, int) = (-1, -1)
 
-    index_count: int = 0
-    index_range: (int, int) = (-1, -1)
+        self.normal_count: int = 0
+        self.normal_range: (int, int) = (-1, -1)
 
-    normal_count: int = 0
-    normal_range: (int, int) = (-1, -1)
+        self.texcoord_count: int = 0
+        self.texcoord_range: (int, int) = (-1, -1)
 
-    texcoord_count: int = 0
-    texcoord_range: (int, int) = (-1, -1)
+        self.material_count: int = 0
+        self.material_records: list[MtlRenderRecord] = []
 
-    material_count: int = 0
-    material_records: list[MtlRenderRecord] = []
-
-    vertex_layout: VertexLayout = None
+        self.vertex_layout: VertexLayout = None
 
 
 class Mesh:
@@ -99,11 +97,12 @@ class Mesh:
         # self._bounding_box = None
         # self._bounding_sphere = None
         self._vertex_layout = VertexLayout.default()
+        self._name = filepath
 
+        self._color = kwargs.get('color', None)
         self._positions = np.array([], dtype=np.float32)
         self._indices = np.array([], dtype=np.uint32)  # indices for draw whole mesh without apply materials
-        self._materials = []
-        self._colors = np.array([], dtype=np.float32)  # todo: replace by material
+        self._materials = [Material.default()]
         self._normals = np.array([], dtype=np.float32)
         self._texcoords = np.array([], dtype=np.float32)
         self._faces = []
@@ -136,7 +135,7 @@ class Mesh:
                 self.from_geometry(*shapes)
                 self._contain_geometries = True
 
-    def read_from_file(self, filepath):
+    def read_from_file(self, filepath, color=None):
         reader = WavefrontReader(filepath)
         mesh_data = reader.read()
 
@@ -148,15 +147,13 @@ class Mesh:
         self._index_count = len(self._indices)
         self._texcoords = np.asarray(mesh_data['texcoords'], dtype=np.float32).reshape((-1, 2))
 
-        if mesh_data['load_default_material']:
-            self._materials.append(Material.default())
-
         for name, mat in mesh_data['materials'].items():
             self._materials.append(
                 Material(
-                    name, mat.get('map_Kd', None),
+                    name,
+                    mat.get('map_Kd', None),
                     mat.get('Ka', [1.0, 1.0, 1.0]),
-                    mat.get('Kd', [1.0, 1.0, 1.0]),
+                    mat.get('Kd', [1.0, 1.0, 1.0]) if color is None else color.rgb(),
                     mat.get('Ks', [1.0, 1.0, 1.0]),
                     mat.get('Ns', 0),
                     mat.get('Ni', 1.0),
@@ -165,9 +162,9 @@ class Mesh:
                 )
             )
 
-        for name, sub_obj in mesh_data['objects'].items():
+        for sub_obj in mesh_data['objects']:
             sub_mesh = SubMesh2()
-            sub_mesh.name = name
+            sub_mesh.name = sub_obj['name']
             sub_mesh.drawing_mode = DrawingMode.Triangles
             sub_mesh.vertex_range = sub_obj['vertex_range']
             sub_mesh.vertex_count = sub_mesh.vertex_range[1] - sub_mesh.vertex_range[0]
@@ -180,16 +177,15 @@ class Mesh:
             sub_mesh.material_count = len(sub_obj['materials'])
 
             sub_obj_materials = []
-            for mat_name, (f_start, f_end) in sub_obj['materials'].items():
-                mat_idx = -1
-                for i, mat in enumerate(self._materials):
-                    if mat.name == mat_name:
-                        mat_idx = i
-                if mat_idx != -1:
-                    sub_obj_materials.append((mat_idx, f_start, f_end))
+            for mtl in sub_obj['materials']:
+                mtl_name = mtl['name']
+                f_start, f_end = tuple(mtl['f_range'])
+                mtl_idx = self._materials.index([x for x in self._materials if x.name == mtl_name][0])
+                if mtl_idx != -1 and mtl_idx < len(self._materials):
+                    sub_obj_materials.append((mtl_idx, f_start, f_end))
 
             vertex_attribs = []
-            for attrib in sub_obj['vertex_layout']:
+            for attrib in sub_obj['vertex_format']:
                 if attrib == 'V':
                     vertex_attribs.append(VertexAttribDescriptor(VertexAttrib.Position, VertexAttribFormat.Float32, 3))
                 if attrib == 'T':
@@ -200,7 +196,8 @@ class Mesh:
             sub_mesh.vertex_layout = VertexLayout(*vertex_attribs)
 
             # pack the data together for rendering
-            for mat_idx, f_start, f_end in sub_obj_materials:
+            for mtl in sub_obj_materials:
+                mtl_idx, f_start, f_end = mtl
                 v_positions = []
                 v_normals = []
                 v_texcoords = []
@@ -233,7 +230,8 @@ class Mesh:
                 self._vertex_array_objects.append(vao)
 
                 vao.bind_vertex_buffer(vbo, attrib_locations=[0, 2, 3])
-                record = MtlRenderRecord(mat_idx, vao_idx, vbo_idx, vertex_count)
+
+                record = MtlRenderRecord(mtl_idx, vao_idx, vbo_idx, vertex_count)
                 sub_mesh.material_records.append(record)
 
             self._sub_meshes.append(sub_mesh)
@@ -491,7 +489,7 @@ class Mesh:
     #     raise NotImplementedError
     #
 
-    def draw_with_shader(self, shader, new=False):
+    def draw_with_shader(self, shader):
         if len(self._sub_meshes) > 0:
             with shader:
                 mat = self._transformation * self._initial_transformation
@@ -501,23 +499,22 @@ class Mesh:
                     for record in sub_mesh.material_records:
                         mtl = self._materials[record.mtl_idx]
                         vao = self._vertex_array_objects[record.vao_idx]
-                        shader['mtl.diffuse'] = np.array([1.0, 0.0, 0.0], dtype=np.float32)
+                        shader['mtl.diffuse'] = mtl.diffuse
+                        shader['mtl.ambient'] = mtl.ambient
+                        shader['mtl.specular'] = mtl.specular
+                        shader['mtl.shininess'] = mtl.glossiness
                         shader['mtl.enabled'] = True
-                        shader['mtl.use_diffuse_map'] = True
+                        if self._color is None:
+                            shader['mtl.use_diffuse_map'] = True
+                        else:
+                            if not mtl.is_default:
+                                shader['mtl.use_diffuse_map'] = True
+                            else:
+                                shader['mtl.use_diffuse_map'] = False
+
+                        shader['shading_enabled'] = True
+                        shader['toon_enabled'] = False
                         shader.active_texture_unit(0)
-                        mtl.texture.bind()
+                        mtl.texture_diffuse.bind()
                         with vao:
                             gl.glDrawArrays(sub_mesh.drawing_mode.value, 0, record.vertex_count)
-
-            # with shader:
-            #     mat = self._transformation * self._initial_transformation
-            #     shader.model_mat = mat
-            #     shader.do_shading = int(self._do_shading)
-            #     for sub_mesh in self._sub_meshes:
-            #         with self._vertex_array_objects[sub_mesh.vao_idx]:
-            #             with self._index_buffer:
-            #                 # todo: deal with different index data type
-            #                 count = sub_mesh.indices_range[1] - sub_mesh.indices_range[0]
-            #                 offset_in_bytes = sub_mesh.indices_range[0] * np.dtype(np.uint32).itemsize
-            #                 gl.glDrawElements(sub_mesh.drawing_mode.value, count,
-            #                                   gl.GL_UNSIGNED_INT, ctypes.c_void_p(offset_in_bytes))

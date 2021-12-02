@@ -34,7 +34,7 @@ class WavefrontReader:
         """
         Load a Wavefront OBJ file (only contain triangles).
 
-        Only accepts objects with V/VT/VN.
+        Only accepts objects with V/VT/VN
 
         Args:
             file (file like object):
@@ -56,12 +56,10 @@ class WavefrontReader:
             dict with following format:
             {
                 # data are stored following the order of objects.
-                'load_default_material': False
                 'vertices': [],
                 'texcoords': [],
                 'normals': [],
                 'indices': [],  # vertex index to draw the object as whole
-                'face_normals': [],
                 'faces': [
                     [
                         (0, 1, 2),  # vertex index
@@ -71,24 +69,25 @@ class WavefrontReader:
                     ...
                 ],
                 'materials': [],
-                'objects': {
-                    'object_000': {
+                'objects': [
+                    {
+                        'name: 'object_000'
                         'vertex_range': (start, end),
                         'index_range': (start, end),
                         'texcoord_range': (start, end),
                         'normal_range': (start, end),
-                        'fnormal_range': (start, end),
                         'face_range': (start, end)
-                        'materials': {
-                            'material_name_000': (face_idx_start, face_idx_end)
-                            'material_name_001': (face_idx_start, face_idx_end)
-                        },
+                        'materials': [
+                            { 'name': 'material_name_000', f_range=[face_idx_start, face_idx_end] },
+                            { 'name': 'material_name_001', f_range=[face_idx_start, face_idx_end] }
+                        ],
                         'vertex_format': 'V', 'V_T', 'V_N', 'V_T_N'
                     },
-                    'object_001': {
+                    {
+                        'name': 'object_001'
                         ...
                     },
-                }
+                ]
             }
         """
         positions = []
@@ -96,7 +95,7 @@ class WavefrontReader:
         indices = []
         normals = []
         faces = []
-        objects = {}
+        objects = []
 
         content = re.sub('#.*', '', file.read()).strip()  # remove the comments
 
@@ -113,120 +112,130 @@ class WavefrontReader:
             else:
                 print(f'Material file {mtl_path} not exists.')
 
-        def fill_vertex_related(start, end, prop, objs, obj_name):
-            # [start, end)
-            objs[obj_name][prop] = (start, end)
+        default_object = 'default_object_{}'
 
-        # parse vertices and form object
-        last_obj_name, curr_obj_name, curr_mtl_name, curr_vtx_layout = 'default_object_000', 'default_object_000', 'default_material', ''
-        v_start, vt_start, vn_start, f_start = 0, 0, 0, 0
-        vertex_format = [False, False, False]
+        c_obj_idx = -1
+        c_mtl_idx = -1
 
         for line in content.splitlines():
-            components = line.split()
+            # split by whitespace
+            line = line.split()
 
-            if len(components) == 0:
+            # skip blank line
+            if len(line) == 0:
                 continue
 
-            key = components[0]
-            if key == 'v':
-                positions.append([float(x) for x in components[1:]])
-                if vertex_format[0] is not True:
-                    vertex_format[0] = True
+            key, values_str = line[0], line[1:]
+
+            diff = lambda arr: arr[1] - arr[0]
+
+            if key in ('o', 'g'):
+                c_obj_idx += 1
+                # parse object name.
+                obj_name = '_'.join(values_str)
+                # in case of an empty name get from the default object name
+                obj_name = obj_name if len(obj_name) > 0 else default_object.format(c_obj_idx)
+                # initialise a new object
+                objects.append({
+                    'name': obj_name,
+                    'vertex_range': [len(positions), -1],
+                    'index_range': [len(indices) * 3, -1],
+                    'texcoord_range': [len(texcoords), -1],
+                    'normal_range': [len(normals), -1],
+                    'face_range': [len(faces), -1],
+                    'materials': [],
+                    'vertex_format': ''
+                })
+
+                # save information for last parsed object before start reading next one
+                if c_obj_idx >= 1:
+                    objects[c_obj_idx - 1]['vertex_range'][1] = len(positions)
+                    objects[c_obj_idx - 1]['index_range'][1] = len(indices) * 3
+                    objects[c_obj_idx - 1]['texcoord_range'][1] = len(texcoords)
+                    objects[c_obj_idx - 1]['normal_range'][1] = len(normals)
+                    objects[c_obj_idx - 1]['face_range'][1] = len(faces)
+
+                    # if the current object doesn't have a material
+                    if len(objects[c_obj_idx - 1]['materials']) == 0:
+                        objects[c_obj_idx - 1]['materials'].append({
+                            'name': 'default_material',
+                            'f_range': objects[c_obj_idx - 1]['face_range']
+                        })
+
+                    objects[c_obj_idx - 1]['materials'][c_mtl_idx]['f_range'][1] = len(faces)
+
+                    vertex_format = 'V'
+
+                    if diff(objects[c_obj_idx - 1]['texcoord_range']) > 0:
+                        vertex_format += '_T'
+
+                    if diff(objects[c_obj_idx - 1]['normal_range']) > 0:
+                        vertex_format += '_N'
+
+                    objects[c_obj_idx - 1]['vertex_format'] = vertex_format
+
+                # reset material index
+                c_mtl_idx = -1
+
+            elif key == 'v':
+                positions.append([float(x) for x in values_str])
+
             elif key == 'vt':
-                texcoords.append([float(x) for x in components[1:]])
-                if vertex_format[1] is not True:
-                    vertex_format[1] = True
+                texcoords.append([float(x) for x in values_str])
+
             elif key == 'vn':
-                normals.append([float(x) for x in components[1:]])
-                if vertex_format[2] is not True:
-                    vertex_format[2] = True
-            elif key == 'o' or key == 'g':
-                if curr_obj_name != 'default_object_000':
-                    fill_vertex_related(v_start, len(positions), 'vertex_range', objects, curr_obj_name)
-                    fill_vertex_related(vt_start, len(texcoords), 'texcoord_range', objects, curr_obj_name)
-                    fill_vertex_related(vn_start, len(normals), 'normal_range', objects, curr_obj_name)
-                    if len(positions) > v_start:
-                        curr_vtx_layout += 'V'
-                    if len(texcoords) > vt_start:
-                        curr_vtx_layout += 'T'
-                    if len(texcoords) > vn_start:
-                        curr_vtx_layout += 'N'
-
-                    objects[curr_obj_name]['vertex_layout'] = curr_vtx_layout
-
-                    v_start = len(positions)
-                    vt_start = len(texcoords)
-                    vn_start = len(normals)
-
-                last_obj_name = curr_obj_name
-                curr_obj_name = '_'.join(components[1:])
-                objects[curr_obj_name] = {}
-                curr_vtx_layout = ''
-                vertex_format = [False, False, False]
-
-            elif key == 'usemtl':
-                mtl_name = '_'.join(components[1:])
-
-                if 'materials' not in objects[curr_obj_name]:
-                    objects[curr_obj_name]['materials'] = {}
-
-                # save material information for last read object.
-                if mtl_name != curr_mtl_name and curr_mtl_name != 'default_material':
-                    objects[last_obj_name]['materials'][curr_mtl_name] = (f_start, len(faces))
-                    objects[last_obj_name]['index_range'] = (f_start * 3, len(faces) * 3)
-                    f_start = len(faces)
-
-                curr_mtl_name = mtl_name
+                normals.append([float(x) for x in values_str])
 
             elif key == 'f':
-                # TODO: triangulate
-                # [(v0, t0, n0), (v1, t1, n1), (v2, t2, n2)]
-                parsed = [tuple(int(e) - 1 for e in filter(lambda x: x != '', c.split('/'))) for c in components[1:]]
-                n = vertex_format.count(True)
-                if len(parsed) == 3:
-                    # [(v0, v1, v2), (t0, t1, t2), (n0, n1, n2)]
-                    face = [tuple(p[i] for p in parsed[:3]) for i in range(0, n)]
-                    faces.append(face)
-                    indices.append(face[0])
-                elif len(parsed) == 4:
-                    # [(v0, v1, v2), (t0, t1, t2), (n0, n1, n2)]
-                    face0 = [tuple(p[i] for p in parsed[:3]) for i in range(0, n)]
-                    face1 = [tuple(p[i] for p in [*parsed[2:], parsed[0]]) for i in range(0, n)]
-                    faces.append(face0)
-                    faces.append(face1)
-                    indices.append(face0[0])
-                    indices.append(face1[0])
+                # parse line into a list
+                parsed = [tuple(int(e) - 1 for e in filter(lambda x: x != '', c.split('/'))) for c in values_str]
+                vertex_count = len(parsed)
+                if vertex_count < 3:
+                    # skip the face with less 3 vertices
+                    continue
                 else:
-                    raise ValueError(f'Cannot import face with {len(parsed)} points.')
+                    # in case of a face with more than 3 points, apply the simplest triangulation
+                    for i in range(0, len(parsed) - 2):
+                        faces.append(list(zip(*[parsed[0], *parsed[i + 1: i + 3]])))
 
-        # register material for last read object
-        if curr_obj_name not in objects:
-            objects[curr_obj_name] = {}
-            objects[curr_obj_name]['materials'] = {}
+            elif key == 'usemtl':
+                c_mtl_idx += 1
+                mtl_name = '_'.join(values_str)
+                mtl_name = mtl_name if len(mtl_name) > 0 else default_object.format(c_obj_idx)
+                objects[c_obj_idx]['materials'].append({
+                    'name': mtl_name,
+                    'f_range': [len(faces), -1]
+                })
 
-        objects[curr_obj_name]['materials'][curr_mtl_name] = (f_start, len(faces))
-        objects[curr_obj_name]['index_range'] = (f_start * 3, len(faces) * 3)
+                # save information for last mtl before start reading next one
+                if c_mtl_idx >= 1:
+                    objects[c_obj_idx]['materials'][c_mtl_idx - 1]['f_range'][1] = len(faces)
 
-        fill_vertex_related(v_start, len(positions), 'vertex_range', objects, curr_obj_name)
-        fill_vertex_related(vt_start, len(texcoords), 'texcoord_range', objects, curr_obj_name)
-        fill_vertex_related(vn_start, len(normals), 'normal_range', objects, curr_obj_name)
+            else:
+                # ignoring s
+                pass
 
-        if len(positions) > v_start:
-            curr_vtx_layout += 'V'
-        if len(texcoords) > vt_start:
-            curr_vtx_layout += 'T'
-        if len(normals) > vn_start:
-            curr_vtx_layout += 'N'
+        objects[c_obj_idx]['vertex_range'][1] = len(positions)
+        objects[c_obj_idx]['index_range'][1] = len(indices)
+        objects[c_obj_idx]['texcoord_range'][1] = len(texcoords)
+        objects[c_obj_idx]['normal_range'][1] = len(normals)
+        objects[c_obj_idx]['face_range'][1] = len(faces)
+        objects[c_obj_idx]['materials'][c_mtl_idx]['f_range'][1] = len(faces)
 
-        objects[curr_obj_name]['vertex_layout'] = curr_vtx_layout
+        vertex_format = 'V'
+
+        if diff(objects[c_obj_idx - 1]['texcoord_range']) > 0:
+            vertex_format += '_T'
+
+        if diff(objects[c_obj_idx - 1]['normal_range']) > 0:
+            vertex_format += '_N'
+
+        objects[c_obj_idx]['vertex_format'] = vertex_format
 
         return {
-            'load_default_material': True if len(materials) == 0 else False,
             'vertices': positions,
             'texcoords': texcoords,
             'normals': normals,
-            'face_normals': [],
             'indices': indices,
             'faces': faces,
             'materials': materials,
@@ -258,7 +267,7 @@ class WavefrontReader:
         mtl_props = ['Kd', 'Ka', 'Ks', 'Ns', 'Ni', 'Illum', 'd', ]
 
         materials = {}
-
+        
         with open(filepath) as file:
             lines = remove_comments('#', file.read()).strip().splitlines()
 

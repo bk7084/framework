@@ -55,7 +55,7 @@ class VertexArrayObject(GpuObject, BindSemanticObject):
 
         if attrib_locations is None:
             locations = list(range(0, buffer.layout.attrib_count))
-        if isinstance(attrib_locations, int):
+        elif isinstance(attrib_locations, int):
             locations = list(i + attrib_locations for i in range(0, buffer.layout.attrib_count))
         elif isinstance(attrib_locations, list):
             if len(attrib_locations) < buffer.layout.attrib_count:

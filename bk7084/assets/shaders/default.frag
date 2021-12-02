@@ -10,52 +10,53 @@ struct Material {
     bool use_diffuse_map;
 };
 
+
 in vec4 v_color;
 in vec3 v_normal;
-in vec3 light_pos;
+in vec2 v_texcoord;
 in vec3 frag_pos;
 in vec3 world_pos;
-in vec2 v_texcoord;
+in vec3 light_pos;
 
 out vec4 frag_color;
 
-uniform bool do_shading;
+uniform bool shading_enabled;
 uniform Material mtl;
+uniform bool toon_enabled;
 
-vec4 shading(vec3 diffuse_color) {
-    vec3 light_color = vec3(1.0, 1.0, 1.0);
 
-    // face normal approximation
-    vec3 x = dFdx(world_pos);
-    vec3 y = dFdy(world_pos);
-    vec3 face_normal = cross(x, y);
+// Blinn Phong BRDF in Camera Space
+vec3 blinnPhongBRDF(vec3 light_dir, vec3 view_dir, vec3 normal, vec3 diffuse_color, vec3 specular_color, float shininess) {
+    vec3 color = diffuse_color;
+    vec3 half_dir = normalize(view_dir + light_dir);
+    float spec_dot = max(dot(half_dir, normal), 0.0);
+    color += pow(spec_dot, shininess) * specular_color;
+    return color;
+}
 
-    // diffuse
-    vec3 light_dir = normalize(light_pos - frag_pos);
-    float diff = max(dot(normalize(face_normal), light_dir), 0.0);
+vec4 shading(vec3 ambient_color, vec3 light_dir, vec3 view_dir, vec3 light_color, vec3 n, vec3 diffuse_color, vec3 specular_color, float shininess) {
+    vec3 luminance = ambient_color.rgb * 0.1 + diffuse_color * 0.3;
 
-    vec3 mtl_diffuse;
+    float illuminance = dot(light_dir, n);
+    if (illuminance > 0.0) {
+        vec3 brdf = blinnPhongBRDF(light_dir, view_dir, n, diffuse_color.rgb, specular_color.rgb, shininess);
 
-    if (mtl.use_diffuse_map) {
-        mtl_diffuse = texture(mtl.diffuse_map, v_texcoord).xyz;
-    } else {
-        mtl_diffuse = mtl.diffuse.xyz;
+        luminance += brdf * illuminance * light_color.rgb * 0.6;
     }
 
-    vec3 diffuse;
-
-    if (!mtl.enabled) {
-        diffuse = 0.4 * (diff * light_color * v_color.xyz) + v_color.xyz * 0.5;
-    } else {
-        diffuse = 0.4 * (diff * light_color * mtl_diffuse) + mtl.ambient.xyz * 0.5;
-    }
-
-    //return vec4(diffuse, 1.0);
-    return vec4(mtl_diffuse, 1.0);
+    return vec4(luminance, 1.0);
 }
 
 void main() {
+    vec3 light_dir = normalize(light_pos - frag_pos);
+    vec3 view_dir = normalize(-frag_pos);
+    vec3 n = normalize(v_normal);
+
     vec4 diffuse_color;
+    vec4 specular_color;
+    float shininess;
+    vec4 ambient_color;
+    vec4 light_color = vec4(0.8, 0.8, 0.8, 1.0);
 
     if (mtl.enabled) {
          if (mtl.use_diffuse_map) {
@@ -63,13 +64,40 @@ void main() {
          } else {
              diffuse_color = vec4(mtl.diffuse, 1.0);
          }
+
+         specular_color = vec4(mtl.specular, 1.0);
+         shininess = mtl.shininess;
+         ambient_color = vec4(mtl.ambient, 1.0);
     } else{
         diffuse_color = v_color;
+        specular_color = vec4(1.0, 1.0, 1.0, 1.0);
+        shininess = 0;
+        ambient_color = vec4(0.5, 0.5, 0.5, 1.0);
     }
 
-    if (do_shading) {
-        frag_color = shading(diffuse_color.xyz);
+    if (toon_enabled) {
+
+        float intensity;
+        vec4 color;
+        intensity = dot(light_dir, n);
+
+        if (intensity > 0.95)
+            color = vec4(1.0,0.5,0.5,1.0);
+        else if (intensity > 0.5)
+            color = vec4(0.6,0.3,0.3,1.0);
+        else if (intensity > 0.25)
+            color = vec4(0.4,0.2,0.2,1.0);
+        else
+            color = vec4(0.2,0.1,0.1,1.0);
+
+        frag_color = color;
+
     } else {
-        frag_color = diffuse_color;
+
+        if (shading_enabled) {
+            frag_color = shading(ambient_color.xyz, light_dir.xyz, view_dir.xyz, light_color.xyz, n, diffuse_color.xyz, specular_color.xyz, shininess);
+        } else {
+            frag_color = diffuse_color;
+        }
     }
 }
