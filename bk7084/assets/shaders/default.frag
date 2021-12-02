@@ -60,7 +60,7 @@ void main() {
 
     if (mtl.enabled) {
          if (mtl.use_diffuse_map) {
-             diffuse_color = texture2D(mtl.diffuse_map, v_texcoord);
+             diffuse_color = texture(mtl.diffuse_map, v_texcoord);
          } else {
              diffuse_color = vec4(mtl.diffuse, 1.0);
          }
