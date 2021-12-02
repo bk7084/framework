@@ -21,6 +21,9 @@ setuptools.setup(
         "Operating System :: OS Independent",
     ],
     packages=setuptools.find_packages(where=".", include=["bk7084", "bk7084.*"]),
+    package_data={
+        'bk7084': ['assets/models/*', 'assets/shaders/*', 'assets/textures/*']
+        },
     python_requires='>=3.9',
     install_requires=[
         'numpy',
