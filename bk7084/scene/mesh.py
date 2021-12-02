@@ -17,6 +17,7 @@ from ..math import Mat4
 
 # if num_vertices == num_tex_coords then use glDrawElements
 # if num_vertices == num_tex_coords then pack all the data inside of a buffer and use glDrawArrays
+from ..misc import PaletteDefault
 
 
 class MeshTopology:
@@ -100,6 +101,7 @@ class Mesh:
         self._name = filepath
 
         self._color = kwargs.get('color', None)
+        self._has_color = 'color' in kwargs
         self._positions = np.array([], dtype=np.float32)
         self._indices = np.array([], dtype=np.uint32)  # indices for draw whole mesh without apply materials
         self._materials = [Material.default()]
@@ -126,8 +128,7 @@ class Mesh:
         self._contain_geometries = False
 
         if filepath is not None:
-            self.read_from_file(filepath)
-            # self.read_from_file(filepath, kwargs.get('color', PaletteDefault.BrownB.as_color()))
+            self.read_from_file(filepath, self._color)
             self._contain_geometries = False
         else:
             shapes = kwargs.get('shapes', None)
@@ -153,7 +154,7 @@ class Mesh:
                     name,
                     mat.get('map_Kd', None),
                     mat.get('Ka', [1.0, 1.0, 1.0]),
-                    mat.get('Kd', [1.0, 1.0, 1.0]) if color is None else color.rgb(),
+                    mat.get('Kd', [1.0, 1.0, 1.0]) if color is None else color.rgb,
                     mat.get('Ks', [1.0, 1.0, 1.0]),
                     mat.get('Ns', 0),
                     mat.get('Ni', 1.0),
@@ -184,10 +185,12 @@ class Mesh:
                 if mtl_idx != -1 and mtl_idx < len(self._materials):
                     sub_obj_materials.append((mtl_idx, f_start, f_end))
 
-            vertex_attribs = []
+            # will populate a default color
+            color = color if color is not None else PaletteDefault.WhiteB.as_color()
+            vertex_attribs = [VertexAttribDescriptor(VertexAttrib.Position, VertexAttribFormat.Float32, 3),
+                              VertexAttribDescriptor(VertexAttrib.Color0, VertexAttribFormat.Float32, 4)]
+
             for attrib in sub_obj['vertex_format']:
-                if attrib == 'V':
-                    vertex_attribs.append(VertexAttribDescriptor(VertexAttrib.Position, VertexAttribFormat.Float32, 3))
                 if attrib == 'T':
                     vertex_attribs.append(VertexAttribDescriptor(VertexAttrib.TexCoord0, VertexAttribFormat.Float32, 2))
                 if attrib == 'N':
@@ -216,8 +219,20 @@ class Mesh:
 
                 # create one interleaved buffer
                 vertex_count = len(v_positions)
-                vertices = np.array([z for x in zip(v_positions, v_texcoords, v_normals) for y in x for z in y],
-                                    dtype=np.float32).ravel()
+                v_colors = [color.rgba] * vertex_count
+
+                if sub_mesh.vertex_layout.has(VertexAttrib.TexCoord0) and sub_mesh.vertex_layout.has(VertexAttrib.Normal):
+                    vertices = np.array([z for x in zip(v_positions, v_colors, v_texcoords, v_normals) for y in x for z in y],
+                                        dtype=np.float32).ravel()
+                elif sub_mesh.vertex_layout.has(VertexAttrib.TexCoord0) and not sub_mesh.vertex_layout.has(VertexAttrib.Normal):
+                    vertices = np.array([z for x in zip(v_positions, v_colors, v_texcoords) for y in x for z in y],
+                                        dtype=np.float32).ravel()
+                elif not sub_mesh.vertex_layout.has(VertexAttrib.TexCoord0) and sub_mesh.vertex_layout.has(VertexAttrib.Normal):
+                    vertices = np.array([z for x in zip(v_positions, v_colors, v_normals) for y in x for z in y],
+                                        dtype=np.float32).ravel()
+                else:
+                    vertices = np.array([z for x in zip(v_positions, v_colors) for y in x for z in y],
+                                        dtype=np.float32).ravel()
 
                 # bind vertex buffers
                 vao = VertexArrayObject()
@@ -229,7 +244,10 @@ class Mesh:
                 vao_idx = len(self._vertex_array_objects)
                 self._vertex_array_objects.append(vao)
 
-                vao.bind_vertex_buffer(vbo, attrib_locations=[0, 2, 3])
+                if not sub_mesh.vertex_layout.has(VertexAttrib.TexCoord0):
+                    vao.bind_vertex_buffer(vbo, [0, 1, 3])
+                else:
+                    vao.bind_vertex_buffer(vbo, [0, 1, 2, 3])
 
                 record = MtlRenderRecord(mtl_idx, vao_idx, vbo_idx, vertex_count)
                 sub_mesh.material_records.append(record)
@@ -237,69 +255,6 @@ class Mesh:
             self._sub_meshes.append(sub_mesh)
 
         self._do_shading = True
-
-    # def read_from_file(self, filepath, color):
-    #     trimesh.util.attach_to_log()
-    #     mesh = trimesh.load(filepath, force='mesh', skip_texture=False)
-    #
-    #     # texture = mesh.visual.to_texture()
-    #
-    #     # resolver = trimesh.visual.resolvers.FilePathResolver(filepath)
-    #     # with open(filepath, 'r') as f:
-    #     #     content = trimesh.exchange.obj.load_obj(f, resolver=resolver)
-    #     #
-    #     # for k, v in content['geometry'].items():
-    #     #     print(k)
-    #
-    #     self._vertex_count = len(mesh.vertices)
-    #     self._positions = mesh.vertices.ravel()
-    #     self._normals = mesh.vertex_normals.ravel()
-    #
-    #     self._vertex_array_objects.append(VertexArrayObject())
-    #     self._indices = np.asarray(mesh.faces, dtype=np.uint32).ravel()
-    #     self._index_count = len(self._indices)
-    #     self._colors = np.tile(color.rgba, self._vertex_count).ravel()
-    #
-    #     # todo: deal with texture, normal ...
-    #     self._sub_meshes.append(SubMesh(vertices_range=(0, len(self._positions)),
-    #                                     indices_range=(0, len(self._indices)),
-    #                                     vao_idx=0,
-    #                                     colors_range=(0, len(self._colors)),
-    #                                     drawing_mode=DrawingMode.Triangles,
-    #                                     vertex_count=self._vertex_count,
-    #                                     index_count=self._index_count,
-    #                                     normals_range=(0, len(self._normals))))
-    #
-    #     self._index_buffer = IndexBuffer(self._index_count)
-    #     self._index_buffer.set_data(self._indices)
-    #
-    #     # todo: generate layout from object file vertex format
-    #     self._vertex_layout = VertexLayout(
-    #         VertexAttribDescriptor(VertexAttrib.Position, VertexAttribFormat.Float32, 3),
-    #         VertexAttribDescriptor(VertexAttrib.Color0, VertexAttribFormat.Float32, 4),
-    #         VertexAttribDescriptor(VertexAttrib.Normal, VertexAttribFormat.Float32, 3)
-    #     )
-    #
-    #     vertices = np.zeros(10 * self._sub_meshes[0].vertex_count, dtype=np.float32)
-    #     # iterate over each vertex
-    #     for i in range(0, self._sub_meshes[0].vertex_count):
-    #         index = i * 10
-    #         vertices.put(list(range(index, index + 3)),
-    #                      self._positions[i * 3: i * 3 + 3])
-    #         vertices.put(list(range(index + 3, index + 7)),
-    #                      self._colors[i * 4: i * 4 + 4])
-    #         vertices.put(list(range(index + 7, index + 10)),
-    #                      self._normals[i * 3: i * 3 + 3])
-    #
-    #     vbo = VertexBuffer(self._sub_meshes[0].vertex_count, self._vertex_layout)
-    #     self._vertex_buffers.append(vbo)
-    #     vbo.set_data(vertices)
-    #     self._sub_meshes[0].vbo_idx = len(self._vertex_buffers) - 1
-    #
-    #     vao = self._vertex_array_objects[self._sub_meshes[0].vao_idx]
-    #     vao.bind_vertex_buffer(vbo)
-    #
-    #     self._do_shading = True
 
     def from_geometry(self, *shapes):
         """Construct a mesh from a collection of geometry objects."""
@@ -504,13 +459,13 @@ class Mesh:
                         shader['mtl.specular'] = mtl.specular
                         shader['mtl.shininess'] = mtl.glossiness
                         shader['mtl.enabled'] = True
-                        if self._color is None:
-                            shader['mtl.use_diffuse_map'] = True
+                        if self._has_color:
+                            shader['mtl.use_diffuse_map'] = False
                         else:
-                            if not mtl.is_default:
-                                shader['mtl.use_diffuse_map'] = True
-                            else:
+                            if mtl.is_default:
                                 shader['mtl.use_diffuse_map'] = False
+                            else:
+                                shader['mtl.use_diffuse_map'] = True
 
                         shader['shading_enabled'] = True
                         shader['toon_enabled'] = False

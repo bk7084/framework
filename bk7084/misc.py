@@ -54,6 +54,10 @@ class Color:
     def rgba(self):
         return self._rgba
 
+    @property
+    def rgb(self):
+        return self._rgba[:3]
+
     def __getitem__(self, index):
         if index > 4 or index < 0:
             raise IndexError("Color has only 4 elements.")

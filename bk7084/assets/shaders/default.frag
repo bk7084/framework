@@ -60,7 +60,7 @@ void main() {
 
     if (mtl.enabled) {
          if (mtl.use_diffuse_map) {
-             diffuse_color = texture(mtl.diffuse_map, v_texcoord);
+             diffuse_color = texture2D(mtl.diffuse_map, v_texcoord);
          } else {
              diffuse_color = vec4(mtl.diffuse, 1.0);
          }
@@ -68,7 +68,7 @@ void main() {
          specular_color = vec4(mtl.specular, 1.0);
          shininess = mtl.shininess;
          ambient_color = vec4(mtl.ambient, 1.0);
-    } else{
+    } else {
         diffuse_color = v_color;
         specular_color = vec4(1.0, 1.0, 1.0, 1.0);
         shininess = 0;
