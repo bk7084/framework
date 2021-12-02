@@ -6,6 +6,7 @@ import numpy as np
 from .loader.obj import WavefrontReader
 from .. import gl
 from collections import namedtuple
+
 from ..geometry.shape import Shape
 from ..graphics.array import VertexArrayObject
 from ..graphics.buffer import VertexBuffer, IndexBuffer
@@ -124,8 +125,9 @@ class Mesh:
 
         self._initial_transformation: Mat4 = Mat4.identity()
         self._transformation: Mat4 = Mat4.identity()
-        self._do_shading = False
+        self._shading_enabled = True
         self._contain_geometries = False
+        self._use_texture = None
 
         if filepath is not None:
             self.read_from_file(filepath, self._color)
@@ -135,6 +137,22 @@ class Mesh:
             if shapes is not None:
                 self.from_geometry(*shapes)
                 self._contain_geometries = True
+
+    @property
+    def shading_enabled(self):
+        return self._shading_enabled
+
+    @shading_enabled.setter
+    def shading_enabled(self, value):
+        self._shading_enabled = value
+
+    @property
+    def use_texture(self):
+        return self._use_texture
+
+    @use_texture.setter
+    def use_texture(self, value):
+        self._use_texture = value
 
     def read_from_file(self, filepath, color=None):
         reader = WavefrontReader(filepath)
@@ -254,8 +272,6 @@ class Mesh:
 
             self._sub_meshes.append(sub_mesh)
 
-        self._do_shading = True
-
     def from_geometry(self, *shapes):
         """Construct a mesh from a collection of geometry objects."""
         # todo: improve performance by merge buffers of objects with same draw type or of the same type
@@ -316,8 +332,6 @@ class Mesh:
 
             vao = self._vertex_array_objects[sub_mesh.vao_idx]
             vao.bind_vertex_buffer(vbo)
-
-        self._do_shading = False
 
     @property
     def vertex_layout(self) -> VertexLayout:
@@ -449,16 +463,23 @@ class Mesh:
             with shader:
                 mat = self._transformation * self._initial_transformation
                 shader.model_mat = mat
-                shader.do_shading = int(self._do_shading)
+                shader['shading_enabled'] = self._shading_enabled
                 for sub_mesh in self._sub_meshes:
                     for record in sub_mesh.material_records:
                         mtl = self._materials[record.mtl_idx]
                         vao = self._vertex_array_objects[record.vao_idx]
+
                         shader['mtl.diffuse'] = mtl.diffuse
                         shader['mtl.ambient'] = mtl.ambient
                         shader['mtl.specular'] = mtl.specular
                         shader['mtl.shininess'] = mtl.glossiness
                         shader['mtl.enabled'] = True
+                        from bk7084.app import current_window
+                        shader['time'] = current_window().elapsed_time
+
+                        shader.active_texture_unit(0)
+                        mtl.texture_diffuse.bind()
+
                         if self._has_color:
                             shader['mtl.use_diffuse_map'] = False
                         else:
@@ -467,9 +488,8 @@ class Mesh:
                             else:
                                 shader['mtl.use_diffuse_map'] = True
 
-                        shader['shading_enabled'] = True
-                        shader['toon_enabled'] = False
-                        shader.active_texture_unit(0)
-                        mtl.texture_diffuse.bind()
+                        if self._use_texture is not None:
+                            shader['mtl.use_diffuse_map'] = self._use_texture
+
                         with vao:
                             gl.glDrawArrays(sub_mesh.drawing_mode.value, 0, record.vertex_count)

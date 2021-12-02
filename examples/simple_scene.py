@@ -13,21 +13,20 @@ from bk7084.scene import Mesh
 from bk7084.scene.loader.obj import WavefrontReader
 
 window = Window("BK7084: Simple Scene", width=1024, height=1024)
-window.create_camera(Vec3(5, 5.0, 10.0), Vec3(0, 0, 0), Vec3.unit_y(), 60.0)
+window.create_camera(Vec3(2, 1.0, 2.0), Vec3(0, 0, 0), Vec3.unit_y(), 60.0)
 window._camera.zoom_enabled = True
 
-bus = Mesh("./models/bus.obj")
-car = Mesh('./models/car.obj')
-car.apply_transformation(Mat4.from_translation(Vec3(-4.0, 0.0, 0.0)))
+# bus = Mesh("./models/bus.obj")
+# car = Mesh('./models/car.obj')
+# car.apply_transformation(Mat4.from_translation(Vec3(-4.0, 0.0, 0.0)))
 cow = Mesh("./models/spot_cow.obj")
-cow.apply_transformation(Mat4.from_translation(Vec3(4.0, 0.0, 0.0)))
 
-animate = True
+animate = False
 
 
 @window.event
 def on_draw(dt):
-    draw(car, cow, bus)
+    draw(cow)
 
 
 @window.event
@@ -41,9 +40,7 @@ def on_key_press(key, mods):
 def on_update(dt):
     if animate:
         pass
-        # bus.apply_transformation(Mat4.from_axis_angle(Vec3.unit_y(), 45.0 * dt, True))
-        # car.apply_transformation(Mat4.from_axis_angle(Vec3.unit_y(), 45.0 * dt, True))
-        # cow.apply_transformation(Mat4.from_axis_angle(Vec3.unit_y(), 45.0 * dt, True))
+        cow.apply_transformation(Mat4.from_axis_angle(Vec3.unit_y(), 45.0 * dt, True))
 
 
 

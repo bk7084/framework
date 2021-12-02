@@ -22,7 +22,7 @@ __all__ = [
 ]
 
 from . import legacy
-from .modern import *
+from .modern import draw
 from .vertex_layout import *
 from .buffer import *
 from .array import *

@@ -57,7 +57,7 @@ def draw(*objs: Union[Shape, Mesh], **kwargs):
 
             with shader:
                 shader.model_mat = Mat4.identity()
-                shader.do_shading = False
+                shader.shading_enabled = False
                 shader['mtl.enabled'] = False
                 with vao:
                     with ibo:

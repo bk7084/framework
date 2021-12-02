@@ -19,6 +19,10 @@ def current_window():
         raise ValueError('Window has not been created.')
 
 
+def current_time():
+    return current_window().elapsed_time
+
+
 def init(win: window.Window):
     global __window__
     """Initialize the main loop."""
