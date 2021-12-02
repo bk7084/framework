@@ -109,14 +109,16 @@ class ShaderProgram(GpuObject, BindSemanticObject):
             gl.glAttachShader(program_id, shader.handle)
         gl.glLinkProgram(program_id)
 
+        if not check_link_status(program_id):
+            msg = f'Shader program link failure : {gl.glGetProgramInfoLog(program_id).decode("utf-8")}'
+            raise RuntimeError(msg)
+
         # MacOs requires that the vao is bound before checking validity.
         if platform.system() != 'Darwin':
             if not check_validity(program_id):
-                raise RuntimeError(f'Shader program validation failure : {gl.glGetProgramInfoLog(program_id)}')
+                msg = f'Shader program validation failure : {gl.glGetProgramInfoLog(program_id).decode("utf-8")}'
+                raise RuntimeError()
 
-        if not check_link_status(program_id):
-            raise RuntimeError(
-                f'Shader program link failure : {gl.glGetProgramInfoLog(program_id)}')
         for shader in shaders:
             gl.glDetachShader(program_id, shader.handle)
         return program_id
