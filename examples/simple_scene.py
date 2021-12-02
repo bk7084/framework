@@ -13,7 +13,7 @@ from bk7084.scene import Mesh
 from bk7084.scene.loader.obj import WavefrontReader
 
 window = Window("BK7084: Simple Scene", width=1024, height=1024)
-window.create_camera(Vec3(-200, 80.0, 10.0), Vec3(0, 0, 0), Vec3.unit_y(), 60.0)
+window.create_camera(Vec3(5, 5.0, 10.0), Vec3(0, 0, 0), Vec3.unit_y(), 60.0)
 window._camera.zoom_enabled = True
 
 bus = Mesh("./models/bus.obj")
