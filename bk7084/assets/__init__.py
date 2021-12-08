@@ -18,11 +18,16 @@ class PathResolver:
                 if os.path.exists(path):
                     self._search_paths.append(path)
 
-    def resolve(self, filepath):
+    def resolve(self, filepath: str):
+        valid_path = None
         for base_path in self._search_paths:
             path = os.path.abspath(os.path.join(base_path, filepath))
             if os.path.exists(path):
-                return path
+                valid_path = path
+                break
+        if valid_path is None:
+            raise ValueError(f'Cannot resolve path: {filepath}')
+        return valid_path
 
 
 default_resolver = PathResolver()

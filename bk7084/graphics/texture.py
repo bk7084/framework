@@ -36,6 +36,7 @@ class FilterMode(enum.Enum):
 class Texture(GpuObject, BindSemanticObject):
     def __init__(self, image_path, target=gl.GL_TEXTURE_2D, wrap_mode=TextureWrapMode.Repeat, filter_mode=FilterMode.Linear):
         super().__init__(gl.GL_TEXTURE_2D, -1)
+        self._src = image_path
         self._wrap_mode = wrap_mode
         self._filter_mode = filter_mode
         self._image_path = image_path

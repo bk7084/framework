@@ -65,7 +65,7 @@ def draw(*objs: Union[Shape, Mesh], **kwargs):
                                           ctypes.c_void_p(0))
 
         elif isinstance(obj, Mesh):
-            obj.draw_with_shader(shader)
+            obj.draw_with_shader()
 
         else:
             logging.info('Nothing to draw.')

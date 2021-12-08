@@ -1,20 +1,18 @@
 import collections.abc
 import enum
 import os
+from collections import namedtuple
 from dataclasses import dataclass
 
 import numpy as np
 
 from .loader.obj import WavefrontReader
 from .. import gl
-from collections import namedtuple
 from ..assets import default_resolver
-
-from ..geometry.shape import Shape
 from ..graphics.array import VertexArrayObject
 from ..graphics.buffer import VertexBuffer, IndexBuffer
 from ..graphics.material import Material
-from ..graphics.util import DrawingMode
+from ..graphics.texture import Texture
 from ..graphics.vertex_layout import VertexLayout, VertexAttrib, VertexAttribDescriptor, VertexAttribFormat
 from ..math import Mat4
 from ..misc import PaletteDefault, Color
@@ -44,7 +42,7 @@ class SubMeshDescriptor:
     first_uv: int
     uv_count: int
     material: int
-    topology: MeshTopology
+    topology: MeshTopology = MeshTopology.Triangles
 
 
 class SubMesh:
@@ -55,6 +53,7 @@ class SubMesh:
 
     Structure maintained inside of `Mesh` class.
     """
+
     def __init__(self,
                  mesh=None,
                  name='',
@@ -85,9 +84,13 @@ class SubMesh:
         self.topology: MeshTopology = topology
         self.vertex_layout: VertexLayout = vertex_layout
 
+    def has_valid_render_record(self):
+        return self.render_record != -1
+
     def descriptor(self) -> SubMeshDescriptor:
         return SubMeshDescriptor(
             name=self.name,
+
             first_vertex=self.vertex_range[0],
             vertex_count=self.vertex_count,
             first_index=self.index_range[0],
@@ -96,6 +99,7 @@ class SubMesh:
             normal_count=self.normal_count,
             first_uv=self.uv_range[0],
             uv_count=self.uv_count,
+
             material=self.mesh.render_records[self.render_record].mtl_idx,
             topology=self.topology
         )
@@ -165,29 +169,39 @@ class Mesh:
                 triangles: (array like):
                     Specifies the indices to create triangles.
 
+                uvs: (array like):
+                    Specifies the uv coordinates of the vertices.
+
+                texture: (str):
+                    Specifies the texture image file.
+
                 shapes (list, tuple):
                     Specifies a sequence of shapes used to construct a mesh.
+
+                shader (ShaderProgram):
+                    Specifies the shader going to be used for rendering. In case of non specified,
+                    use framework's default shader (declared inside of Window).
         """
-        self._vertex_layout = VertexLayout(
-            (VertexAttrib.Position, VertexAttribFormat.Float32, 3),
-            (VertexAttrib.Color0, VertexAttribFormat.Float32, 4),
-            (VertexAttrib.TexCoord0, VertexAttribFormat.Float32, 2),
-            (VertexAttrib.Normal, VertexAttribFormat.Float32, 3),
-        )
+        self._vertex_layout = VertexLayout.default()
 
         self._vertex_count = 0
         self._index_count = 0
         self._triangle_count = 0
+        self._normal_count = 0
+        self._uv_count = 0
 
         self._vertices = np.array([], dtype=np.float32)  # vertices
         self._colors = np.array([], dtype=np.float32)  # vertex colors
         self._uvs = np.array([], dtype=np.float32)  # vertex texture coordinates
         self._normals = np.array([], dtype=np.float32)  # vertex normals
-        self._triangles = np.array([], dtype=np.uint32)  # indices for draw whole mesh
+        self._indices = np.array([], dtype=np.uint32)  # indices for draw whole mesh
+        self._triangles = []  # [(vertices indices), (vertex uvs indices), ( vertex normals indices)]
 
         self._materials = [Material.default()]  # loaded materials from OBJ file
+        texture_path = kwargs.get('texture', None)
+        self._alternate_texture = None if texture_path is None else Texture(resolver.resolve(texture_path))
+
         self._render_records = {}  # records the rendering information
-        self._faces = []  # [(vertices indices), (vertex uvs indices), ( vertex normals indices)]
         self._sub_meshes = []
         self._sub_mesh_count = 0
 
@@ -195,11 +209,15 @@ class Mesh:
         self._transformation: Mat4 = Mat4.identity()
 
         self._shading_enabled = True
-        self._texture_enabled = None
+        self._texture_enabled = True
+        self._alternate_texture_enabled = False
 
         self._vertex_buffers: [VertexBuffer] = []
         self._index_buffers: [IndexBuffer] = []
         self._vertex_array_objects: [VertexArrayObject] = []
+
+        from ..app.window import __current_window__
+        self._shader = kwargs.get('shader', __current_window__.default_shader)
 
         shapes = kwargs.get('shapes', None)
         vertices = kwargs.get('vertices', None)
@@ -211,30 +229,89 @@ class Mesh:
         if filepath:
             self._name = str(filepath)
             if load_immediately:
-                self._read_from_file(filepath, colors, resolver)
+                self._read_from_file(filepath, colors, kwargs.get('texture', None), resolver)
             else:
                 self._tmp_colors = colors
         elif shapes is not None:
             self._name = 'unnamed_{}'.format(self.__class__.__name__)
             self._from_shapes(shapes)
         else:
+            if not (vertices and colors and uvs and normals and triangles):
+                missing_attributes = [name for attrib, name in ((vertices, 'vertices'), (colors, 'colors'),
+                                                           (uvs, 'uvs'), (normals, 'normals'),
+                                                           (triangles, 'triangles')) if attrib is None]
+                raise ValueError(f"Mesh creation - missing vertex attributes: {missing_attributes}.")
+
+            self._name = kwargs.get('name', 'unnamed_{}'.format(self.__class__.__name__))
             # fill vertices
-            self._vertices = np.asarray(vertices, dtype=np.float32).ravel()
-            self._vertex_count = self._vertices / 3
+            self._vertices = np.asarray(vertices, dtype=np.float32).reshape((-1, 3))
+            self._vertex_count = len(self._vertices)
+
             # fill colors
             self._colors = Mesh._process_color(self._vertex_count, colors)
+
             # fill uvs
-            self._uvs = np.asarray(uvs, dtype=np.float32).ravel()
+            self._uvs = np.asarray(uvs, dtype=np.float32).reshape((-1, 2))
+            self._uv_count = len(self._uvs)
+
             # fill normals
-            self._normals = np.asarray(normals, dtype=np.float32).ravel()
-            # fill triangles
-            self._triangles = np.asarray(triangles, dtype=np.uint32).ravel()
-            self._index_count = len(self._triangles)
-            self._triangle_count = self._index_count / 3
+            self._normals = np.asarray(normals, dtype=np.float32).reshape((-1, 3))
+            self._normal_count = len(self._normals)
+
+            # fill indices
+            self._indices = np.asarray([f[0] for f in triangles], dtype=np.uint32).reshape((-1, 3))
+            self._index_count = len(self._indices)
+
+            self._triangles = triangles
+            self._triangle_count = len(self._triangles)
+
             self._sub_mesh_count = 1
-            self._sub_meshes = [
-                SubMesh()
-            ]
+            sub_mesh = SubMesh(
+                mesh=self,
+                name=f"{self._name}-{self._materials[0].name}",
+                vertex_range=(0, self._vertex_count),
+                index_range=(0, self._index_count),
+                normal_range=(0, self._normal_count),
+                uv_range=(0, self._uv_count),
+                render_record=-1,
+                topology=MeshTopology.Triangles,
+                vertex_layout=self._vertex_layout
+            )
+            # create rendering record
+            v_positions = []
+            v_normals = []
+            v_uvs = []
+            v_colors = []
+
+            for face in self._triangles:
+                for i, content in enumerate(face):
+                    if i == 0:
+                        for v_i in content:
+                            v_positions.append(self._vertices[v_i])
+                            v_colors.append(self._colors[v_i])
+                    if i == 1:
+                        for vt_i in content:
+                            v_uvs.append(self._uvs[vt_i])
+                    if i == 2:
+                        for vn_i in content:
+                            v_normals.append(self._normals[vn_i])
+
+            v_vertices = np.array([z for x in zip(v_positions, v_colors, v_uvs, v_normals) for y in x for z in y],
+                                  dtype=np.float32).ravel()
+
+            vao = VertexArrayObject()
+            vbo = VertexBuffer(len(v_positions), sub_mesh.vertex_layout)
+            vbo.set_data(v_vertices)
+            vao.bind_vertex_buffer(vbo, [0, 1, 2, 3])
+            sub_mesh.render_record = len(self._render_records)
+
+            self._render_records = {
+                0: MtlRenderRecord(0, len(self._vertex_array_objects), len(self._vertex_buffers), len(v_positions))
+            }
+            self._vertex_array_objects.append(vao)
+            self._vertex_buffers.append(vbo)
+
+            self._sub_meshes = [sub_mesh]
 
     @staticmethod
     def _process_color(count, colors):
@@ -249,7 +326,8 @@ class Mesh:
                 output_colors = np.asarray([c.rgba for c in colors[:count]]).reshape((count, 4))
             else:
                 num = count - colors_count
-                output_colors = np.asarray([c.rgba for color in [colors, [Mesh.DEFAULT_COLOR] * num] for c in color]).reshape((count, 4))
+                output_colors = np.asarray(
+                    [c.rgba for color in [colors, [Mesh.DEFAULT_COLOR] * num] for c in color]).reshape((count, 4))
         return output_colors
 
     @property
@@ -268,28 +346,44 @@ class Mesh:
     def texture_enabled(self, value):
         self._texture_enabled = value
 
+    @property
+    def alternate_texture_enabled(self):
+        return self._alternate_texture_enabled
+
+    @alternate_texture_enabled.setter
+    def alternate_texture_enabled(self, value):
+        self._alternate_texture_enabled = value
+
     def load(self):
         if os.path.exists(self._name):
             self._read_from_file(self._name, self._tmp_colors)
 
-    def _read_from_file(self, filepath, color, resolver=default_resolver):
+    def _read_from_file(self, filepath, color, texture=None, resolver=default_resolver):
         reader = WavefrontReader(filepath, resolver)
         mesh_data = reader.read()
 
         self._vertex_count = len(mesh_data['vertices'])
         self._vertices = np.asarray(mesh_data['vertices'], dtype=np.float32).reshape((-1, 3))
+
+        self._normal_count = len(mesh_data['normals'])
         self._normals = np.asarray(mesh_data['normals'], dtype=np.float32).reshape((-1, 3))
-        self._faces = mesh_data['faces']
-        self._triangles = np.asarray([f[0] for f in mesh_data['faces']], dtype=np.uint32).ravel()
-        self._index_count = len(self._triangles)
+
+        self._triangle_count = len(self._triangles)
+        self._triangles = mesh_data['faces']
+
+        self._index_count = self._triangle_count * 3
+        self._indices = np.asarray([f[0] for f in mesh_data['faces']], dtype=np.uint32).reshape((-1, 3))
+
+        self._uv_count = len(mesh_data['texcoords'])
         self._uvs = np.asarray(mesh_data['texcoords'], dtype=np.float32).reshape((-1, 2))
+
         self._colors = Mesh._process_color(self._vertex_count, color)
 
         for name, mat in mesh_data['materials'].items():
             self._materials.append(
                 Material(
                     name,
-                    mat.get('map_Kd', None),
+                    mat.get('map_Kd', texture),
                     mat.get('Ka', [1.0, 1.0, 1.0]),
                     mat.get('Kd', [1.0, 1.0, 1.0]),
                     mat.get('Ks', [1.0, 1.0, 1.0]),
@@ -323,6 +417,7 @@ class Mesh:
             # pack the data together for rendering
             for mtl in sub_obj_materials:
                 sub_mesh = SubMesh(
+                    mesh=self,
                     name=f"{sub_obj['name']}-{self._materials[mtl[0]].name}",
                     vertex_range=sub_obj['vertex_range'],
                     index_range=sub_obj['index_range'],
@@ -336,7 +431,7 @@ class Mesh:
                 v_positions = []
                 v_normals = []
                 v_texcoords = []
-                for face in self._faces[f_start: f_end]:
+                for face in self._triangles[f_start: f_end]:
                     i = 0
                     for v_i in face[i]:
                         v_positions.append(self._vertices[v_i])
@@ -353,13 +448,17 @@ class Mesh:
                 vertex_count = len(v_positions)
                 v_colors = [color] * vertex_count
 
-                if sub_mesh.vertex_layout.has(VertexAttrib.TexCoord0) and sub_mesh.vertex_layout.has(VertexAttrib.Normal):
-                    vertices = np.array([z for x in zip(v_positions, v_colors, v_texcoords, v_normals) for y in x for z in y],
-                                        dtype=np.float32).ravel()
-                elif sub_mesh.vertex_layout.has(VertexAttrib.TexCoord0) and not sub_mesh.vertex_layout.has(VertexAttrib.Normal):
+                if sub_mesh.vertex_layout.has(VertexAttrib.TexCoord0) and sub_mesh.vertex_layout.has(
+                        VertexAttrib.Normal):
+                    vertices = np.array(
+                        [z for x in zip(v_positions, v_colors, v_texcoords, v_normals) for y in x for z in y],
+                        dtype=np.float32).ravel()
+                elif sub_mesh.vertex_layout.has(VertexAttrib.TexCoord0) and not sub_mesh.vertex_layout.has(
+                        VertexAttrib.Normal):
                     vertices = np.array([z for x in zip(v_positions, v_colors, v_texcoords) for y in x for z in y],
                                         dtype=np.float32).ravel()
-                elif not sub_mesh.vertex_layout.has(VertexAttrib.TexCoord0) and sub_mesh.vertex_layout.has(VertexAttrib.Normal):
+                elif not sub_mesh.vertex_layout.has(VertexAttrib.TexCoord0) and sub_mesh.vertex_layout.has(
+                        VertexAttrib.Normal):
                     vertices = np.array([z for x in zip(v_positions, v_colors, v_normals) for y in x for z in y],
                                         dtype=np.float32).ravel()
                 else:
@@ -530,6 +629,16 @@ class Mesh:
         self._sub_meshes.append(SubMesh())
         self._update_sub_mesh(len(self._sub_meshes), descriptor)
 
+    @property
+    def shader(self):
+        return self._shader
+
+    @shader.setter
+    def shader(self, shader):
+        if not shader.is_valid():
+            raise ValueError("Invalid shader.")
+        self._shader = shader
+
     def apply_transformation(self, matrix: Mat4):
         self._transformation = matrix * self._transformation
         return self
@@ -557,28 +666,34 @@ class Mesh:
     def initial_transformation(self, value: Mat4):
         self._initial_transformation = value
 
-    def draw_with_shader(self, shader):
+    def draw_with_shader(self, shader=None):
+        _shader = shader if shader is not None and shader.is_valid() else self._shader
         if len(self._sub_meshes) > 0:
-            with shader:
+            with _shader:
                 mat = self._transformation * self._initial_transformation
-                shader.model_mat = mat
-                shader['shading_enabled'] = self._shading_enabled
+                _shader.model_mat = mat
+                _shader['shading_enabled'] = self._shading_enabled
                 for sub_mesh in self._sub_meshes:
-                    record = self._render_records[sub_mesh.render_record]
-                    mtl = self._materials[record.mtl_idx]
-                    vao = self._vertex_array_objects[record.vao_idx]
+                    if sub_mesh.has_valid_render_record():
+                        record = self._render_records[sub_mesh.render_record]
+                        mtl = self._materials[record.mtl_idx]
+                        vao = self._vertex_array_objects[record.vao_idx]
 
-                    shader['mtl.diffuse'] = mtl.diffuse
-                    shader['mtl.ambient'] = mtl.ambient
-                    shader['mtl.specular'] = mtl.specular
-                    shader['mtl.shininess'] = mtl.glossiness
-                    shader['mtl.enabled'] = True
-                    from bk7084.app import current_window
-                    shader['time'] = current_window().elapsed_time
-                    shader['mtl.use_diffuse_map'] = self._texture_enabled
+                        _shader['mtl.diffuse'] = mtl.diffuse
+                        _shader['mtl.ambient'] = mtl.ambient
+                        _shader['mtl.specular'] = mtl.specular
+                        _shader['mtl.shininess'] = mtl.shininess
+                        _shader['mtl.enabled'] = True
+                        from bk7084.app import current_window
+                        _shader['time'] = current_window().elapsed_time
+                        _shader['mtl.use_diffuse_map'] = self._texture_enabled
 
-                    shader.active_texture_unit(0)
-                    mtl.texture_diffuse.bind()
+                        _shader.active_texture_unit(0)
+                        texture = mtl.texture_diffuse
 
-                    with vao:
-                        gl.glDrawArrays(sub_mesh.topology.value, 0, record.vertex_count)
+                        if self._alternate_texture_enabled and self._alternate_texture is not None:
+                            texture = self._alternate_texture
+
+                        with texture:
+                            with vao:
+                                gl.glDrawArrays(sub_mesh.topology.value, 0, record.vertex_count)

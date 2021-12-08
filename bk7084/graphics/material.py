@@ -8,22 +8,23 @@ from ..assets import default_resolver
 
 
 class Material:
-    def __init__(self, name, image_path=None, ambient=None, diffuse=None, specular=None, glossiness=None, ior=None, dissolve=None, illum=None, resolver=default_resolver):
+    def __init__(self, name, image_path=None, ambient=None, diffuse=None, specular=None, shininess=None, ior=None, dissolve=None, illum=None, resolver=default_resolver):
         self.name = name  # material name
-        self._is_default = False
 
-        if image_path is None:
-            # load default checker board
-            image_path = default_resolver.resolve('textures/checker.png')
-            self._is_default = True
+        self._is_default = True
+        resolved = resolver.resolve('textures/checker.png')
+
+        if image_path is not None:
+            resolved = resolver.resolve(image_path)
+            self._is_default = False
 
         self.ambient = np.asarray(ambient, dtype=np.float32)  # Ka
         self.diffuse = np.asarray(diffuse, dtype=np.float32)  # Kd
         self.specular = np.asarray(specular, dtype=np.float32)  # Ks
 
-        self.texture_diffuse = Texture(image_path)  # map_Kd
+        self.texture_diffuse = Texture(resolved)  # map_Kd
 
-        self.glossiness = glossiness  # Ns
+        self.shininess = shininess  # Ns
         self.refractive_index = ior  # Ni
         self.dissolve = dissolve  # d
         self.illumination_model = illum  # illumination model
@@ -47,15 +48,15 @@ class Material:
                                            self.ambient,
                                            self.diffuse,
                                            self.specular,
-                                           self.glossiness,
+                                           self.shininess,
                                            self.refractive_index,
                                            self.dissolve)
 
     @classmethod
-    def default(cls):
+    def default(cls, texture=None):
         return cls(
             'default_material',
-            default_resolver.resolve('textures/checker.png'),
+            texture,
             [1.0, 1.0, 1.0],
             [1.0, 1.0, 1.0],
             [1.0, 1.0, 1.0],

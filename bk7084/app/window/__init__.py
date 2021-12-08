@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import atexit
 import logging
 import os
@@ -12,10 +14,13 @@ import numpy as np
 from . import event
 from .input import KeyCode, MouseButton, KeyModifier
 from ... import misc, gl
-from ...assets import default_resolver
 from ...camera import Camera
 from ...graphics import VertexShader, PixelShader, ShaderProgram
 from ...math import Vec2
+
+
+# temporary work around to have access of OpenGL context before the app is initialised
+__current_window__: Window
 
 
 # TODO: detailed description of event listener parameters
@@ -197,6 +202,9 @@ class Window(event.EventDispatcher):
         self._current_time = self._start_time
 
         gl.glEnable(gl.GL_DEPTH_TEST)
+
+        global __current_window__
+        __current_window__ = self
 
     def shut_down(self):
         glfw.destroy_window(self._native_window)
