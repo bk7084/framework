@@ -4,17 +4,17 @@ import numpy as np
 
 import bk7084
 from .texture import Texture
-from ..assets import assets_dir
+from ..assets import default_resolver
 
 
 class Material:
-    def __init__(self, name, image_path=None, ambient=None, diffuse=None, specular=None, glossiness=None, ior=None, dissolve=None, illum=None):
+    def __init__(self, name, image_path=None, ambient=None, diffuse=None, specular=None, glossiness=None, ior=None, dissolve=None, illum=None, resolver=default_resolver):
         self.name = name  # material name
         self._is_default = False
 
         if image_path is None:
             # load default checker board
-            image_path = os.path.join(assets_dir(), 'textures/checker_color.png')
+            image_path = default_resolver.resolve('textures/checker.png')
             self._is_default = True
 
         self.ambient = np.asarray(ambient, dtype=np.float32)  # Ka
@@ -55,7 +55,7 @@ class Material:
     def default(cls):
         return cls(
             'default_material',
-            os.path.join(assets_dir(), 'textures/checker_medium.png'),
+            default_resolver.resolve('textures/checker.png'),
             [1.0, 1.0, 1.0],
             [1.0, 1.0, 1.0],
             [1.0, 1.0, 1.0],

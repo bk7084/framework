@@ -1,6 +1,8 @@
 import os.path
 import re
 
+from ...assets import default_resolver
+
 
 def remove_comments(comment_symbol, text):
     return re.sub(f'{comment_symbol}.*', '', text).strip()
@@ -20,10 +22,10 @@ class PathResolver:
 
 
 class WavefrontReader:
-    def __init__(self, filepath):
+    def __init__(self, filepath, resolver=default_resolver):
         if not os.path.isfile(filepath):
             raise ValueError(f"File {filepath} does not exist.")
-        self._filepath = os.path.abspath(filepath)
+        self._filepath = resolver.resolve(filepath)
 
     def read(self):
         with open(self._filepath) as file:

@@ -11,8 +11,8 @@ import numpy as np
 
 from . import event
 from .input import KeyCode, MouseButton, KeyModifier
-from ...assets import assets_dir
 from ... import misc, gl
+from ...assets import default_resolver
 from ...camera import Camera
 from ...graphics import VertexShader, PixelShader, ShaderProgram
 from ...math import Vec2
@@ -188,8 +188,8 @@ class Window(event.EventDispatcher):
         self._default_shader = None
 
         if self.current_context_version >= (3, 3):
-            self._default_shader = ShaderProgram(VertexShader.from_file(os.path.join(assets_dir(), 'shaders/default.vert')),
-                                                 PixelShader.from_file(os.path.join(assets_dir(), 'shaders/default.frag')))
+            self._default_shader = ShaderProgram(VertexShader.from_file('shaders/default.vert'),
+                                                 PixelShader.from_file('shaders/default.frag'))
             logging.info("Default shader created.")
 
         self._start_time = time.time()

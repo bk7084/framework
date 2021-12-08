@@ -5,6 +5,7 @@ import sys
 
 from .util import ShaderCodeParser, GpuObject
 from .. import gl
+from ..assets import PathResolver
 
 OPENGL_ERROR_REGEX = [
     # Nvidia
@@ -27,7 +28,7 @@ class ShaderType(enum.Enum):
 
 class Shader(GpuObject):
     def __init__(self, shader_type: ShaderType, code: str, origin='<string>', is_file=False) -> None:
-        """Creates an OpenGL shader.
+        """Creates an OpenGL shbader.
 
         Args:
             shader_type (ShaderType):
@@ -40,7 +41,8 @@ class Shader(GpuObject):
 
         if is_file:
             if not (os.path.isfile(code) and os.path.exists(code)):
-                raise ValueError(f'Shader source file {code} does not exist or is not a valid file path.')
+                msg = f'Shader source file {code} does not exist or is not a valid file path.'
+                raise ValueError(msg)
             with open(code, 'rt') as file:
                 self._code, self._uniforms, self._attribs = ShaderCodeParser.preprocess(file.read())
                 self._origin = origin
@@ -52,9 +54,11 @@ class Shader(GpuObject):
         self._compile()
 
     @staticmethod
-    def _from_file(shader_type, filepath):
+    def _from_file(shader_type, filepath, resolver=PathResolver()):
+        filepath = resolver.resolve(filepath) if not os.path.isabs(filepath) else filepath
         if not (os.path.isfile(filepath) and os.path.exists(filepath)):
-            raise ValueError(f'Shader source file {os.path.abspath(filepath)} does not exist or is not a valid file path.')
+            msg = f'Shader source file {os.path.abspath(filepath)} does not exist or is not a valid file path.'
+            raise ValueError(msg)
 
         with open(filepath, 'rt') as file:
             return Shader(shader_type,
@@ -112,7 +116,7 @@ class Shader(GpuObject):
         gl.glCompileShader(self._id)
         status = gl.glGetShaderiv(self._id, gl.GL_COMPILE_STATUS)
         if not status:
-            error = gl.glGetShaderInfoLog(self._id).decode()
+            error = gl.glGetShaderInfoLog(self._id)
             for lineno, msg in self._parse_error(error):
                 self._print_error(msg, lineno - 1)
             raise RuntimeError("Shader compilation error.")

@@ -58,6 +58,9 @@ class GpuObject:
     def is_valid(self):
         return self._id > 0
 
+    def delete(self):
+        self._delete()
+
 
 @enum.unique
 class DrawingMode(enum.Enum):

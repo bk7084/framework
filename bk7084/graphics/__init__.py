@@ -18,6 +18,10 @@ __all__ = [
     'VertexAttrib',
     'VertexAttribFormat',
     'VertexAttribDescriptor',
+    'AreaLight',
+    'DirectionalLight',
+    'SpotLight',
+    'PointLight',
     'draw'
 ]
 
@@ -29,4 +33,5 @@ from .array import *
 from .program import *
 from .shader import *
 from .util import *
+from .lights import *
 

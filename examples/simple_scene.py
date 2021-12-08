@@ -16,8 +16,8 @@ window = Window("BK7084: Simple Scene", width=1024, height=1024)
 window.create_camera(Vec3(2, 1.0, 2.0), Vec3(0, 0, 0), Vec3.unit_y(), 60.0)
 window._camera.zoom_enabled = True
 
-# bus = Mesh("./models/bus.obj")
-# car = Mesh('./models/car.obj')
+# cow = Mesh("./models/bus.obj")
+# cow = Mesh('./models/car.obj')
 # car.apply_transformation(Mat4.from_translation(Vec3(-4.0, 0.0, 0.0)))
 cow = Mesh("./models/spot_cow.obj")
 

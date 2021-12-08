@@ -5,27 +5,25 @@ from ..misc import PaletteDefault
 
 class Scene:
     """
-    Scene manages the rendering of meshes, lights can cameras.
+    Scene manages the rendering of meshes, lights and cameras.
     """
 
-    def __init__(self, camera=None, light=None, clear_color=PaletteDefault.Background.as_color(), **kwargs):
+    def __init__(self, entities, camera=None, light=None, bg_color=PaletteDefault.Background.as_color(), **kwargs):
         """
-        Initialization of a Scene object.
+        Initialisation of a Scene object.
 
         Args:
+            meshes (list of Meshes): all of Mesh instances that you want to view in the Scene
             camera:
             light:
+            bg_color:
             **kwargs:
         """
-        self._meshes = []
-        self._camera = Camera(Vec3(0, 0.0, 10.0), Vec3(0, 0, 0), Vec3.unit_y(), 60.0)
+        self._entities = []
         self._lights = []
+        self._cameras = []
+        self._main_camera = 0
 
-    def draw(self):
+    def draw(self, camera_index=0):
         """Draw every visible meshes in the scene."""
-        with self._camera, self._lights:
-            for mesh in self._meshes:
-                try:
-                    mesh.draw()
-                except AttributeError:
-                    pass
+        pass
