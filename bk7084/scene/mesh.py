@@ -30,21 +30,6 @@ class MeshTopology(enum.Enum):
 MtlRenderRecord = namedtuple('MtlRenderRecord', ['mtl_idx', 'vao_idx', 'vbo_idx', 'vertex_count'])
 
 
-@dataclass
-class SubMeshDescriptor:
-    name: str
-    first_vertex: int
-    vertex_count: int
-    first_index: int
-    index_count: int
-    first_normal: int
-    normal_count: int
-    first_uv: int
-    uv_count: int
-    material: int
-    topology: MeshTopology = MeshTopology.Triangles
-
-
 class SubMesh:
     """
     Each sub-mesh corresponds to a Material. A sub-mesh consists of a list of triangles,
@@ -55,63 +40,15 @@ class SubMesh:
     """
 
     def __init__(self,
-                 mesh=None,
+                 triangles=None,
                  name='',
-                 vertex_range=(-1, -1),
-                 index_range=(-1, -1),
-                 normal_range=(-1, -1),
-                 uv_range=(-1, -1),
-                 render_record=-1,
                  topology=MeshTopology.Triangles,
                  vertex_layout=VertexLayout.default()):
-        self.mesh = mesh
         self.name: str = name
-        self.vertex_count: int = vertex_range[1] - vertex_range[0]
-        self.vertex_range: (int, int) = vertex_range
-
-        self.index_count: int = index_range[1] - index_range[0]
-        self.index_range: (int, int) = index_range
-
-        self.normal_count: int = normal_range[1] - normal_range[0]
-        self.normal_range: (int, int) = normal_range
-
-        self.uv_count: int = uv_range[1] - uv_range[0]
-        self.uv_range: (int, int) = uv_range
-
-        # created and initialised by the Mesh class, should not be modified directly
-        self.render_record: int = render_record
-
+        self.triangles: [] = [] if triangles is None else triangles  # index of triangles (faces)
+        self.vertex_count: int = len(triangles) * 3 if triangles is not None else 0
         self.topology: MeshTopology = topology
         self.vertex_layout: VertexLayout = vertex_layout
-
-    def has_valid_render_record(self):
-        return self.render_record != -1
-
-    def descriptor(self) -> SubMeshDescriptor:
-        return SubMeshDescriptor(
-            name=self.name,
-
-            first_vertex=self.vertex_range[0],
-            vertex_count=self.vertex_count,
-            first_index=self.index_range[0],
-            index_count=self.index_count,
-            first_normal=self.normal_range[0],
-            normal_count=self.normal_count,
-            first_uv=self.uv_range[0],
-            uv_count=self.uv_count,
-
-            material=self.mesh.render_records[self.render_record].mtl_idx,
-            topology=self.topology
-        )
-
-    def is_same(self, desc: SubMeshDescriptor):
-        return self.name == desc.name and \
-               self.vertex_count == desc.vertex_count and self.vertex_range[0] == desc.first_vertex and \
-               self.index_count == desc.index_count and self.index_range[0] == desc.first_index and \
-               self.normal_count == desc.normal_count and self.normal_range[0] == desc.first_normal and \
-               self.uv_count == desc.uv_count and self.uv_range[0] == desc.first_uv and \
-               self.mesh.render_records[self.render_record].mtl_idx == desc.material and \
-               self.topology == desc.topology
 
 
 class Mesh:
@@ -201,7 +138,7 @@ class Mesh:
         texture_path = kwargs.get('texture', None)
         self._alternate_texture = None if texture_path is None else Texture(resolver.resolve(texture_path))
 
-        self._render_records = {}  # records the rendering information
+        self._render_records = {}  # records the rendering information, (sub_mesh_index: mtl_render_record)
         self._sub_meshes = []
         self._sub_mesh_count = 0
 
@@ -258,8 +195,20 @@ class Mesh:
             self._normals = np.asarray(normals, dtype=np.float32).reshape((-1, 3))
             self._normal_count = len(self._normals)
 
-            # fill indices
-            self._indices = np.asarray([f[0] for f in triangles], dtype=np.uint32).reshape((-1, 3))
+            # fill indices and triangulation
+            triangle_list = []
+            for f in triangles:
+                vertex_count = len(f[0])
+                if vertex_count < 3:
+                    continue
+                elif vertex_count == 3:
+                    triangle_list.append(f)
+                else:
+                    for i in range(0, vertex_count - 2):
+                        triangle_list.append([(f[0][0], *f[0][i+1: i+3]),
+                                              (f[1][0], *f[1][i+1: i+3]),
+                                              (f[2][0], *f[2][i+1: i+3])])
+            self._indices = np.asarray(triangle_list, dtype=np.uint32).ravel()
             self._index_count = len(self._indices)
 
             self._triangles = triangles
@@ -267,15 +216,10 @@ class Mesh:
 
             self._sub_mesh_count = 1
             sub_mesh = SubMesh(
-                mesh=self,
                 name=f"{self._name}-{self._materials[0].name}",
-                vertex_range=(0, self._vertex_count),
-                index_range=(0, self._index_count),
-                normal_range=(0, self._normal_count),
-                uv_range=(0, self._uv_count),
-                render_record=-1,
                 topology=MeshTopology.Triangles,
-                vertex_layout=self._vertex_layout
+                vertex_layout=self._vertex_layout,
+                triangles=self._triangles
             )
             # create rendering record
             v_positions = []
@@ -283,7 +227,7 @@ class Mesh:
             v_uvs = []
             v_colors = []
 
-            for face in self._triangles:
+            for face in triangle_list:
                 for i, content in enumerate(face):
                     if i == 0:
                         for v_i in content:
@@ -303,15 +247,14 @@ class Mesh:
             vbo = VertexBuffer(len(v_positions), sub_mesh.vertex_layout)
             vbo.set_data(v_vertices)
             vao.bind_vertex_buffer(vbo, [0, 1, 2, 3])
-            sub_mesh.render_record = len(self._render_records)
 
+            self._sub_meshes = [sub_mesh]
             self._render_records = {
                 0: MtlRenderRecord(0, len(self._vertex_array_objects), len(self._vertex_buffers), len(v_positions))
             }
+
             self._vertex_array_objects.append(vao)
             self._vertex_buffers.append(vbo)
-
-            self._sub_meshes = [sub_mesh]
 
     @staticmethod
     def _process_color(count, colors):
@@ -416,18 +359,15 @@ class Mesh:
 
             # pack the data together for rendering
             for mtl in sub_obj_materials:
+                mtl_idx, f_start, f_end = mtl
+
                 sub_mesh = SubMesh(
-                    mesh=self,
                     name=f"{sub_obj['name']}-{self._materials[mtl[0]].name}",
-                    vertex_range=sub_obj['vertex_range'],
-                    index_range=sub_obj['index_range'],
-                    normal_range=sub_obj['normal_range'],
-                    uv_range=sub_obj['texcoord_range']
+                    triangles=list(range(f_start, f_end))
                 )
 
                 sub_mesh.vertex_layout = VertexLayout(*vertex_attribs)
 
-                mtl_idx, f_start, f_end = mtl
                 v_positions = []
                 v_normals = []
                 v_texcoords = []
@@ -480,10 +420,11 @@ class Mesh:
                 else:
                     vao.bind_vertex_buffer(vbo, [0, 1, 2, 3])
 
-                sub_mesh.render_record = len(self._render_records.keys())
-                self._render_records[sub_mesh.render_record] = MtlRenderRecord(mtl_idx, vao_idx, vbo_idx, vertex_count)
-
                 self._sub_meshes.append(sub_mesh)
+
+                sub_mesh_index = len(self._sub_meshes) - 1
+
+                self._render_records[sub_mesh_index] = MtlRenderRecord(mtl_idx, vao_idx, vbo_idx, vertex_count)
 
         self._sub_mesh_count = len(self._sub_meshes)
         self._texture_enabled = True
@@ -566,68 +507,89 @@ class Mesh:
 
     @property
     def sub_meshes(self):
-        return [sm.descriptor() for sm in self._sub_meshes]
-
-    def set_sub_mesh(self, index, **kwargs):
-        if 0 <= index < self.sub_mesh_count:
-            self._update_sub_mesh(index, **kwargs)
-
-    def add_sub_mesh(self, descriptor):
-        self._append_sub_mesh(descriptor)
+        return tuple(self._sub_meshes)
 
     @property
     def sub_mesh_count(self):
         return self._sub_mesh_count
 
-    def _update_sub_mesh(self, index, desc: SubMeshDescriptor):
+    def update_sub_mesh(self, index, new: SubMesh, texture: str = '', create: bool = False):
         sub_mesh = self._sub_meshes[index]
-        if not sub_mesh.is_same(desc):
-            sub_mesh.name = desc.name
-            sub_mesh.vertex_count = desc.vertex_count
-            sub_mesh.vertex_range = (desc.first_vertex, desc.first_vertex + desc.vertex_count)
-            sub_mesh.index_count = desc.index_count
-            sub_mesh.index_range = (desc.first_index, desc.first_index + desc.index_count)
-            sub_mesh.normal_count = desc.normal_count
-            sub_mesh.normal_range = (desc.first_normal, desc.first_normal + desc.normal_count)
-            sub_mesh.uv_count = desc.uv_count
-            sub_mesh.uv_range = (desc.first_uv, desc.first_uv + desc.uv_count)
-            sub_mesh.topology = desc.topology
+        sub_mesh.name = new.name
+        sub_mesh.vertex_count = new.vertex_count
+        sub_mesh.triangles = new.triangles
+        sub_mesh.topology = new.topology
 
-            old_record = self._render_records[sub_mesh.render_record]
-            # destroy old vbo
-            self._vertex_buffers[old_record.vbo_idx].delete()
-            self._vertex_array_objects[old_record.vao_idx].delete()
-            # create new vbo with new data
-            v_positions = self._vertices[sub_mesh.vertex_range[0]: sub_mesh.vertex_range[1]]
-            v_normals = self._normals[sub_mesh.normal_range[0]: sub_mesh.normal_range[1]]
-            v_uvs = self._uvs[sub_mesh.uv_range[0]: sub_mesh.uv_range[1]]
-            v_colors = self._colors[sub_mesh.vertex_range[0]: sub_mesh.vertex_range[1]]
-
-            vertices = np.array([z for x in zip(v_positions, v_colors, v_uvs, v_normals) for y in x for z in y],
-                                dtype=np.float32).ravel()
-
-            vao = self._vertex_array_objects[old_record.vao_idx]
-            vbo = VertexBuffer(sub_mesh.vertex_count, sub_mesh.vertex_layout)
-            vbo.set_data(vertices)
-
-            vbo_idx = len(self._vertex_buffers)
-            self._vertex_buffers.append(vbo)
-
-            # update vao
-            if not sub_mesh.vertex_layout.has(VertexAttrib.TexCoord0):
-                vao.bind_vertex_buffer(vbo, [0, 1, 3])
+        # create new vbo with new data
+        v_positions = []
+        v_normals = []
+        v_uvs = []
+        v_colors = []
+        for idx in sub_mesh.triangles:
+            # [(vertex index), (uv index), (normal index)]
+            face = self._triangles[idx]
+            vertex_count = len(face[0])
+            triangle_list = []
+            if vertex_count < 3:
+                continue
+            elif vertex_count == 3:
+                triangle_list.append(face)
             else:
-                vao.bind_vertex_buffer(vbo, [0, 1, 2, 3])
+                for i in range(0, vertex_count - 2):
+                    triangle_list.append([(face[0][0], *face[0][i+1: i+3]),
+                                          (face[1][0], *face[1][i+1: i+3]),
+                                          (face[2][0], *face[2][i+1: i+3])])
+            for f in triangle_list:
+                for i in range(0, 3):
+                    if i == 0:
+                        for v_i in f[i]:
+                            v_positions.append(self._vertices[v_i])
+                            v_colors.append(self._colors[v_i])
+                    if i == 1:
+                        for vt_i in f[i]:
+                            v_uvs.append(self._uvs[vt_i])
+                    if i == 2:
+                        for vn_i in f[i]:
+                            v_normals.append(self._normals[vn_i])
 
-            # update with the new record
-            self._render_records[sub_mesh.render_record] = MtlRenderRecord(old_record.mtl_idx,
-                                                                           old_record.vao_idx,
-                                                                           vbo_idx,
-                                                                           sub_mesh.vertex_count)
+        sub_mesh.vertex_count = len(v_positions)
 
-    def _append_sub_mesh(self, descriptor):
+        vertices = np.array([z for x in zip(v_positions, v_colors, v_uvs, v_normals) for y in x for z in y],
+                            dtype=np.float32).ravel()
+
+        mtl_idx = 0
+
+        if create:
+            vao = VertexArrayObject()
+            vao_idx = len(self._vertex_array_objects)
+            self._vertex_array_objects.append(vao)
+        else:
+            old_record = self._render_records[index]
+            self._vertex_buffers[old_record.vbo_idx].delete()
+            vao = self._vertex_array_objects[old_record.vao_idx]
+            vao_idx = old_record.vao_idx
+            mtl_idx = old_record.mtl_idx
+
+        vbo = VertexBuffer(sub_mesh.vertex_count, sub_mesh.vertex_layout)
+        vbo.set_data(vertices)
+
+        vbo_idx = len(self._vertex_buffers)
+        self._vertex_buffers.append(vbo)
+
+        vao.bind_vertex_buffer(vbo, [0, 1, 2, 3])
+
+        if texture != '':
+            mtl_idx = len(self._materials)
+            self._materials.append(Material.default(texture))
+
+        self._render_records[index] = MtlRenderRecord(mtl_idx,
+                                                      vao_idx,
+                                                      vbo_idx,
+                                                      sub_mesh.vertex_count)
+
+    def append_sub_mesh(self, sub_mesh: SubMesh, texture: str = ''):
         self._sub_meshes.append(SubMesh())
-        self._update_sub_mesh(len(self._sub_meshes), descriptor)
+        self.update_sub_mesh(len(self._sub_meshes) - 1, sub_mesh, texture, create=True)
 
     @property
     def shader(self):
@@ -666,34 +628,33 @@ class Mesh:
     def initial_transformation(self, value: Mat4):
         self._initial_transformation = value
 
-    def draw_with_shader(self, shader=None):
+    def draw(self, shader=None):
         _shader = shader if shader is not None and shader.is_valid() else self._shader
         if len(self._sub_meshes) > 0:
             with _shader:
                 mat = self._transformation * self._initial_transformation
                 _shader.model_mat = mat
                 _shader['shading_enabled'] = self._shading_enabled
-                for sub_mesh in self._sub_meshes:
-                    if sub_mesh.has_valid_render_record():
-                        record = self._render_records[sub_mesh.render_record]
-                        mtl = self._materials[record.mtl_idx]
-                        vao = self._vertex_array_objects[record.vao_idx]
+                for idx, record in self._render_records.items():
+                    sub_mesh = self._sub_meshes[idx]
+                    mtl = self._materials[record.mtl_idx]
+                    vao = self._vertex_array_objects[record.vao_idx]
 
-                        _shader['mtl.diffuse'] = mtl.diffuse
-                        _shader['mtl.ambient'] = mtl.ambient
-                        _shader['mtl.specular'] = mtl.specular
-                        _shader['mtl.shininess'] = mtl.shininess
-                        _shader['mtl.enabled'] = True
-                        from bk7084.app import current_window
-                        _shader['time'] = current_window().elapsed_time
-                        _shader['mtl.use_diffuse_map'] = self._texture_enabled
+                    _shader['mtl.diffuse'] = mtl.diffuse
+                    _shader['mtl.ambient'] = mtl.ambient
+                    _shader['mtl.specular'] = mtl.specular
+                    _shader['mtl.shininess'] = mtl.shininess
+                    _shader['mtl.enabled'] = True
+                    from bk7084.app import current_window
+                    _shader['time'] = current_window().elapsed_time
+                    _shader['mtl.use_diffuse_map'] = self._texture_enabled
 
-                        _shader.active_texture_unit(0)
-                        texture = mtl.texture_diffuse
+                    _shader.active_texture_unit(0)
+                    texture = mtl.texture_diffuse
 
-                        if self._alternate_texture_enabled and self._alternate_texture is not None:
-                            texture = self._alternate_texture
+                    if self._alternate_texture_enabled and self._alternate_texture is not None:
+                        texture = self._alternate_texture
 
-                        with texture:
-                            with vao:
-                                gl.glDrawArrays(sub_mesh.topology.value, 0, record.vertex_count)
+                    with texture:
+                        with vao:
+                            gl.glDrawArrays(sub_mesh.topology.value, 0, record.vertex_count)

@@ -6,5 +6,13 @@ class Building(Entity):
         super().__init__(name)
         self._meshes = []
 
-    def add_components(self, *components):
-        pass
+    def append(self, mesh):
+        self._meshes.append(mesh)
+
+    @property
+    def meshes(self):
+        return self._meshes
+
+    def draw(self, shader=None):
+        for m in self._meshes:
+            m.draw(shader)

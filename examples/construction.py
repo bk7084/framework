@@ -9,44 +9,40 @@ from bk7084.graphics import draw, PointLight
 
 # Setup window and add camera
 from bk7084.scene import Mesh, Building, Scene
+from bk7084.scene.mesh import SubMesh
 
 window = Window("BK7084: Construction", width=1024, height=1024)
 window.create_camera(Vec3(4, 2.0, 4.0), Vec3(0, 0, 0), Vec3.unit_y(), 60.0)
 
 # t = Triangle(Vec3(0, 0, 0), Vec3(1, 1, 1), Vec3(1, 0, 1))
 
-mesh = Mesh(vertices=[[-1.0, -1.0, 0.0], [1.0, -1.0, 0.0], [1.0, 1.0, 0.0], [-1.0, 1.0, 0.0]],
-            colors=[Palette.BrownB.as_color(), Palette.RedB.as_color(), Palette.GreenA.as_color(), Palette.YellowB.as_color()],
+wall = Mesh(vertices=[[-1.0, -1.0, 0.0], [1.0, -1.0, 0.0], [1.0, 1.0, 0.0], [-1.0, 1.0, 0.0],
+                      [-2.0, -2.0, 0.0], [2.0, -2.0, 0.0], [2.0, 2.0, 0.0], [-2.0, 2.0, 0.0]],
+            colors=[Palette.BrownB.as_color()],
             normals=[[0.0, 0.0, 1.0]],
             uvs=[[0.0, 0.0], [1.0, 0.0], [1.0, 1.0], [0.0, 1.0]],
-            triangles=[[(0, 1, 2), (0, 1, 2), (0, 0, 0)],
-                       [(2, 3, 0), (2, 3, 0), (0, 0, 0)]],
-            texture='textures/spot_texture.png')
+            triangles=[[(0, 1, 5, 4), (0, 1, 0, 1), (0, 0, 0, 0)],
+                       [(1, 2, 6, 5), (1, 2, 2, 1), (0, 0, 0, 0)],
+                       [(2, 3, 7, 6), (2, 3, 3, 2), (0, 0, 0, 0)],
+                       [(3, 0, 4, 7), (3, 0, 0, 3), (0, 0, 0, 0)],
+                       [(0, 1, 2, 3), (0, 1, 2, 3), (0, 0, 0, 0)]])
 
-print(mesh.sub_meshes)
-
-mesh.texture_enabled = True
-mesh.alternate_texture_enabled = True
-
-# mesh = Mesh('./models/cube.obj', texture='textures/spot_texture.png')
-#mesh.texture_enabled = True
-# mesh.alternate_texture_enabled = True
+wall.update_sub_mesh(0, SubMesh(name='body', triangles=[0, 1, 2, 3]), texture='textures/checker_small.png')
+wall.append_sub_mesh(SubMesh(name='window', triangles=[4]), texture='textures/checker_color.png')
 
 # camera = Camera(Vec3(2, 1.0, 2.0), Vec3(0, 0, 0), Vec3.unit_y(), 60.0)
 #
 # light = PointLight()
 #
 building = Building()
-#
-# building.add_components()
-#
+building.append(wall)
 # scene = Scene([building], [camera], [light])
 
 
 @window.event
 def on_draw(dt):
     # scene.draw()
-    draw(mesh)
+    building.draw()
 
 
 @window.event
