@@ -2,46 +2,54 @@ from pprint import pprint
 
 from bk7084 import Window, app, Camera
 from bk7084.app.window.input import KeyCode
-from bk7084.geometry import Triangle, Ray, Line, Box
-from bk7084.math import Vec3, Mat3, Mat4
+from bk7084.math import Vec3, Mat4
 from bk7084.misc import PaletteDefault as Palette
 from bk7084.graphics import draw, PointLight
 
 # Setup window and add camera
-from bk7084.scene import Mesh, Building, Scene
+from bk7084.scene import Mesh, Building, Component
 from bk7084.scene.mesh import SubMesh
 
 window = Window("BK7084: Construction", width=1024, height=1024)
 window.create_camera(Vec3(4, 2.0, 4.0), Vec3(0, 0, 0), Vec3.unit_y(), 60.0)
 
-# t = Triangle(Vec3(0, 0, 0), Vec3(1, 1, 1), Vec3(1, 0, 1))
 
-wall = Mesh(vertices=[[-1.0, -1.0, 0.0], [1.0, -1.0, 0.0], [1.0, 1.0, 0.0], [-1.0, 1.0, 0.0],
-                      [-2.0, -2.0, 0.0], [2.0, -2.0, 0.0], [2.0, 2.0, 0.0], [-2.0, 2.0, 0.0]],
-            colors=[Palette.BrownB.as_color()],
+class Wall(Component):
+    def __init__(self, w, h, texture1, texture2):
+        super().__init__()
+        self._mesh = Mesh(
+            vertices=[[-w / 2.0, -h / 2.0, 0.0], [w / 2.0, -h / 2.0, 0.0], [w / 2.0, h / 2.0, 0.0], [-w / 2.0, h / 2.0, 0.0],
+                      [-w, -h, 0.0], [w, -h, 0.0], [w, h, 0.0], [-w, h, 0.0]],
+            colors=[Palette.BlueA.as_color()],
             normals=[[0.0, 0.0, 1.0]],
-            uvs=[[0.0, 0.0], [1.0, 0.0], [1.0, 1.0], [0.0, 1.0]],
-            triangles=[[(0, 1, 5, 4), (0, 1, 0, 1), (0, 0, 0, 0)],
-                       [(1, 2, 6, 5), (1, 2, 2, 1), (0, 0, 0, 0)],
-                       [(2, 3, 7, 6), (2, 3, 3, 2), (0, 0, 0, 0)],
-                       [(3, 0, 4, 7), (3, 0, 0, 3), (0, 0, 0, 0)],
+            uvs=[[0.0, 0.0], [1.0, 0.0], [1.0, 1.0], [0.0, 1.0], [0.25, 0.25], [0.75, 0.25], [0.75, 0.75], [0.25, 0.75]],
+            triangles=[[(0, 1, 5, 4), (4, 5, 1, 0), (0, 0, 0, 0)],
+                       [(1, 2, 6, 5), (5, 6, 2, 1), (0, 0, 0, 0)],
+                       [(2, 3, 7, 6), (6, 7, 3, 2), (0, 0, 0, 0)],
+                       [(3, 0, 4, 7), (7, 4, 0, 3), (0, 0, 0, 0)],
                        [(0, 1, 2, 3), (0, 1, 2, 3), (0, 0, 0, 0)]])
 
-wall.update_sub_mesh(0, SubMesh(name='body', triangles=[0, 1, 2, 3]), texture='textures/checker_small.png')
-wall.append_sub_mesh(SubMesh(name='window', triangles=[4]), texture='textures/checker_color.png')
+        self._mesh.update_sub_mesh(0, SubMesh(name='body', triangles=[0, 1, 2, 3]), texture=texture1)
+        self._mesh.append_sub_mesh(SubMesh(name='window', triangles=[4]), texture=texture2)
+        self._mesh.texture_enabled = True
+        self._mesh.apply_transformation(Mat4.from_rotation_y(45, True))
 
-# camera = Camera(Vec3(2, 1.0, 2.0), Vec3(0, 0, 0), Vec3.unit_y(), 60.0)
-#
-# light = PointLight()
-#
+    @property
+    def mesh(self) -> Mesh:
+        return self._mesh
+
+
+wall = Wall(1.0, 1.0, texture1='textures/checker_small.png', texture2='textures/checker_color.png')
+wall2 = Wall(1.0, 1.0, texture1='textures/checker_huge.png', texture2='textures/checker_large.png')
+wall2.transform = Mat4.from_translation(Vec3(1.0, 0.0, 0.0))
+
 building = Building()
 building.append(wall)
-# scene = Scene([building], [camera], [light])
+building.append(wall2, wall)
 
 
 @window.event
 def on_draw(dt):
-    # scene.draw()
     building.draw()
 
 
@@ -52,7 +60,8 @@ def on_key_press(key, mods):
 
 @window.event
 def on_update(dt):
-    pass
+    wall.transform *= Mat4.from_rotation_y(45.0 * dt, True)
+    wall2.mesh.transformation *= Mat4.from_rotation_z(45.0 * dt, True)
 
 
 app.init(window)

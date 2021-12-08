@@ -146,7 +146,8 @@ class Mesh:
         self._transformation: Mat4 = Mat4.identity()
 
         self._shading_enabled = True
-        self._texture_enabled = True
+        self._texture_enabled = False
+        self._material_enabled = True
         self._alternate_texture_enabled = False
 
         self._vertex_buffers: [VertexBuffer] = []
@@ -175,8 +176,8 @@ class Mesh:
         else:
             if not (vertices and colors and uvs and normals and triangles):
                 missing_attributes = [name for attrib, name in ((vertices, 'vertices'), (colors, 'colors'),
-                                                           (uvs, 'uvs'), (normals, 'normals'),
-                                                           (triangles, 'triangles')) if attrib is None]
+                                                                (uvs, 'uvs'), (normals, 'normals'),
+                                                                (triangles, 'triangles')) if attrib is None]
                 raise ValueError(f"Mesh creation - missing vertex attributes: {missing_attributes}.")
 
             self._name = kwargs.get('name', 'unnamed_{}'.format(self.__class__.__name__))
@@ -288,6 +289,14 @@ class Mesh:
     @texture_enabled.setter
     def texture_enabled(self, value):
         self._texture_enabled = value
+
+    @property
+    def material_enabled(self):
+        return self._material_enabled
+
+    @material_enabled.setter
+    def material_enabled(self, value):
+        self._material_enabled = value
 
     @property
     def alternate_texture_enabled(self):
@@ -628,12 +637,12 @@ class Mesh:
     def initial_transformation(self, value: Mat4):
         self._initial_transformation = value
 
-    def draw(self, shader=None):
+    def draw(self, matrix=Mat4.identity(), shader=None):
         _shader = shader if shader is not None and shader.is_valid() else self._shader
         if len(self._sub_meshes) > 0:
             with _shader:
-                mat = self._transformation * self._initial_transformation
-                _shader.model_mat = mat
+                mat = matrix * self._transformation * self._initial_transformation
+                _shader['model_mat'] = mat
                 _shader['shading_enabled'] = self._shading_enabled
                 for idx, record in self._render_records.items():
                     sub_mesh = self._sub_meshes[idx]
@@ -644,7 +653,7 @@ class Mesh:
                     _shader['mtl.ambient'] = mtl.ambient
                     _shader['mtl.specular'] = mtl.specular
                     _shader['mtl.shininess'] = mtl.shininess
-                    _shader['mtl.enabled'] = True
+                    _shader['mtl.enabled'] = self._material_enabled
                     from bk7084.app import current_window
                     _shader['time'] = current_window().elapsed_time
                     _shader['mtl.use_diffuse_map'] = self._texture_enabled
