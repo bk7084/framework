@@ -23,8 +23,6 @@ class PathResolver:
 
 class WavefrontReader:
     def __init__(self, filepath, resolver=default_resolver):
-        if not os.path.isfile(filepath):
-            raise ValueError(f"File {filepath} does not exist.")
         self._filepath = resolver.resolve(filepath)
 
     def read(self):

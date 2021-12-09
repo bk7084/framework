@@ -1,4 +1,5 @@
 import os
+import __main__
 
 __all__ = [
     'default_resolver',
@@ -12,6 +13,8 @@ class PathResolver:
             os.path.abspath(os.path.dirname(__file__)),
             os.path.curdir,
         ]
+        if hasattr(__main__, '__file__'):
+            self._search_paths.append(os.path.abspath(os.path.dirname(__main__.__file__)))
 
         if search_paths is not None:
             for path in search_paths:
