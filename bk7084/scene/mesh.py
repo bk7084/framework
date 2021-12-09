@@ -590,6 +590,7 @@ class Mesh:
         if texture != '':
             mtl_idx = len(self._materials)
             self._materials.append(Material.default(texture))
+            self._texture_enabled = True
 
         self._render_records[index] = MtlRenderRecord(mtl_idx,
                                                       vao_idx,
