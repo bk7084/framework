@@ -146,9 +146,9 @@ class Mesh:
         self._transformation: Mat4 = Mat4.identity()
 
         self._shading_enabled = True
-        self._texture_enabled = False
+        self._texture_enabled = True if self._alternate_texture else False
         self._material_enabled = True
-        self._alternate_texture_enabled = False
+        self._alternate_texture_enabled = True if self._alternate_texture else False
 
         self._vertex_buffers: [VertexBuffer] = []
         self._index_buffers: [IndexBuffer] = []
