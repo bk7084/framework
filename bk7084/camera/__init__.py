@@ -151,7 +151,8 @@ class Camera:
             rot_y = Mat4.from_axis_angle(self.right, angle_y)
             pos = rot_y * (pos - pivot) + pivot
 
-            if not(self.safe_rotations and abs(Vec3(pos).normalise().dot(self.up)) > 0.99):
+            new_cos_angle = Vec3(pos).normalise().dot(self.up)
+            if not(self.safe_rotations and (abs(new_cos_angle) > 0.99 or new_cos_angle < 0.01)):
                 self.update_view(pos, self.look_at, self.up)
 
     def on_mouse_scroll(self, x, y, x_offset, y_offset, min_dist=1e-5):
