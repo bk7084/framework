@@ -272,7 +272,7 @@ class Vec3(Vector):
         return cross(self, other)
 
     def normalise(self):
-        self[:] = self.normalised()
+        self = self.normalised
         return self
 
     @property

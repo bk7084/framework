@@ -12,7 +12,7 @@ from ..math import Vec3, Vec4, Mat4
 
 
 class Camera:
-    def __init__(self, pos, look_at, up, aspect_ratio, fov_v=45.0, near=0.1, far=1000., degrees=True, zoom_enabled=False):
+    def __init__(self, pos, look_at, up, aspect_ratio, fov_v=45.0, near=0.1, far=1000., degrees=True, zoom_enabled=False, safe_rotations=True):
         self._pos = Vec3(pos)
         self._look_at = Vec3(look_at)
         self._up = Vec3(up)
@@ -25,6 +25,7 @@ class Camera:
         self._d_angle_x = 0.
         self._d_angle_y = 0.
         self._zoom_enabled = zoom_enabled
+        self._safe_rotations = safe_rotations
 
     @property
     def position(self):
@@ -87,6 +88,14 @@ class Camera:
     def zoom_enabled(self, value):
         self._zoom_enabled = value
 
+    @property
+    def safe_rotations(self):
+        return self._safe_rotations
+
+    @safe_rotations.setter
+    def safe_rotations(self, value):
+        self._safe_rotations = value
+
     def __enter__(self):
         self._update_matrices()
         return self
@@ -142,7 +151,8 @@ class Camera:
             rot_y = Mat4.from_axis_angle(self.right, angle_y)
             pos = rot_y * (pos - pivot) + pivot
 
-            self.update_view(pos, self.look_at, self.up)
+            if not(self.safe_rotations and abs(Vec3(pos).normalised.dot(self.up)) > 0.99):
+                self.update_view(pos, self.look_at, self.up)
 
     def on_mouse_scroll(self, x, y, x_offset, y_offset):
         if self._zoom_enabled:
