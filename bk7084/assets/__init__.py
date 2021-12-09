@@ -14,7 +14,7 @@ class PathResolver:
             os.path.curdir,
         ]
         if hasattr(__main__, '__file__'):
-            self._search_paths.append(os.path.abspath(os.path.dirname(__main__.__file__)))
+            self._search_paths.insert(0, os.path.abspath(os.path.dirname(__main__.__file__)))
 
         if search_paths is not None:
             for path in search_paths:
