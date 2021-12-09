@@ -21,6 +21,8 @@ def draw(*objs: Union[Shape, Mesh], **kwargs):
     update = kwargs.get('update', False)
     shader = kwargs.get('shader', app.current_window().default_shader)
 
+    transform = kwargs.get('transform', Mat4.identity())
+
     if not hasattr(draw, 'shapes_created_gpu_objects'):
         draw.shapes_created_gpu_objects = {}
 
@@ -56,7 +58,7 @@ def draw(*objs: Union[Shape, Mesh], **kwargs):
                 ibo.set_data(obj.indices)
 
             with shader:
-                shader.model_mat = Mat4.identity()
+                shader.model_mat = transform
                 shader.shading_enabled = False
                 shader['mtl.enabled'] = False
                 with vao:
