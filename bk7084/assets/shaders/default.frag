@@ -37,6 +37,7 @@ vec4 shading(vec3 ambient_color, vec3 light_dir, vec3 view_dir, vec3 light_color
     vec3 luminance = ambient_color.rgb * 0.1 + diffuse_color * 0.3;
 
     float illuminance = dot(light_dir, n);
+
     if (illuminance > 0.0) {
         vec3 brdf = blinnPhongBRDF(light_dir, view_dir, n, diffuse_color.rgb, specular_color.rgb, shininess);
 
@@ -70,7 +71,7 @@ void main() {
     } else {
         diffuse_color = v_color;
         specular_color = vec4(1.0, 1.0, 1.0, 1.0);
-        shininess = 0;
+        shininess = 1.0;
         ambient_color = vec4(0.5, 0.5, 0.5, 1.0);
     }
 
