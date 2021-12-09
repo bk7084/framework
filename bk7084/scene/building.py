@@ -45,6 +45,7 @@ class Building(Entity):
         self._root_components = []  # store the Component objects index
         self._hierarchy = {}  # store the parent index of components: { comp_index: parent_index }
         self._is_drawable = True
+        self._transform = Mat4.identity()
 
     def append(self, comp: Component, parent: Component = None):
         exists = False
@@ -76,6 +77,14 @@ class Building(Entity):
     def components(self):
         return self._components
 
+    @property
+    def transform(self):
+        return self._transform
+
+    @transform.setter
+    def transform(self, value: Mat4):
+        self._transform = value
+
     def _parent_list(self, comp, parent_list):
         if comp in self._root_components:
             return parent_list
@@ -89,5 +98,5 @@ class Building(Entity):
     def draw(self, shader=None):
         for idx, comp in enumerate(self._components):
             parents = self._parent_list(idx, [idx])
-            matrices = [self._components[p].transform for p in parents]
+            matrices = [self._components[p].transform for p in parents] + [self.transform]
             comp.draw(matrices)
