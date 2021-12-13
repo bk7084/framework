@@ -116,7 +116,8 @@ class VertexLayout:
         return cls(VertexAttribDescriptor(VertexAttrib.Position, VertexAttribFormat.Float32, 3),
                    VertexAttribDescriptor(VertexAttrib.Color0, VertexAttribFormat.Float32, 4),
                    VertexAttribDescriptor(VertexAttrib.TexCoord0, VertexAttribFormat.Float32, 2),
-                   VertexAttribDescriptor(VertexAttrib.Normal, VertexAttribFormat.Float32, 3))
+                   VertexAttribDescriptor(VertexAttrib.Normal, VertexAttribFormat.Float32, 3),
+                   VertexAttribDescriptor(VertexAttrib.Tangent, VertexAttribFormat.Float32, 3))
 
     def has(self, attrib: VertexAttrib):
         return attrib in self._description
