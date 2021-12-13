@@ -14,6 +14,7 @@ struct Material {
 in vec4 v_color;
 in vec3 v_normal;
 in vec2 v_texcoord;
+in vec3 v_tangent;
 in vec3 frag_pos;
 in vec3 world_pos;
 in vec3 light_pos;
