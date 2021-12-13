@@ -389,6 +389,8 @@ class Mesh:
                 if attrib == 'N':
                     vertex_attribs.append(VertexAttribDescriptor(VertexAttrib.Normal, VertexAttribFormat.Float32, 3))
 
+            vertex_attribs.append(VertexAttribDescriptor(VertexAttrib.Tangent, VertexAttribFormat.Float32, 3))
+
             # pack the data together for rendering
             for mtl in sub_obj_materials:
                 mtl_idx, f_start, f_end = mtl
@@ -425,18 +427,18 @@ class Mesh:
                 if sub_mesh.vertex_layout.has(VertexAttrib.TexCoord0) and sub_mesh.vertex_layout.has(
                         VertexAttrib.Normal):
                     vertices = np.array(
-                        [z for x in zip(v_positions, v_colors, v_texcoords, v_normals) for y in x for z in y],
+                        [z for x in zip(v_positions, v_colors, v_texcoords, v_normals, v_tangents) for y in x for z in y],
                         dtype=np.float32).ravel()
                 elif sub_mesh.vertex_layout.has(VertexAttrib.TexCoord0) and not sub_mesh.vertex_layout.has(
                         VertexAttrib.Normal):
-                    vertices = np.array([z for x in zip(v_positions, v_colors, v_texcoords) for y in x for z in y],
+                    vertices = np.array([z for x in zip(v_positions, v_colors, v_texcoords, v_tangents) for y in x for z in y],
                                         dtype=np.float32).ravel()
                 elif not sub_mesh.vertex_layout.has(VertexAttrib.TexCoord0) and sub_mesh.vertex_layout.has(
                         VertexAttrib.Normal):
-                    vertices = np.array([z for x in zip(v_positions, v_colors, v_normals) for y in x for z in y],
+                    vertices = np.array([z for x in zip(v_positions, v_colors, v_normals, v_tangents) for y in x for z in y],
                                         dtype=np.float32).ravel()
                 else:
-                    vertices = np.array([z for x in zip(v_positions, v_colors) for y in x for z in y],
+                    vertices = np.array([z for x in zip(v_positions, v_colors, v_tangents) for y in x for z in y],
                                         dtype=np.float32).ravel()
 
                 # bind vertex buffers
@@ -450,9 +452,9 @@ class Mesh:
                 self._vertex_array_objects.append(vao)
 
                 if not sub_mesh.vertex_layout.has(VertexAttrib.TexCoord0):
-                    vao.bind_vertex_buffer(vbo, [0, 1, 3])
+                    vao.bind_vertex_buffer(vbo, [0, 1, 3, 4])
                 else:
-                    vao.bind_vertex_buffer(vbo, [0, 1, 2, 3])
+                    vao.bind_vertex_buffer(vbo, [0, 1, 2, 3, 4])
 
                 self._sub_meshes.append(sub_mesh)
 
