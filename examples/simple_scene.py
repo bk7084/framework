@@ -20,6 +20,7 @@ window._camera.zoom_enabled = True
 # cow = Mesh('./models/car.obj')
 # car.apply_transformation(Mat4.from_translation(Vec3(-4.0, 0.0, 0.0)))
 cow = Mesh("./models/spot_cow.obj")
+#cow = Mesh("./models/cube.obj")
 
 animate = False
 

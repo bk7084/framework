@@ -24,6 +24,8 @@ out vec4 frag_color;
 uniform bool shading_enabled;
 uniform Material mtl;
 
+bool use_normal_map = false;
+
 
 // Blinn Phong BRDF in Camera Space
 vec3 blinnPhongBRDF(vec3 light_dir, vec3 view_dir, vec3 normal, vec3 diffuse_color, vec3 specular_color, float shininess) {
@@ -48,6 +50,20 @@ vec4 shading(vec3 ambient_color, vec3 light_dir, vec3 view_dir, vec3 light_color
     return vec4(luminance, 1.0);
 }
 
+vec3 normalMap (sampler2D tex) {
+
+    vec3 tangent = normalize(v_tangent);
+    vec3 normal = normalize(v_normal);
+    vec3 bitangent = normalize (cross(normal, tangent));
+
+    mat3 TBN = mat3(tangent, bitangent, normal);
+
+    vec3 normal_map = texture(tex, v_texcoord).xyz*2.0 - vec3(1.0);
+    normal_map = normalize(TBN * normal_map);
+
+    return normal_map;
+}
+
 void main() {
     vec3 light_dir = normalize(light_pos - frag_pos);
     vec3 view_dir = normalize(-frag_pos);
@@ -59,12 +75,21 @@ void main() {
     vec4 ambient_color;
     vec4 light_color = vec4(0.8, 0.8, 0.8, 1.0);
 
+
+    
+
     if (mtl.enabled) {
-         if (mtl.use_diffuse_map) {
-             diffuse_color = texture(mtl.diffuse_map, v_texcoord);
-         } else {
-             diffuse_color = vec4(mtl.diffuse, 1.0);
-         }
+    
+        if (use_normal_map) {
+            n = normalMap(mtl.diffuse_map);
+            diffuse_color = vec4(mtl.diffuse, 1.0);
+            //diffuse_color = vec4(normalize(v_tangent), 1.0);
+        }    
+        else if (mtl.use_diffuse_map) {
+            diffuse_color = texture(mtl.diffuse_map, v_texcoord);
+        } else {
+            diffuse_color = vec4(mtl.diffuse, 1.0);
+        }
 
          specular_color = vec4(mtl.specular, 1.0);
          shininess = mtl.shininess;
@@ -82,4 +107,6 @@ void main() {
     } else {
         frag_color = diffuse_color;
     }
+
+    //frag_color = vec4(normalize(v_tangent), 1.0);
 }

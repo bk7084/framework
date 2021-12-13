@@ -523,8 +523,9 @@ class Mesh:
             delta_pos = [vertices[i] - vertices[0] for i in (1, 2)]
             # delta uvs
             delta_uv = [uvs[i] - uvs[0] for i in (1, 2)]
-            det = 1.0 / delta_uv[0][0] * delta_uv[1][1] - delta_uv[0][1] * delta_uv[1][0]
-            tangent += (delta_pos[0] * delta_uv[1][1] - delta_pos[1] * delta_uv[0][1]) * det
+            det = delta_uv[0][0] * delta_uv[1][1] - delta_uv[0][1] * delta_uv[1][0]
+            if det != 0.0:
+                tangent += (delta_pos[0] * delta_uv[1][1] - delta_pos[1] * delta_uv[0][1]) / det
             # bitangent += (delta_pos[1] * delta_uv[0][0] - delta_pos[0] * delta_uv[1][0]) * det
 
         return tangent / np.sqrt(np.sum(tangent ** 2))
