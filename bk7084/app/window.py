@@ -178,6 +178,7 @@ class Window(event.EventDispatcher):
         glfw.set_mouse_button_callback(self._native_window, self._on_glfw_mouse_button)
         glfw.set_cursor_pos_callback(self._native_window, self._on_glfw_mouse_motion)
         glfw.set_scroll_callback(self._native_window, self._on_glfw_scroll)
+        glfw.set_char_callback(self._native_window, self._on_glfw_char)
 
         self._width, self._height = glfw.get_framebuffer_size(self._native_window)
         self._x, self._y = glfw.get_window_pos(self._native_window)
@@ -228,14 +229,22 @@ class Window(event.EventDispatcher):
     def _on_glfw_window_close(self, _window):
         self.close()
 
-    def _on_glfw_key(self, _window, key, scancode, action, mods):
+    def _on_glfw_key(self, window, key, scancode, action, mods):
         keycode = KeyCode.from_glfw_keycode(key)
         modifiers = KeyModifier.from_glfw_modifiers(mods)
 
-        if action in [glfw.PRESS, glfw.REPEAT]:
-            self.dispatch('on_key_press', keycode, modifiers)
-        else:
-            self.dispatch('on_key_release', keycode, modifiers)
+        if self._gui:
+            self._gui.keyboard_callback(window, key, scancode, action, mods)
+
+        if self._gui and not imgui.get_io().want_capture_keyboard:
+            if action in [glfw.PRESS, glfw.REPEAT]:
+                self.dispatch('on_key_press', keycode, modifiers)
+            else:
+                self.dispatch('on_key_release', keycode, modifiers)
+
+    def _on_glfw_char(self, window, char):
+        if self._gui:
+            self._gui.char_callback(window, char)
 
     def _on_glfw_mouse_button(self, window, button, action, mods):
         x, y = glfw.get_cursor_pos(window)
@@ -369,15 +378,15 @@ class Window(event.EventDispatcher):
             # process inputs
             glfw.poll_events()
 
+            if self._gui:
+                self._gui.process_inputs()
+                self.dispatch('on_gui')
+
             # update
             self.dispatch('on_update', dt)
 
             # render
             gl.glClear(self._clear_flags)
-
-            if self._gui:
-                self._gui.process_inputs()
-                self.dispatch('on_gui')
 
             self.dispatch('on_draw', dt)
 

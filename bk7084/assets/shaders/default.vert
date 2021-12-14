@@ -17,6 +17,7 @@ out vec3 light_pos;
 uniform mat4 model_mat;
 uniform mat4 view_mat;
 uniform mat4 proj_mat;
+uniform vec3 in_light_pos;
 
 
 
@@ -26,7 +27,7 @@ void main() {
 
     frag_pos = pos.xyz;
 
-    light_pos = vec3(view_mat * vec4(600.0, 600.0, 600.0, 1.0));
+    light_pos = vec3(view_mat * vec4(in_light_pos, 1.0));
 
     v_color = a_color;
     v_texcoord = a_texcoord;

@@ -720,13 +720,15 @@ class Mesh:
     def initial_transformation(self, value: Mat4):
         self._initial_transformation = value
 
-    def draw(self, matrix=Mat4.identity(), shader=None):
+    def draw(self, matrix=Mat4.identity(), shader=None, **kwargs):
         _shader = shader if shader is not None and shader.is_valid() else self._shader
         if len(self._sub_meshes) > 0:
             with _shader:
                 mat = matrix * self._transformation * self._initial_transformation
                 _shader['model_mat'] = mat
                 _shader['shading_enabled'] = self._shading_enabled
+                _shader['in_light_pos'] = kwargs.get('in_light_pos', Vec3(600.0, 600.0, 600.0))
+
                 for idx, record in self._render_records.items():
                     sub_mesh = self._sub_meshes[idx]
                     mtl = self._materials[record.mtl_idx]

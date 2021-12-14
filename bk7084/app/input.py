@@ -141,7 +141,8 @@ class KeyCode(IntEnum):
 
     @classmethod
     def from_glfw_keycode(cls, keycode):
-        return _KEY_MAP[keycode]
+        if keycode in _KEY_MAP:
+            return _KEY_MAP[keycode]
 
 
 _KEY_MAP = {

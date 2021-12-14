@@ -1,9 +1,8 @@
-from collections.abc import Sequence
-
 from .mesh import Mesh
 from .entity import Entity
 from ..app import ui
 from ..camera import Camera
+from ..graphics.lights import PointLight
 from ..misc import PaletteDefault
 
 
@@ -13,8 +12,8 @@ class MeshEntity(Entity):
         self.mesh = mesh
         self._is_drawable = True
 
-    def draw(self, shader=None):
-        self.mesh.draw(shader=shader)
+    def draw(self, shader=None, **kwargs):
+        self.mesh.draw(shader=shader, **kwargs)
 
 
 class Scene:
@@ -51,7 +50,7 @@ class Scene:
                 elif isinstance(entity, Entity):
                     self._entities.append(entity)
 
-        self._lights = [light] if light is not None else []
+        self._lights = [light] if light is not None else [PointLight()]
         self._cameras = []
         self._main_camera = -1
         if camera is not None:
@@ -60,6 +59,7 @@ class Scene:
             self._window.attach_listeners(camera)
 
         self._window.attach_listeners(self)
+        self._values = 1.0, 2.0, 3.0
 
     def set_main_camera(self, index):
         """
@@ -127,20 +127,21 @@ class Scene:
 
     def on_gui(self):
         ui.new_frame()
-        # open new window context
+
         ui.begin("Controls")
-        ui.text("Hello world!")
+        changed, self._lights[0].position = ui.drag_float3('Light', *self._lights[0].position)
+
         if ui.button("Next Camera"):
             if len(self._cameras) > 0:
                 self._switch_to_camera((self._main_camera + 1) % len(self._cameras))
                 print(self._main_camera)
-        # close current window context
         ui.end()
+
         ui.end_frame()
         ui.render()
 
-    def draw(self, camera_index=0):
+    def draw(self):
         """Draw every visible meshes in the scene."""
         for e in self._entities:
             if e.drawable:
-                e.draw()
+                e.draw(in_light_pos=self._lights[0].position)
