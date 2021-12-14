@@ -23,6 +23,7 @@ out vec4 frag_color;
 
 uniform bool shading_enabled;
 uniform Material mtl;
+uniform vec3 light_color;
 
 bool use_normal_map = false;
 bool use_bump_map = true;
@@ -115,7 +116,6 @@ void main() {
     vec4 specular_color;
     float shininess;
     vec4 ambient_color;
-    vec4 light_color = vec4(0.8, 0.8, 0.8, 1.0);
 
     if (mtl.enabled) {
     

@@ -133,12 +133,19 @@ class Scene:
         ui.new_frame()
 
         ui.begin("Controls")
-        changed, self._lights[0].position = ui.drag_float3('Light', *self._lights[0].position)
 
-        if ui.button("Next Camera"):
-            if len(self._cameras) > 0:
-                self._switch_to_camera((self._main_camera + 1) % len(self._cameras))
-                print(self._main_camera)
+        if ui.tree_node('Light'):
+            _, self._lights[0].position = ui.drag_float3('Position', *self._lights[0].position)
+            _, self._lights[0].color.rgb = ui.color_edit3('Color', *self._lights[0].color.rgb)
+            ui.tree_pop()
+
+        if ui.tree_node('Camera'):
+            if ui.button("Next Camera"):
+                if len(self._cameras) > 0:
+                    self._switch_to_camera((self._main_camera + 1) % len(self._cameras))
+                    print(self._main_camera)
+            ui.tree_pop()
+
         ui.end()
 
         ui.end_frame()
@@ -152,4 +159,4 @@ class Scene:
                 self._light_boxes[i].draw()
         for e in self._entities:
             if e.drawable:
-                e.draw(in_light_pos=self._lights[0].position)
+                e.draw(in_light_pos=self._lights[0].position, light_color=self._lights[0].color.rgb)

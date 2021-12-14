@@ -728,6 +728,7 @@ class Mesh:
                 _shader['model_mat'] = mat
                 _shader['shading_enabled'] = self._shading_enabled
                 _shader['in_light_pos'] = kwargs.get('in_light_pos', Vec3(600.0, 600.0, 600.0))
+                _shader['light_color'] = kwargs.get('light_color', Vec3(0.8, 0.8, 0.8))
 
                 for idx, record in self._render_records.items():
                     sub_mesh = self._sub_meshes[idx]
