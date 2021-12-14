@@ -24,8 +24,9 @@ out vec4 frag_color;
 uniform bool shading_enabled;
 uniform Material mtl;
 
-bool use_normal_map = true;
-bool use_bump_map = false;
+bool use_normal_map = false;
+bool use_bump_map = true;
+bool use_parallax_map = false;
 
 
 // Blinn Phong BRDF in Camera Space
@@ -60,19 +61,29 @@ mat3 tangentSpaceMatrix () {
     return mat3(tangent, bitangent, normal);
 }
 
+vec2 parallaxMap (sampler2D tex) { 
+    float parallax_factor = 10.0;
+
+    vec3 view_dir = normalize(-frag_pos);
+
+    float height =  texture(tex, v_texcoord).x;
+    vec2 displacement = view_dir.xy / view_dir.z * (height * parallax_factor);
+
+    return v_texcoord - displacement;
+} 
+
 vec3 bumpMap (sampler2D tex) {
 
     //https://developer.download.nvidia.com/CgTutorial/cg_tutorial_chapter08.html
-
-    float tex_size = 1.0/1024.0;
+    vec2 tex_size = 1.0/textureSize(tex, 0);
 
 
     // texture gradient (only x component is necessary since bump map is gray scale)
-    vec2 grad = vec2(texture(tex, v_texcoord).x - texture(tex, v_texcoord+vec2(tex_size,0)).x,
-                  texture(tex, v_texcoord+vec2(0,tex_size)).x - texture(tex, v_texcoord).x);
+    vec2 grad = vec2(texture(tex, v_texcoord).x - texture(tex, v_texcoord+vec2(tex_size.x,0)).x,
+                  texture(tex, v_texcoord+vec2(0,tex_size.y)).x - texture(tex, v_texcoord).x);
 
     // bump map multiplier (to enhance effect)
-    grad *= 10.0;
+    grad *= 3.0;
 
     // cross product of vector (0, 1, grad.x) x (1, 0, grad.y)
     vec3 bump_map = normalize(vec3(-grad.y, grad.x, 1.0));
@@ -116,11 +127,17 @@ void main() {
             n = bumpMap(mtl.diffuse_map);
             diffuse_color = vec4(mtl.diffuse, 1.0);            
         }    
+        else if (use_parallax_map) {
+            vec2 tex_displacement = parallaxMap(mtl.diffuse_map);
+            diffuse_color = texture(mtl.diffuse_map, tex_displacement);
+        }
         else if (mtl.use_diffuse_map) {
             diffuse_color = texture(mtl.diffuse_map, v_texcoord);
         } else {
             diffuse_color = vec4(mtl.diffuse, 1.0);
         }
+
+        
 
          specular_color = vec4(mtl.specular, 1.0);
          shininess = mtl.shininess;
@@ -139,5 +156,5 @@ void main() {
         frag_color = diffuse_color;
     }
 
-    //frag_color = vec4(normalize(n), 1.0);
+    //frag_color = vec4(v_texcoord.xy, 0.0, 1.0);
 }

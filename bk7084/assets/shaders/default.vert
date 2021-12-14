@@ -6,7 +6,6 @@ layout (location = 2) in vec2 a_texcoord;
 layout (location = 3) in vec3 a_normal;
 layout (location = 4) in vec3 a_tangent;
 
-
 out vec4 v_color;
 out vec3 v_normal;
 out vec2 v_texcoord;
@@ -19,6 +18,9 @@ uniform mat4 model_mat;
 uniform mat4 view_mat;
 uniform mat4 proj_mat;
 
+
+
+
 void main() {
     vec4 pos = view_mat * model_mat * vec4(a_position, 1.0);
 
@@ -29,7 +31,7 @@ void main() {
     v_color = a_color;
     v_texcoord = a_texcoord;
     v_normal = mat3(transpose(inverse(view_mat * model_mat))) * a_normal;
-    v_tangent = a_tangent;
+    v_tangent = mat3(transpose(inverse(view_mat * model_mat))) * a_tangent;
 
     gl_Position = proj_mat * view_mat * model_mat * vec4(a_position, 1.0);
 }
