@@ -1,10 +1,11 @@
 from __future__ import annotations
 
+import logging
 import math
 import OpenGL.GL as gl
 
 from .. import app
-from ..app.window.input import MouseButton
+from bk7084.app.input import MouseButton
 from ..math import Vec3, Vec4, Mat4
 
 
@@ -117,6 +118,7 @@ class Camera:
         shader = app.current_window().default_shader
         if shader is not None:
             with shader:
+                # logging.info(f'on_update of {self}')
                 shader.view_mat = self._view_mat
                 shader.proj_mat = self._proj_mat
         else:
