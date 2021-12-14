@@ -14,11 +14,10 @@ from imgui.integrations.glfw import GlfwRenderer
 
 from . import event
 from .input import KeyCode, MouseButton, KeyModifier
-from ... import misc, gl
-from ...camera import Camera
-from ...graphics import VertexShader, PixelShader, ShaderProgram
-from ...math import Vec2
-
+from .. import misc, gl
+from ..camera import Camera
+from ..graphics import VertexShader, PixelShader, ShaderProgram
+from ..math import Vec2
 
 # temporary work around to have access of OpenGL context before the app is initialised
 __current_window__: Window
@@ -183,7 +182,8 @@ class Window(event.EventDispatcher):
         self._width, self._height = glfw.get_framebuffer_size(self._native_window)
         self._x, self._y = glfw.get_window_pos(self._native_window)
 
-        self._old_width, self._old_height, self._old_pos = self._width, self._height, glfw.get_window_pos(self._native_window)
+        self._old_width, self._old_height, self._old_pos = self._width, self._height, glfw.get_window_pos(
+            self._native_window)
         self._is_fullscreen = False
 
         imgui.create_context()
@@ -450,14 +450,16 @@ class Window(event.EventDispatcher):
         elif key == KeyCode.F11:
             self.toggle_fullscreen()
             self.dispatch('on_resize', self.width, self.height)
-            
+
         return True
 
     def mouse_position(self):
         return glfw.get_cursor_pos(self._native_window)
 
-    def create_camera(self, pos, look_at, up, fov_v=45.0, near=0.1, far=1000., degrees=True, zoom_enabled=False, safe_rotations=True):
-        self._camera = Camera(pos, look_at, up, self._width / self._height, fov_v, near, far, degrees, zoom_enabled, safe_rotations)
+    def create_camera(self, pos, look_at, up, fov_v=45.0, near=0.1, far=1000., degrees=True, zoom_enabled=False,
+                      safe_rotations=True):
+        self._camera = Camera(pos, look_at, up, self._width / self._height, fov_v, near, far, degrees, zoom_enabled,
+                              safe_rotations)
         self.attach_listeners(self._camera)
 
 

@@ -1,7 +1,15 @@
 import logging
 import os
 
-from . import window
+from .window import Window
+
+__all__ = [
+    'current_time',
+    'current_window',
+    'gl_context_version',
+    'init',
+    'run'
+]
 
 logging.basicConfig(level=os.environ.get('LOGLEVEL', 'ERROR'))
 
@@ -23,7 +31,7 @@ def current_time():
     return current_window().elapsed_time
 
 
-def init(win: window.Window):
+def init(win: Window):
     global __window__
     """Initialize the main loop."""
     if not isinstance(win, window.Window):
