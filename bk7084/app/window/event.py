@@ -40,18 +40,22 @@ class EventDispatcher:
                 self._event_listeners[event] = []
             self._event_listeners[event].append(listener)
 
-    def attach_listeners(self, *args, **kwargs):
-        n_args = len(args)
-        if n_args == 1:
-            if not isinstance(args[0], (list, tuple)):
-                for event in self._event_types:
-                    if hasattr(args[0], event):
-                        self.attach_listener(event, getattr(args[0], event))
+    def attach_listeners(self, obj):
+        if not isinstance(obj, (list, tuple)):
+            for event in self._event_types:
+                if hasattr(obj, event):
+                    self.attach_listener(event, getattr(obj, event))
 
     def detach_listener(self, event, listener):
         """Remove event listener."""
         if listener in self._event_listeners[event]:
             self._event_listeners[event].remove(listener)
+
+    def detach_listeners(self, obj):
+        if not isinstance(obj, (list, tuple)):
+            for event in self._event_types:
+                if hasattr(obj, event):
+                    self.detach_listener(event, getattr(obj, event))
 
     def dispatch(self, event, *args):
         """Dispatch an event to attached handlers."""

@@ -10,6 +10,7 @@ import time
 import glfw
 import imgui
 import numpy as np
+from imgui.integrations.glfw import GlfwRenderer
 
 from . import event
 from .input import KeyCode, MouseButton, KeyModifier
@@ -186,9 +187,7 @@ class Window(event.EventDispatcher):
         self._is_fullscreen = False
 
         imgui.create_context()
-        # TODO: UI rendering
-        # self._gui = GlfwRenderer(self._native_window) if gl_major >= 3 else None
-        self._gui = None
+        self._gui = GlfwRenderer(self._native_window, False) if gl_major >= 3 else None
 
         self._default_shader = None
 
@@ -220,10 +219,11 @@ class Window(event.EventDispatcher):
         self.dispatch('on_resize', width, height)
 
     def _on_glfw_cursor_enter(self, _window, entered):
-        if entered:
-            self.dispatch('on_cursor_enter')
-        else:
-            self.dispatch('on_cursor_leave')
+        if self._gui and not imgui.get_io().want_capture_mouse:
+            if entered:
+                self.dispatch('on_cursor_enter')
+            else:
+                self.dispatch('on_cursor_leave')
 
     def _on_glfw_window_close(self, _window):
         self.close()
@@ -243,24 +243,28 @@ class Window(event.EventDispatcher):
         if action == glfw.RELEASE:
             self._mouse_btn = MouseButton.NONE
             self._cursor_pos = [x, y]
-            self.dispatch('on_mouse_release', x, y, button)
+            if self._gui and not imgui.get_io().want_capture_mouse:
+                self.dispatch('on_mouse_release', x, y, button)
         elif action == glfw.PRESS:
             self._mouse_btn = button
             self._cursor_pos = [x, y]
-            self.dispatch('on_mouse_press', x, y, button)
+            if self._gui and not imgui.get_io().want_capture_mouse:
+                self.dispatch('on_mouse_press', x, y, button)
 
     def _on_glfw_mouse_motion(self, _window, x, y):
         dx = x - self._cursor_pos[0]
         dy = y - self._cursor_pos[1]
         self._cursor_pos = [x, y]
-        if self._mouse_btn != MouseButton.NONE:
-            self.dispatch('on_mouse_drag', x, y, dx, dy, self._mouse_btn)
-        else:
-            self.dispatch('on_mouse_motion', x, y, dx, dy)
+        if self._gui and not imgui.get_io().want_capture_mouse:
+            if self._mouse_btn != MouseButton.NONE:
+                self.dispatch('on_mouse_drag', x, y, dx, dy, self._mouse_btn)
+            else:
+                self.dispatch('on_mouse_motion', x, y, dx, dy)
 
     def _on_glfw_scroll(self, window, x_offset, y_offset):
         x, y = glfw.get_cursor_pos(window)
-        self.dispatch('on_mouse_scroll', x, y, x_offset, y_offset)
+        if self._gui and not imgui.get_io().want_capture_mouse:
+            self.dispatch('on_mouse_scroll', x, y, x_offset, y_offset)
 
     def _on_glfw_error(self, error, desc):
         print(f'GLFW Error: {desc}', file=sys.stderr)
@@ -372,17 +376,17 @@ class Window(event.EventDispatcher):
             gl.glClear(self._clear_flags)
 
             if self._gui:
+                self._gui.process_inputs()
                 self.dispatch('on_gui')
-                # self._gui.process_inputs()
 
             self.dispatch('on_draw', dt)
 
             self.dispatch('on_idle', dt)
 
-            # if self._gui:
-            #     draw_data = imgui.get_draw_data()
-            #     if draw_data:
-            #         self._gui.render(draw_data)
+            if self._gui:
+                draw_data = imgui.get_draw_data()
+                if draw_data:
+                    self._gui.render(draw_data)
 
             glfw.swap_buffers(self._native_window)
 

@@ -5,7 +5,7 @@ from . import camera
 from . import geometry
 from . import graphics
 from .app.window import *
-from . import ui
+from .app import ui
 from . import math
 
 __version__ = (0, 1, 6)
