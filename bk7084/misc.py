@@ -54,9 +54,17 @@ class Color:
     def rgba(self):
         return self._rgba
 
+    @rgba.setter
+    def rgba(self, rgba):
+        self._rgba[:] = rgba[:4]
+
     @property
     def rgb(self):
         return self._rgba[:3]
+
+    @rgb.setter
+    def rgb(self, rgb):
+        self._rgba[:3] = rgb[:3]
 
     def __getitem__(self, index):
         if index > 4 or index < 0:
