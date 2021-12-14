@@ -4,6 +4,7 @@ from ..app import ui
 from ..camera import Camera
 from ..graphics.lights import PointLight
 from ..misc import PaletteDefault
+from ..math import Mat4, Vec3
 
 
 class MeshEntity(Entity):
@@ -20,7 +21,7 @@ class Scene:
     """
     Scene manages the rendering of meshes, lights and cameras.
     """
-    def __init__(self, window, entities=(), camera=None, light=None,
+    def __init__(self, window, entities=(), camera=None, light=None, draw_light=False,
                  bg_color=PaletteDefault.Background.as_color(), **kwargs):
         """
         Initialisation of a Scene object.
@@ -51,6 +52,9 @@ class Scene:
                     self._entities.append(entity)
 
         self._lights = [light] if light is not None else [PointLight()]
+        self._draw_light = draw_light
+        if draw_light:
+            self._light_boxes = [Mesh('../assets/models/cube.obj') for l in self._lights]
         self._cameras = []
         self._main_camera = -1
         if camera is not None:
@@ -142,6 +146,10 @@ class Scene:
 
     def draw(self):
         """Draw every visible meshes in the scene."""
+        if self._draw_light:
+            for i, l in enumerate(self._lights):
+                self._light_boxes[i].transformation = Mat4.from_translation(l.position)
+                self._light_boxes[i].draw()
         for e in self._entities:
             if e.drawable:
                 e.draw(in_light_pos=self._lights[0].position)
