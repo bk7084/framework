@@ -25,6 +25,7 @@ uniform bool shading_enabled;
 uniform Material mtl;
 
 bool use_normal_map = false;
+bool use_bump_map = false;
 
 
 // Blinn Phong BRDF in Camera Space
@@ -48,6 +49,35 @@ vec4 shading(vec3 ambient_color, vec3 light_dir, vec3 view_dir, vec3 light_color
     }
 
     return vec4(luminance, 1.0);
+}
+
+vec3 bumpMap (sampler2D tex) {
+
+    //https://developer.download.nvidia.com/CgTutorial/cg_tutorial_chapter08.html
+
+    float tex_size = 1.0/1024.0;
+
+    vec3 tangent = normalize(v_tangent);
+    vec3 normal = normalize(v_normal);
+    vec3 bitangent = normalize (cross(normal, tangent));
+
+    mat3 TBN = mat3(tangent, bitangent, normal);
+
+    // texture gradient (only x component is necessary since bump map is gray scale)
+    vec2 grad = vec2(texture(tex, v_texcoord).x - texture(tex, v_texcoord+vec2(tex_size,0)).x,
+                  texture(tex, v_texcoord+vec2(0,tex_size)).x - texture(tex, v_texcoord).x);
+
+    // bump map multiplier (to enhance effect)
+    grad *= 10.0;
+
+    // cross product of vector (0, 1, grad.x) x (1, 0, grad.y)
+    vec3 bump_map = normalize(vec3(-grad.y, grad.x, 1.0));
+
+    // place bump_map in tangent space
+    bump_map = normalize(TBN * bump_map);
+
+    return bump_map;
+
 }
 
 vec3 normalMap (sampler2D tex) {
@@ -75,15 +105,15 @@ void main() {
     vec4 ambient_color;
     vec4 light_color = vec4(0.8, 0.8, 0.8, 1.0);
 
-
-    
-
     if (mtl.enabled) {
     
         if (use_normal_map) {
             n = normalMap(mtl.diffuse_map);
             diffuse_color = vec4(mtl.diffuse, 1.0);
-            //diffuse_color = vec4(normalize(v_tangent), 1.0);
+        }    
+        else if (use_bump_map) {
+            n = bumpMap(mtl.diffuse_map);
+            diffuse_color = vec4(mtl.diffuse, 1.0);            
         }    
         else if (mtl.use_diffuse_map) {
             diffuse_color = texture(mtl.diffuse_map, v_texcoord);
@@ -108,5 +138,5 @@ void main() {
         frag_color = diffuse_color;
     }
 
-    //frag_color = vec4(normalize(v_tangent), 1.0);
+    //frag_color = vec4(normalize(n), 1.0);
 }
