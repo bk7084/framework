@@ -24,7 +24,7 @@ out vec4 frag_color;
 uniform bool shading_enabled;
 uniform Material mtl;
 
-bool use_normal_map = false;
+bool use_normal_map = true;
 bool use_bump_map = false;
 
 
@@ -51,17 +51,21 @@ vec4 shading(vec3 ambient_color, vec3 light_dir, vec3 view_dir, vec3 light_color
     return vec4(luminance, 1.0);
 }
 
+mat3 tangentSpaceMatrix () {
+
+    vec3 tangent = normalize(v_tangent);
+    vec3 normal = normalize(v_normal);
+    vec3 bitangent = normalize (cross(normal, tangent));
+
+    return mat3(tangent, bitangent, normal);
+}
+
 vec3 bumpMap (sampler2D tex) {
 
     //https://developer.download.nvidia.com/CgTutorial/cg_tutorial_chapter08.html
 
     float tex_size = 1.0/1024.0;
 
-    vec3 tangent = normalize(v_tangent);
-    vec3 normal = normalize(v_normal);
-    vec3 bitangent = normalize (cross(normal, tangent));
-
-    mat3 TBN = mat3(tangent, bitangent, normal);
 
     // texture gradient (only x component is necessary since bump map is gray scale)
     vec2 grad = vec2(texture(tex, v_texcoord).x - texture(tex, v_texcoord+vec2(tex_size,0)).x,
@@ -74,6 +78,7 @@ vec3 bumpMap (sampler2D tex) {
     vec3 bump_map = normalize(vec3(-grad.y, grad.x, 1.0));
 
     // place bump_map in tangent space
+    mat3 TBN = tangentSpaceMatrix ();
     bump_map = normalize(TBN * bump_map);
 
     return bump_map;
@@ -82,11 +87,7 @@ vec3 bumpMap (sampler2D tex) {
 
 vec3 normalMap (sampler2D tex) {
 
-    vec3 tangent = normalize(v_tangent);
-    vec3 normal = normalize(v_normal);
-    vec3 bitangent = normalize (cross(normal, tangent));
-
-    mat3 TBN = mat3(tangent, bitangent, normal);
+    mat3 TBN = tangentSpaceMatrix ();
 
     vec3 normal_map = texture(tex, v_texcoord).xyz*2.0 - vec3(1.0);
     normal_map = normalize(TBN * normal_map);
