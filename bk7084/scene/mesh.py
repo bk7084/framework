@@ -2,7 +2,6 @@ import collections.abc
 import enum
 import os
 from collections import namedtuple
-from dataclasses import dataclass
 
 import numpy as np
 
@@ -11,8 +10,6 @@ from .. import gl
 from ..assets import default_resolver, default_asset_mgr
 from ..graphics.array import VertexArrayObject
 from ..graphics.buffer import VertexBuffer, IndexBuffer
-from ..graphics.material import Material
-from ..graphics.texture import Texture
 from ..graphics.vertex_layout import VertexLayout, VertexAttrib, VertexAttribDescriptor, VertexAttribFormat
 from ..math import Mat4, Vec3
 from ..misc import PaletteDefault, Color
@@ -503,7 +500,11 @@ class Mesh:
             # todo
             pass
 
+    def _compute_tangents_sub_mesh(self):
+        pass
+
     def _compute_tangents(self):
+        """Computes tangent for each vertex over whole mesh."""
         tangents = []
         for i in range(0, self._vertex_count):
             tangents.append(self._compute_tangent(i))
@@ -511,7 +512,7 @@ class Mesh:
 
     def _compute_tangent(self, vertex_id):
         """
-        Compute tangent from Tangent space for given vertex.
+        Compute tangent from Tangent space for given vertex (over whole mesh).
         Note that only tangent is needed, bi-tangent can be computed in shader by cross product: N*T
 
         e = edge in triangle space
@@ -689,7 +690,15 @@ class Mesh:
             vao_idx = old_record.vao_idx
             mtl_idx = old_record.mtl_idx
 
-        vbo = VertexBuffer(sub_mesh.vertex_count, sub_mesh.vertex_layout)
+        layout = VertexLayout(
+            VertexAttribDescriptor(VertexAttrib.Position, VertexAttribFormat.Float32, 3),
+            VertexAttribDescriptor(VertexAttrib.Color0, VertexAttribFormat.Float32, 4),
+            VertexAttribDescriptor(VertexAttrib.TexCoord0, VertexAttribFormat.Float32, 2),
+            VertexAttribDescriptor(VertexAttrib.Normal, VertexAttribFormat.Float32, 3),
+            # VertexAttribDescriptor(VertexAttrib.Tangent, VertexAttribFormat.Float32, 3)
+        )
+
+        vbo = VertexBuffer(sub_mesh.vertex_count, layout)
         vbo.set_data(vertices)
 
         vbo_idx = len(self._vertex_buffers)
@@ -699,7 +708,7 @@ class Mesh:
 
         if texture != '':
             mtl_idx = len(self._materials)
-            self._materials.append(default_asset_mgr.get_or_create_material(f'material_[{texture}]'))
+            self._materials.append(default_asset_mgr.get_or_create_material(f'material_[{texture}]', diffuse_map_path=texture))
             self._texture_enabled = True
 
         self._render_records[index] = MtlRenderRecord(mtl_idx,

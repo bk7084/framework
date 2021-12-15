@@ -4,6 +4,7 @@ from bk7084.misc import PaletteDefault as Palette
 
 # Setup window and add camera
 from bk7084.scene import Mesh, Building, Component
+from bk7084.scene.mesh import SubMesh
 
 window = Window("BK7084: Construction", width=1024, height=1024)
 window.create_camera(Vec3(4, 2.0, 4.0), Vec3(0, 0, 0), Vec3.unit_y(), 60.0)
@@ -28,7 +29,7 @@ class Wall(Component):
 
         # self._mesh.update_sub_mesh(0, SubMesh(name='body', triangles=[0, 1, 2, 3]), texture=texture1)
         # self._mesh.append_sub_mesh(SubMesh(name='window', triangles=[4]), texture=texture2)
-        self._mesh.texture_enabled = True
+        # self._mesh.texture_enabled = True
         # self._mesh.apply_transformation(Mat4.from_rotation_y(45, True))
 
     @property

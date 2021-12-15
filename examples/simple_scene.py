@@ -22,8 +22,7 @@ animate = False
 
 @window.event
 def on_draw(dt):
-    # scene.draw()
-    draw(cow)
+    scene.draw()
 
 
 @window.event
