@@ -1,4 +1,3 @@
-import ctypes
 import enum
 import logging
 
@@ -6,16 +5,32 @@ from PIL import Image
 
 from .util import GpuObject, BindSemanticObject
 from .. import gl
+from ..assets import default_asset_mgr
 
 
 class TextureKind(enum.Enum):
-    UVMap = 0
-    CubeReflectionMap = 1
-    CubeRefractionMap = 2
-    EquirectangularReflectionMap = 3,
-    EquirectangularRefractionMap = 4,
-    CubeUVReflectionMap = 5,
-    CubeUVRefractionMap = 6
+    # The texture is combined with the result of the diffuse lighting equation.
+    Diffuse = 0
+    # The texture is combined with the result of the specular lighting equation.
+    Specular = 1
+    # The texture is combined with the result of the ambient lighting equation.
+    Ambient = 2
+    # The texture is added to the result of the lighting calculation.It isn't influenced by incoming light.
+    Emissive = 3
+    # The texture is a height map.
+    Height = 4
+    # The texture is a(tangent space) normal - map.
+    Normal = 5
+    # The texture defines the glossiness of the material.
+    Shininess = 6
+    # The texture defines per - pixel opacity.
+    Opacity = 7
+    # Displacement texture
+    Displacement = 8
+    # Lightmap texture(aka Ambient Occlusion)
+    LightMap = 9
+    # Reflection texture.
+    Reflection = 10
 
 
 class TextureWrapMode(enum.Enum):
@@ -34,30 +49,29 @@ class FilterMode(enum.Enum):
 
 
 class Texture(GpuObject, BindSemanticObject):
-    def __init__(self, image_path, target=gl.GL_TEXTURE_2D, wrap_mode=TextureWrapMode.Repeat, filter_mode=FilterMode.Linear):
+    def __init__(self, image_path, target=gl.GL_TEXTURE_2D, wrap_mode=TextureWrapMode.Repeat, filter_mode=FilterMode.Linear,
+                 asset_mgr=default_asset_mgr):
         super().__init__(gl.GL_TEXTURE_2D, -1)
-        self._src = image_path
         self._wrap_mode = wrap_mode
         self._filter_mode = filter_mode
-        self._image_path = image_path
-        self._target = gl.GL_TEXTURE_2D
+        self._name_path = image_path
+        self._target = target
+        self._image = asset_mgr.get_or_load_image(image_path)
 
-        logging.info(f'Create texture with image <{self._image_path}>')
-        with Image.open(image_path).convert('RGBA').transpose(Image.FLIP_TOP_BOTTOM) as img:
-            num_comps = len(img.getbands())
-            self._format = gl.GL_RED if num_comps == 1 else \
-                gl.GL_RGB if num_comps == 3 else gl.GL_RGBA
+        logging.info(f'Create texture with image <{self._name_path}>')
+        num_comps = self._image.num_channels
+        self._format = gl.GL_RED if num_comps == 1 else gl.GL_RGB if num_comps == 3 else gl.GL_RGBA
 
-            self._id = gl.glGenTextures(1)
-            gl.glBindTexture(self._target, self._id)
-            gl.glTexImage2D(self._target, 0, self._format, img.width, img.height,
-                            0, self._format, gl.GL_UNSIGNED_BYTE, img.tobytes())
-            gl.glGenerateMipmap(self._target)
+        self._id = gl.glGenTextures(1)
+        gl.glBindTexture(self._target, self._id)
+        gl.glTexImage2D(self._target, 0, self._format, self._image.width, self._image.height,
+                            0, self._format, gl.GL_UNSIGNED_BYTE, self._image.raw_data)
+        gl.glGenerateMipmap(self._target)
 
-            gl.glTexParameteri(self._target, gl.GL_TEXTURE_WRAP_S, self._wrap_mode.value)
-            gl.glTexParameteri(self._target, gl.GL_TEXTURE_WRAP_T, self._wrap_mode.value)
-            gl.glTexParameteri(self._target, gl.GL_TEXTURE_MIN_FILTER, self._filter_mode.value)
-            gl.glTexParameteri(self._target, gl.GL_TEXTURE_MAG_FILTER, self._filter_mode.value)
+        gl.glTexParameteri(self._target, gl.GL_TEXTURE_WRAP_S, self._wrap_mode.value)
+        gl.glTexParameteri(self._target, gl.GL_TEXTURE_WRAP_T, self._wrap_mode.value)
+        gl.glTexParameteri(self._target, gl.GL_TEXTURE_MIN_FILTER, self._filter_mode.value)
+        gl.glTexParameteri(self._target, gl.GL_TEXTURE_MAG_FILTER, self._filter_mode.value)
 
     def _delete(self):
         if self.is_valid():

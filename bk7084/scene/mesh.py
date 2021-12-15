@@ -153,6 +153,9 @@ class Mesh:
         self._texture_enabled = True if self._alternate_texture else False
         self._material_enabled = True
         self._alternate_texture_enabled = True if self._alternate_texture else False
+        self._normal_map_enabled = False
+        self._bump_map_enabled = False
+        self._parallax_map_enabled = False
 
         self._vertex_buffers: [VertexBuffer] = []
         self._index_buffers: [IndexBuffer] = []
@@ -305,6 +308,30 @@ class Mesh:
     @texture_enabled.setter
     def texture_enabled(self, value):
         self._texture_enabled = value
+
+    @property
+    def normal_map_enabled(self):
+        return self._normal_map_enabled
+
+    @normal_map_enabled.setter
+    def normal_map_enabled(self, value):
+        self._normal_map_enabled = value
+
+    @property
+    def bump_map_enabled(self):
+        return self._bump_map_enabled
+
+    @bump_map_enabled.setter
+    def bump_map_enabled(self, value):
+        self._bump_map_enabled = value
+
+    @property
+    def parallax_map_enabled(self):
+        return self._parallax_map_enabled
+
+    @parallax_map_enabled.setter
+    def parallax_map_enabled(self, value):
+        self._parallax_map_enabled = value
 
     @property
     def material_enabled(self):
@@ -743,6 +770,9 @@ class Mesh:
                     from bk7084.app import current_window
                     _shader['time'] = current_window().elapsed_time
                     _shader['mtl.use_diffuse_map'] = self._texture_enabled
+                    _shader['mtl.use_normal_map'] = self._normal_map_enabled
+                    _shader['mtl.use_bump_map'] = self._bump_map_enabled
+                    _shader['mtl.use_parallax_map'] = self._parallax_map_enabled
 
                     _shader.active_texture_unit(0)
                     texture = mtl.texture_diffuse

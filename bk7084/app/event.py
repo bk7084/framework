@@ -61,6 +61,7 @@ class EventDispatcher:
     def dispatch(self, event, *args, **kwargs):
         """Dispatch an event to attached handlers."""
         logging_enabled = kwargs.get('logging_enabled', False)
+        reversed_exec_order = kwargs.get('reversed_exec_order', False)
         # Search in instance
         if hasattr(self, event):
             try:
@@ -72,10 +73,16 @@ class EventDispatcher:
         listeners = self._event_listeners.get(event, None)
         if listeners:
             try:
-                for listener in listeners[::-1]:
-                    if logging_enabled:
-                        logging.info(f'dispatch <{event}> to <{listener}>')
-                    listener(*args)
+                if reversed_exec_order:
+                    for listener in listeners:
+                        if logging_enabled:
+                            logging.info(f'dispatch <{event}> to <{listener}>')
+                        listener(*args)
+                else:
+                    for listener in listeners[::-1]:
+                        if logging_enabled:
+                            logging.info(f'dispatch <{event}> to <{listener}>')
+                        listener(*args)
             except TypeError:
                 self._raise_dispatch_exception(event, args, getattr(self, event))
 
@@ -131,31 +138,3 @@ class EventDispatcher:
                 self.attach_listener(fn_name, fn)
 
             return decorator
-
-
-if __name__ == '__main__':
-    class Evh(EventDispatcher):
-        pass
-
-    Evh.register_event_type('bark')
-
-    class Obj:
-        def __init__(self, msg):
-            self._msg = msg
-
-        def bark(self):
-            print(self._msg)
-
-
-    e = Evh()
-    a = Obj('this is a')
-    b = Obj('this is b')
-
-    e.attach_listeners(a)
-    e.dispatch('bark')
-
-    e.detach_listeners(a)
-    e.attach_listeners(b)
-    e.dispatch('bark')
-
-

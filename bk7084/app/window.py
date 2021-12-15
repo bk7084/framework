@@ -379,8 +379,14 @@ class Window(event.EventDispatcher):
             glfw.poll_events()
 
             if self._gui:
-                self._gui.process_inputs()
-                self.dispatch('on_gui')
+                if 'on_gui' in self._event_listeners and len(self._event_listeners['on_gui']) > 0:
+                    self._gui.process_inputs()
+                    imgui.new_frame()
+                    imgui.begin('Controls')
+                    self.dispatch('on_gui', reversed_exec_order=True)
+                    imgui.end()
+                    imgui.end_frame()
+                    imgui.render()
 
             # update
             self.dispatch('on_update', dt)

@@ -8,6 +8,9 @@ struct Material {
     float shininess;
     bool enabled;
     bool use_diffuse_map;
+    bool use_normal_map;
+    bool use_bump_map;
+    bool use_parallax_map;
 };
 
 
@@ -24,10 +27,6 @@ out vec4 frag_color;
 uniform bool shading_enabled;
 uniform Material mtl;
 uniform vec3 light_color;
-
-bool use_normal_map = false;
-bool use_bump_map = true;
-bool use_parallax_map = false;
 
 
 // Blinn Phong BRDF in Camera Space
@@ -119,15 +118,15 @@ void main() {
 
     if (mtl.enabled) {
     
-        if (use_normal_map) {
+        if (mtl.use_normal_map) {
             n = normalMap(mtl.diffuse_map);
             diffuse_color = vec4(mtl.diffuse, 1.0);
         }    
-        else if (use_bump_map) {
+        else if (mtl.use_bump_map) {
             n = bumpMap(mtl.diffuse_map);
             diffuse_color = vec4(mtl.diffuse, 1.0);            
         }    
-        else if (use_parallax_map) {
+        else if (mtl.use_parallax_map) {
             vec2 tex_displacement = parallaxMap(mtl.diffuse_map);
             diffuse_color = texture(mtl.diffuse_map, tex_displacement);
         }

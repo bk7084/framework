@@ -3,12 +3,33 @@ import os.path
 import numpy as np
 
 import bk7084
-from .texture import Texture
+from .texture import Texture, TextureKind
 from ..assets import default_resolver
+from ..assets.manager import AssetManager, default_asset_mgr
 
 
 class Material:
-    def __init__(self, name, image_path=None, ambient=None, diffuse=None, specular=None, shininess=None, ior=None, dissolve=None, illum=None, resolver=default_resolver):
+    """
+    Kd: diffuse color coefficient
+    Ka: Ambient color coefficient
+    Ks: Specular color coefficient
+    d: Dissolve factor
+    Ni: Refraction index
+    illum:
+        0 - disable lighting
+        1 - ambient & diffuse (set specular color to black),
+        2 - full lighting
+    map_Kd: Diffuse color texture map
+    map_Ks: Specular color texture map
+    map_ka: Ambient color texture map
+    map_Ns: Shininess texture map
+    map_Bump: Bump texture map
+    map_d: Opacity texture map
+    map_Disp: Displacement map
+    refl: reflection type
+    """
+    def __init__(self, name, image_path=None, ambient=None, diffuse=None, specular=None, shininess=None, ior=None,
+                 dissolve=None, illum=None, resolver=default_resolver):
         self.name = name  # material name
 
         self._is_default = True

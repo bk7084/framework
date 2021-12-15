@@ -130,9 +130,7 @@ class Scene:
         self._cameras[to_idx].on_resize(self._window.width, self._window.height)
 
     def on_gui(self):
-        ui.new_frame()
-
-        ui.begin("Controls")
+        # ui.begin("Controls")
 
         if ui.tree_node('Light'):
             _, self._lights[0].position = ui.drag_float3('Position', *self._lights[0].position)
@@ -146,10 +144,7 @@ class Scene:
                     print(self._main_camera)
             ui.tree_pop()
 
-        ui.end()
-
-        ui.end_frame()
-        ui.render()
+        # ui.end()
 
     def draw(self):
         """Draw every visible meshes in the scene."""
