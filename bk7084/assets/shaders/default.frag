@@ -2,6 +2,8 @@
 
 struct Material {
     sampler2D diffuse_map;
+    sampler2D bump_map;
+    sampler2D normal_map;
     vec3 ambient;
     vec3 diffuse;
     vec3 specular;
@@ -117,30 +119,28 @@ void main() {
     vec4 ambient_color;
 
     if (mtl.enabled) {
-    
-        if (mtl.use_normal_map) {
-            n = normalMap(mtl.diffuse_map);
-            diffuse_color = vec4(mtl.diffuse, 1.0);
-        }    
-        else if (mtl.use_bump_map) {
-            n = bumpMap(mtl.diffuse_map);
-            diffuse_color = vec4(mtl.diffuse, 1.0);            
-        }    
-        else if (mtl.use_parallax_map) {
-            vec2 tex_displacement = parallaxMap(mtl.diffuse_map);
-            diffuse_color = texture(mtl.diffuse_map, tex_displacement);
-        }
-        else if (mtl.use_diffuse_map) {
+        if (mtl.use_diffuse_map) {
             diffuse_color = texture(mtl.diffuse_map, v_texcoord);
         } else {
             diffuse_color = vec4(mtl.diffuse, 1.0);
         }
+    
+        if (mtl.use_normal_map) {
+            n = normalMap(mtl.normal_map);
+        }
 
-        
+        else if (mtl.use_bump_map) {
+            n = bumpMap(mtl.diffuse_map);
+            diffuse_color = vec4(mtl.diffuse, 1.0);
+        }
+        else if (mtl.use_parallax_map) {
+            vec2 tex_displacement = parallaxMap(mtl.diffuse_map);
+            diffuse_color = texture(mtl.diffuse_map, tex_displacement);
+        }
 
-         specular_color = vec4(mtl.specular, 1.0);
-         shininess = mtl.shininess;
-         ambient_color = vec4(mtl.ambient, 1.0);
+        specular_color = vec4(mtl.specular, 1.0);
+        shininess = mtl.shininess;
+        ambient_color = vec4(mtl.ambient, 1.0);
     } else {
         diffuse_color = v_color;
         specular_color = vec4(1.0, 1.0, 1.0, 1.0);
@@ -155,5 +155,5 @@ void main() {
         frag_color = diffuse_color;
     }
 
-    //frag_color = vec4(v_texcoord.xy, 0.0, 1.0);
+    //frag_color = texture(mtl.bump_map, v_texcoord);
 }

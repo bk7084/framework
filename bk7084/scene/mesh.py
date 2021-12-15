@@ -775,12 +775,20 @@ class Mesh:
                     _shader['mtl.use_bump_map'] = self._bump_map_enabled
                     _shader['mtl.use_parallax_map'] = self._parallax_map_enabled
 
-                    _shader.active_texture_unit(0)
-                    texture = mtl.diffuse_map
+                    diffuse_map = mtl.diffuse_map
 
                     if self._alternate_texture_enabled and self._alternate_texture is not None:
-                        texture = self._alternate_texture
+                        diffuse_map = self._alternate_texture
 
-                    with texture:
-                        with vao:
-                            gl.glDrawArrays(sub_mesh.topology.value, 0, record.vertex_count)
+                    _shader['mtl.diffuse_map'] = 0
+                    _shader['mtl.bump_map'] = 1
+                    _shader['mtl.normal_map'] = 2
+
+                    _shader.active_texture_unit(0)
+                    with diffuse_map:
+                        _shader.active_texture_unit(1)
+                        with mtl.bump_map:
+                            _shader.active_texture_unit(2)
+                            with mtl.normal_map:
+                                with vao:
+                                    gl.glDrawArrays(sub_mesh.topology.value, 0, record.vertex_count)

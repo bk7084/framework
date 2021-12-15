@@ -10,4 +10,6 @@ Ke 0.000000 0.000000 0.000000
 Ni 1.450000
 d 1.000000
 illum 2
-map_Kd bump-map2.jpg
+map_Kd spot_texture.png
+# map_Bump bump-map2.jpg
+map_Normal normal-map2.png
