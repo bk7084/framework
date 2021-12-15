@@ -2,10 +2,7 @@ import os.path
 
 import numpy as np
 
-import bk7084
-from .texture import Texture, TextureKind
-from ..assets import default_resolver
-from ..assets.manager import AssetManager, default_asset_mgr
+from bk7084.graphics.texture import Texture
 
 
 class Material:
@@ -28,44 +25,38 @@ class Material:
     map_Disp: Displacement map
     refl: reflection type
     """
-    def __init__(self, name, image_path=None, ambient=None, diffuse=None, specular=None, shininess=None, ior=None,
-                 dissolve=None, illum=None, resolver=default_resolver):
+    def __init__(self, name,
+                 diffuse_map: Texture = None, bump_map: Texture = None, normal_map: Texture = None,
+                 ambient=(0.8, 0.8, 0.8), diffuse=(0.8, 0.8, 0.8), specular=(1.0, 1.0, 1.0), shininess=1.0, ior=1.0,
+                 dissolve=1.0, illum=2):
         self.name = name  # material name
-
-        self._is_default = True
-        resolved = resolver.resolve('textures/checker.png')
-
-        if image_path is not None:
-            resolved = resolver.resolve(image_path)
-            self._is_default = False
-
         self.ambient = np.asarray(ambient, dtype=np.float32)  # Ka
         self.diffuse = np.asarray(diffuse, dtype=np.float32)  # Kd
         self.specular = np.asarray(specular, dtype=np.float32)  # Ks
 
-        self.texture_diffuse = Texture(resolved)  # map_Kd
+        self.diffuse_map = diffuse_map
+        self.bump_map = bump_map
+        self.normal_map = normal_map
 
         self.shininess = shininess  # Ns
         self.refractive_index = ior  # Ni
         self.dissolve = dissolve  # d
         self.illumination_model = illum  # illumination model
 
-        self.texture_ambient = None
-        self.texture_specular_color = None
-        self.texture_specular_highlight = None
-        self.texture_alpha = None
-        self.texture_normal_map = None
-
     def __repr__(self):
         return 'Material <{}>\n' \
-               '  - texture_map: {}\n' \
+               '  - diffuse_map: {}\n' \
+               '  - bump_map: {}\n' \
+               '  - normal_map: {}\n' \
                '  - ambient_color: {}\n' \
                '  - diffuse_color: {}\n' \
                '  - specular_color: {}\n' \
                '  - glossiness: {}\n' \
                '  - ior: {}\n' \
                '  - dissolve: {}\n'.format(self.name,
-                                           self.texture_diffuse,
+                                           self.diffuse_map.name,
+                                           self.bump_map.name,
+                                           self.normal_map.name,
                                            self.ambient,
                                            self.diffuse,
                                            self.specular,
@@ -73,20 +64,20 @@ class Material:
                                            self.refractive_index,
                                            self.dissolve)
 
-    @classmethod
-    def default(cls, texture=None):
-        return cls(
-            'default_material',
-            texture,
-            [1.0, 1.0, 1.0],
-            [1.0, 1.0, 1.0],
-            [1.0, 1.0, 1.0],
-            1.0,
-            1.0,
-            1.0,
-            0.0
-        )
-
-    @property
-    def is_default(self):
-        return self._is_default
+    # @classmethod
+    # def default(cls, texture=None):
+    #     return cls(
+    #         'default_material',
+    #         texture,
+    #         [1.0, 1.0, 1.0],
+    #         [1.0, 1.0, 1.0],
+    #         [1.0, 1.0, 1.0],
+    #         1.0,
+    #         1.0,
+    #         1.0,
+    #         0.0
+    #     )
+    #
+    # @property
+    # def is_default(self):
+    #     return self._is_default

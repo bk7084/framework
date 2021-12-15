@@ -243,7 +243,7 @@ class WavefrontReader:
         }
 
     @staticmethod
-    def _parse_materials(filepath, resolver: PathResolver = None) -> dict:
+    def _parse_materials(path, resolver: PathResolver = None) -> dict:
         """
         Parse a MTL file.
 
@@ -251,7 +251,7 @@ class WavefrontReader:
             resolver (PathResolver):
                 Help finding the correct file path to textured file (in needed).
 
-            filepath (str):
+            path (str):
                 File path to mtl file.
 
         Returns:
@@ -268,7 +268,7 @@ class WavefrontReader:
 
         materials = {}
         
-        with open(filepath) as file:
+        with open(path) as file:
             lines = remove_comments('#', file.read()).strip().splitlines()
 
             current_material_name = None
@@ -282,10 +282,9 @@ class WavefrontReader:
                     # new material
                     current_material_name = '_'.join(components[1:])
                     materials[current_material_name] = {}
-                elif key == 'map_Kd':
-                    # texture map
-                    filepath = ''.join(components[1:])
-                    materials[current_material_name]['map_Kd'] = filepath if resolver is None else resolver.resolve(filepath)
+                elif key in ('map_Kd', 'map_Bump', 'map_Normal'):
+                    path = ''.join(components[1:])
+                    materials[current_material_name][key] = path if resolver is None else resolver.resolve(path)
                 else:
                     # other properties
                     value = [float(x) for x in components[1:]]

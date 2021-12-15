@@ -5,32 +5,33 @@ from PIL import Image
 
 from .util import GpuObject, BindSemanticObject
 from .. import gl
-from ..assets import default_asset_mgr
 
 
 class TextureKind(enum.Enum):
     # The texture is combined with the result of the diffuse lighting equation.
-    Diffuse = 0
+    DiffuseMap = 0
     # The texture is combined with the result of the specular lighting equation.
-    Specular = 1
+    SpecularMap = 1
     # The texture is combined with the result of the ambient lighting equation.
-    Ambient = 2
+    AmbientMap = 2
     # The texture is added to the result of the lighting calculation.It isn't influenced by incoming light.
-    Emissive = 3
+    EmissiveMap = 3
     # The texture is a height map.
-    Height = 4
+    HeightMap = 4
+    # The texture is a bump map.
+    BumpMap = 5
     # The texture is a(tangent space) normal - map.
-    Normal = 5
+    NormalMap = 6
     # The texture defines the glossiness of the material.
-    Shininess = 6
+    ShininessMap = 7
     # The texture defines per - pixel opacity.
-    Opacity = 7
+    OpacityMap = 8
     # Displacement texture
-    Displacement = 8
+    DisplacementMap = 9
     # Lightmap texture(aka Ambient Occlusion)
-    LightMap = 9
+    LightMap = 10
     # Reflection texture.
-    Reflection = 10
+    ReflectionMap = 11
 
 
 class TextureWrapMode(enum.Enum):
@@ -49,16 +50,15 @@ class FilterMode(enum.Enum):
 
 
 class Texture(GpuObject, BindSemanticObject):
-    def __init__(self, image_path, target=gl.GL_TEXTURE_2D, wrap_mode=TextureWrapMode.Repeat, filter_mode=FilterMode.Linear,
-                 asset_mgr=default_asset_mgr):
+    def __init__(self, image_path, image, kind=TextureKind.DiffuseMap, target=gl.GL_TEXTURE_2D,
+                 wrap_mode=TextureWrapMode.Repeat, filter_mode=FilterMode.Linear):
         super().__init__(gl.GL_TEXTURE_2D, -1)
         self._wrap_mode = wrap_mode
         self._filter_mode = filter_mode
         self._name_path = image_path
         self._target = target
-        self._image = asset_mgr.get_or_load_image(image_path)
-
-        logging.info(f'Create texture with image <{self._name_path}>')
+        self._image = image
+        self._kind = kind
         num_comps = self._image.num_channels
         self._format = gl.GL_RED if num_comps == 1 else gl.GL_RGB if num_comps == 3 else gl.GL_RGBA
 
@@ -110,3 +110,7 @@ class Texture(GpuObject, BindSemanticObject):
     @property
     def filter_mode(self):
         return self._filter_mode
+
+    @property
+    def name(self):
+        return self._name_path

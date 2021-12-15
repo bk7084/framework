@@ -8,7 +8,7 @@ import numpy as np
 
 from .loader.obj import WavefrontReader
 from .. import gl
-from ..assets import default_resolver
+from ..assets import default_resolver, default_asset_mgr
 from ..graphics.array import VertexArrayObject
 from ..graphics.buffer import VertexBuffer, IndexBuffer
 from ..graphics.material import Material
@@ -138,9 +138,9 @@ class Mesh:
         self._triangles = []
         self._vertex_triangles = []  # the triangle indices that correspond to each vertex
 
-        self._materials = [Material.default()]  # loaded materials from OBJ file
+        self._materials = [default_asset_mgr.get_or_create_material('default_material')]
         texture_path = kwargs.get('texture', None)
-        self._alternate_texture = None if texture_path is None else Texture(resolver.resolve(texture_path))
+        self._alternate_texture = None if texture_path is None else default_asset_mgr.get_or_create_texture(texture_path)
 
         self._render_records = {}  # records the rendering information, (sub_mesh_index: mtl_render_record)
         self._sub_meshes = []
@@ -383,17 +383,18 @@ class Mesh:
 
         for name, mat in mesh_data['materials'].items():
             self._materials.append(
-                Material(
+                default_asset_mgr.get_or_create_material(
                     name,
-                    mat.get('map_Kd', texture),
-                    mat.get('Ka', [1.0, 1.0, 1.0]),
-                    mat.get('Kd', [1.0, 1.0, 1.0]),
-                    mat.get('Ks', [1.0, 1.0, 1.0]),
-                    mat.get('Ns', 0),
-                    mat.get('Ni', 1.0),
-                    mat.get('d', 1.0),
-                    mat.get('illum', 0.0)
-                )
+                    ambient=mat.get('Ka', [0.8, 0.8, 0.8]),
+                    diffuse=mat.get('Kd', [0.8, 0.8, 0.8]),
+                    specular=mat.get('Ks', [1.0, 1.0, 1.0]),
+                    shininess=mat.get('Ns', 1.0),
+                    ior=mat.get('Ni', 1.0),
+                    dissolve=mat.get('d', 1.0),
+                    illum=mat.get('illum', 0),
+                    diffuse_map_path=mat.get('map_Kd', None),
+                    bump_map_path=mat.get('map_Bump', None),
+                    normal_map_path=mat.get('map_Normal', None))
             )
 
         for sub_obj in mesh_data['objects']:
@@ -698,7 +699,7 @@ class Mesh:
 
         if texture != '':
             mtl_idx = len(self._materials)
-            self._materials.append(Material.default(texture))
+            self._materials.append(default_asset_mgr.get_or_create_material(f'material_[{texture}]'))
             self._texture_enabled = True
 
         self._render_records[index] = MtlRenderRecord(mtl_idx,
@@ -775,7 +776,7 @@ class Mesh:
                     _shader['mtl.use_parallax_map'] = self._parallax_map_enabled
 
                     _shader.active_texture_unit(0)
-                    texture = mtl.texture_diffuse
+                    texture = mtl.diffuse_map
 
                     if self._alternate_texture_enabled and self._alternate_texture is not None:
                         texture = self._alternate_texture
