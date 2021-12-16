@@ -188,7 +188,7 @@ class WavefrontReader:
 
             elif key == 'f':
                 # parse line into a list
-                parsed = [tuple(int(e) - 1 for e in filter(lambda x: x != '', c.split('/'))) for c in values_str]
+                parsed = [tuple(int(e) - 1 if e != '' else -1 for e in c.split('/')) for c in values_str]
                 vertex_count = len(parsed)
                 if vertex_count < 3:
                     # skip the face with less 3 vertices
