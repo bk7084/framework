@@ -546,18 +546,19 @@ class Mesh:
         """
         tangent = np.array([0.0, 0.0, 0.0], dtype=np.float32)
 
-        if len(self._uvs) > 0:
-            for tri_idx in vertex_triangles[vertex_id]:
-                vertices = [self._vertices[i] for i in self._triangles[tri_idx][0]]
-                uvs = [self._uvs[i] for i in self._triangles[tri_idx][1]]
-                # edges (delta vertex positions)
-                delta_pos = [vertices[i] - vertices[0] for i in (1, 2)]
-                # delta uvs
-                delta_uv = [uvs[i] - uvs[0] for i in (1, 2)]
-                det = delta_uv[0][0] * delta_uv[1][1] - delta_uv[0][1] * delta_uv[1][0]
-                if det != 0.0:
-                    tangent += (delta_pos[0] * delta_uv[1][1] - delta_pos[1] * delta_uv[0][1]) / det
-                # bitangent += (delta_pos[1] * delta_uv[0][0] - delta_pos[0] * delta_uv[1][0]) * det
+        if len(self._uvs) == 0:
+            return np.array([0.0, 0.0, 0.0], dtype=np.float32)
+        for tri_idx in vertex_triangles[vertex_id]:
+            vertices = [self._vertices[i] for i in self._triangles[tri_idx][0]]
+            uvs = [self._uvs[i] for i in self._triangles[tri_idx][1]]
+            # edges (delta vertex positions)
+            delta_pos = [vertices[i] - vertices[0] for i in (1, 2)]
+            # delta uvs
+            delta_uv = [uvs[i] - uvs[0] for i in (1, 2)]
+            det = delta_uv[0][0] * delta_uv[1][1] - delta_uv[0][1] * delta_uv[1][0]
+            if det != 0.0:
+                tangent += (delta_pos[0] * delta_uv[1][1] - delta_pos[1] * delta_uv[0][1]) / det
+            # bitangent += (delta_pos[1] * delta_uv[0][0] - delta_pos[0] * delta_uv[1][0]) * det
 
         return tangent / np.sqrt(np.sum(tangent ** 2))
 
