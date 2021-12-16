@@ -55,7 +55,7 @@ def draw(*objs: Union[Shape, Mesh], **kwargs):
 
             if update:
                 vbo.set_data(vertices_data)
-                ibo.set_data(obj.indices)
+                ibo.set_data(obj.indices.astype(np.uint32))
 
             with shader:
                 shader.model_mat = transform
