@@ -54,7 +54,7 @@ class Scene:
         self._lights = [light] if light is not None else [PointLight()]
         self._draw_light = draw_light
         if draw_light:
-            self._light_boxes = [Mesh('../assets/models/cube.obj') for l in self._lights]
+            self._light_boxes = [Mesh('models/cube.obj') for l in self._lights]
         self._cameras = []
         self._main_camera = -1
         if camera is not None:

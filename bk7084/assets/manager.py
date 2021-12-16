@@ -32,13 +32,13 @@ class AssetManager:
             Pillow.Image
         """
         path = self._resolver.resolve(image_path)
-        if image_path not in self._images:
-            logging.info(f'-- Create image {image_path}')
-            image = Image.open(image_path)
-            self._images[image_path] = image
+        if path not in self._images:
+            logging.info(f'-- Create image {path}')
+            image = Image.open(path)
+            self._images[path] = image
 
-        logging.info(f'Load image <{image_path}>')
-        return self._images[image_path]
+        logging.info(f'Load image <{path}>')
+        return self._images[path]
 
     def get_or_create_texture(self, image_path, kind=TextureKind.DiffuseMap, target=gl.GL_TEXTURE_2D,
                               wrap_mode=TextureWrapMode.Repeat, filter_mode=FilterMode.Linear):

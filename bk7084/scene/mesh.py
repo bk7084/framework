@@ -40,12 +40,14 @@ class SubMesh:
                  triangles=None,
                  name='',
                  topology=MeshTopology.Triangles,
-                 vertex_layout=VertexLayout.default()):
+                 vertex_layout=VertexLayout.default(),
+                 normal_map_enabled=False):
         self.name: str = name
-        self.triangles: [] = [] if triangles is None else triangles  # index of triangles (faces)
+        self.triangles: [] = [] if triangles is None else triangles  # index of faces
         self.vertex_count: int = len(triangles) * 3 if triangles is not None else 0
         self.topology: MeshTopology = topology
         self.vertex_layout: VertexLayout = vertex_layout
+        self.normal_map_enabled: bool = normal_map_enabled
 
 
 class Mesh:
@@ -132,6 +134,7 @@ class Mesh:
 
         # todo: clarify the input faces and triangles
         self._faces = []  # [(vertices indices), (vertex uvs indices), ( vertex normals indices)]
+        self._triangulated_face_index = []  # stores the index of triangles of a face
         self._triangles = []
         self._vertex_triangles = []  # the triangle indices that correspond to each vertex
 
@@ -208,11 +211,13 @@ class Mesh:
                 if vertex_count < 3:
                     continue
                 elif vertex_count == 3:
+                    self._triangulated_face_index.append(len(self._triangles))
                     self._triangles.append(f)
                     self._triangle_count += 1
                     for p in f[0]:
                         self._vertex_triangles[p].append(self._triangle_count - 1)
                 else:
+                    self._triangulated_face_index.append(len(self._triangles))
                     triangulated = []
                     for i in range(0, vertex_count - 2):
                         triangulated.append(((f[0][0], *f[0][i+1: i+3]),
@@ -223,9 +228,8 @@ class Mesh:
                             self._vertex_triangles[p].append(self._triangle_count - 1)
                     self._triangles.extend(triangulated)
 
-            # todo
-            # self._indices = np.asarray(triangles, dtype=np.uint32).ravel()
-            # self._index_count = len(self._indices)
+            self._indices = np.asarray(self._triangles, dtype=np.uint32).ravel()
+            self._index_count = len(self._indices)
 
             self._faces = faces
             self._tangents = self._compute_tangents()
@@ -243,8 +247,8 @@ class Mesh:
             v_colors = []
             v_tangents = []
 
-            for face in self._triangles:
-                for i, content in enumerate(face):
+            for tri in self._triangles:
+                for i, content in enumerate(tri):
                     if i == 0:
                         for v_i in content:
                             v_positions.append(self._vertices[v_i])
@@ -500,17 +504,14 @@ class Mesh:
             # todo
             pass
 
-    def _compute_tangents_sub_mesh(self):
-        pass
-
     def _compute_tangents(self):
         """Computes tangent for each vertex over whole mesh."""
         tangents = []
         for i in range(0, self._vertex_count):
-            tangents.append(self._compute_tangent(i))
+            tangents.append(self._compute_tangent_of_vertex(i, self._vertex_triangles))
         return np.asarray(tangents, dtype=np.float32).reshape((-1, 3))
 
-    def _compute_tangent(self, vertex_id):
+    def _compute_tangent_of_vertex(self, vertex_id, vertex_triangles):
         """
         Compute tangent from Tangent space for given vertex (over whole mesh).
         Note that only tangent is needed, bi-tangent can be computed in shader by cross product: N*T
@@ -545,7 +546,7 @@ class Mesh:
         """
         tangent = np.array([0.0, 0.0, 0.0], dtype=np.float32)
 
-        for tri_idx in self._vertex_triangles[vertex_id]:
+        for tri_idx in vertex_triangles[vertex_id]:
             vertices = [self._vertices[i] for i in self._triangles[tri_idx][0]]
             uvs = [self._uvs[i] for i in self._triangles[tri_idx][1]]
             # edges (delta vertex positions)
@@ -633,48 +634,53 @@ class Mesh:
     def sub_mesh_count(self):
         return self._sub_mesh_count
 
-    def update_sub_mesh(self, index, new: SubMesh, texture: str = '', create: bool = False):
+    def update_sub_mesh(self, index, new: SubMesh, texture: str = None, normal_map: str = None, create: bool = False):
         sub_mesh = self._sub_meshes[index]
         sub_mesh.name = new.name
         sub_mesh.vertex_count = new.vertex_count
         sub_mesh.triangles = new.triangles
         sub_mesh.topology = new.topology
+        sub_mesh.normal_map_enabled = new.normal_map_enabled
+
+        tri_list = []
+        vertex_triangles = {}
+        for f_i in sub_mesh.triangles:
+            start = self._triangulated_face_index[f_i]
+            end = len(self._triangles) if f_i >= len(self._triangulated_face_index) - 1 else self._triangulated_face_index[f_i + 1]
+            tri_list.extend(self._triangles[start: end])
+            for i, tri in enumerate(self._triangles[start: end]):
+                for v_i in tri[0]:
+                    if v_i not in vertex_triangles:
+                        vertex_triangles[v_i] = []
+                    vertex_triangles[v_i].append(start + i)
+
+        tangents = {}
+        for v_i in vertex_triangles.keys():
+            tangents[v_i] = self._compute_tangent_of_vertex(v_i, vertex_triangles)
 
         # create new vbo with new data
         v_positions = []
         v_normals = []
         v_uvs = []
         v_colors = []
-        for idx in sub_mesh.triangles:
-            # face [(vertex index), (uv index), (normal index)]
-            face = self._faces[idx]
-            vertex_count = len(face[0])
-            triangle_list = []
-            if vertex_count < 3:
-                continue
-            elif vertex_count == 3:
-                triangle_list.append(face)
-            else:
-                for i in range(0, vertex_count - 2):
-                    triangle_list.append([(face[0][0], *face[0][i+1: i+3]),
-                                          (face[1][0], *face[1][i+1: i+3]),
-                                          (face[2][0], *face[2][i+1: i+3])])
-            for f in triangle_list:
-                for i in range(0, 3):
-                    if i == 0:
-                        for v_i in f[i]:
-                            v_positions.append(self._vertices[v_i])
-                            v_colors.append(self._colors[v_i])
-                    if i == 1:
-                        for vt_i in f[i]:
-                            v_uvs.append(self._uvs[vt_i])
-                    if i == 2:
-                        for vn_i in f[i]:
-                            v_normals.append(self._normals[vn_i])
+        v_tangents = []
+        for tri in tri_list:
+            for i in range(0, 3):
+                if i == 0:
+                    for v_i in tri[i]:  # positions
+                        v_positions.append(self._vertices[v_i])
+                        v_colors.append(self._colors[v_i])
+                        v_tangents.append(tangents[v_i])
+                if i == 1:
+                    for vt_i in tri[i]:  # uvs
+                        v_uvs.append(self._uvs[vt_i])
+                if i == 2:
+                    for vn_i in tri[i]:  # normals
+                        v_normals.append(self._normals[vn_i])
 
         sub_mesh.vertex_count = len(v_positions)
 
-        vertices = np.array([z for x in zip(v_positions, v_colors, v_uvs, v_normals) for y in x for z in y],
+        vertices = np.array([z for x in zip(v_positions, v_colors, v_uvs, v_normals, v_tangents) for y in x for z in y],
                             dtype=np.float32).ravel()
 
         mtl_idx = 0
@@ -695,7 +701,7 @@ class Mesh:
             VertexAttribDescriptor(VertexAttrib.Color0, VertexAttribFormat.Float32, 4),
             VertexAttribDescriptor(VertexAttrib.TexCoord0, VertexAttribFormat.Float32, 2),
             VertexAttribDescriptor(VertexAttrib.Normal, VertexAttribFormat.Float32, 3),
-            # VertexAttribDescriptor(VertexAttrib.Tangent, VertexAttribFormat.Float32, 3)
+            VertexAttribDescriptor(VertexAttrib.Tangent, VertexAttribFormat.Float32, 3)
         )
 
         vbo = VertexBuffer(sub_mesh.vertex_count, layout)
@@ -706,9 +712,13 @@ class Mesh:
 
         vao.bind_vertex_buffer(vbo, [0, 1, 2, 3, 4])
 
-        if texture != '':
+        if texture is not None or normal_map is not None:
             mtl_idx = len(self._materials)
-            self._materials.append(default_asset_mgr.get_or_create_material(f'material_[{texture}]', diffuse_map_path=texture))
+            self._materials.append(default_asset_mgr.get_or_create_material(
+                f'material_[{texture}]',
+                diffuse_map_path=texture,
+                normal_map_path=normal_map
+            ))
             self._texture_enabled = True
 
         self._render_records[index] = MtlRenderRecord(mtl_idx,
@@ -759,6 +769,7 @@ class Mesh:
 
     def draw(self, matrix=Mat4.identity(), shader=None, **kwargs):
         _shader = shader if shader is not None and shader.is_valid() else self._shader
+        sub_mesh_count = len(self._sub_meshes)
         if len(self._sub_meshes) > 0:
             with _shader:
                 mat = matrix * self._transformation * self._initial_transformation
@@ -780,7 +791,12 @@ class Mesh:
                     from bk7084.app import current_window
                     _shader['time'] = current_window().elapsed_time
                     _shader['mtl.use_diffuse_map'] = self._texture_enabled
-                    _shader['mtl.use_normal_map'] = self._normal_map_enabled
+
+                    if sub_mesh_count > 1:
+                        _shader['mtl.use_normal_map'] = sub_mesh.normal_map_enabled
+                    else:
+                        _shader['mtl.use_normal_map'] = self._normal_map_enabled
+
                     _shader['mtl.use_bump_map'] = self._bump_map_enabled
                     _shader['mtl.use_parallax_map'] = self._parallax_map_enabled
 
