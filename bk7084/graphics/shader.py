@@ -5,7 +5,7 @@ import sys
 
 from .util import ShaderCodeParser, GpuObject
 from .. import gl
-from ..assets import PathResolver
+from ..assets.resolver import PathResolver
 
 OPENGL_ERROR_REGEX = [
     # Nvidia
@@ -24,6 +24,7 @@ OPENGL_ERROR_REGEX = [
 class ShaderType(enum.Enum):
     Vertex = gl.GL_VERTEX_SHADER
     Fragment = gl.GL_FRAGMENT_SHADER
+    Pixel = gl.GL_FRAGMENT_SHADER
 
 
 class Shader(GpuObject):

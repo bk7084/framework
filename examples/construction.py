@@ -24,11 +24,14 @@ class Wall(Component):
                 [(1, 2, 6, 5), (5, 6, 2, 1), (0, 0, 0, 0)],
                 [(2, 3, 7, 6), (6, 7, 3, 2), (0, 0, 0, 0)],
                 [(3, 0, 4, 7), (7, 4, 0, 3), (0, 0, 0, 0)],
-                [(0, 1, 2, 3), (0, 1, 2, 3), (0, 0, 0, 0)]])
+                [(0, 1, 2, 3), (0, 1, 2, 3), (0, 0, 0, 0)]],
+            vertex_shader='shaders/example.vert',
+            pixel_shader='shaders/example.frag')
 
         self._mesh.update_sub_mesh(0, SubMesh(name='body', triangles=[0, 1, 2, 3], normal_map_enabled=True),
                                    texture='models/brick.jpg', normal_map='models/brick_normal_map.png')
-        self._mesh.append_sub_mesh(SubMesh(name='window', triangles=[4]), texture='models/window.jpg')
+        self._mesh.append_sub_mesh(SubMesh(name='window', triangles=[4]), texture='models/window.jpg',
+                                   pixel_shader='shaders/example2.frag')
         self._mesh.texture_enabled = True
         # self._mesh.apply_transformation(Mat4.from_rotation_y(45, True))
 

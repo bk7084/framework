@@ -1,9 +1,13 @@
 import enum
+import hashlib
 import logging
+from collections import namedtuple
 
 from .resolver import default_resolver
 from .image import Image
 from .. import gl
+from ..graphics.program import ShaderProgram
+from ..graphics.shader import Shader, ShaderType
 from ..graphics.material import Material
 from ..graphics.texture import TextureWrapMode, FilterMode, TextureKind, Texture
 
@@ -14,12 +18,17 @@ class AssetKind(enum.Enum):
     Material = 2
 
 
+PipelineRecord = namedtuple('PipelineRecord', ['pipeline', 'vs', 'ps'])
+
+
 class AssetManager:
     def __init__(self, resolver=default_resolver):
         self._resolver = resolver
         self._materials = {}
         self._textures = {}
         self._images = {}
+        self._shaders = {}
+        self._pipelines = {}
 
     def get_or_create_image(self, image_path):
         """
@@ -105,6 +114,73 @@ class AssetManager:
 
         logging.info(f'Load material <{name}>')
         return self._materials[name]
+
+    def get_or_create_shader(self, shader: str, kind: ShaderType, is_file=False):
+        _, shader = self._get_or_create_shader(shader, kind, is_file)
+        return shader
+
+    def _get_or_create_shader(self, shader: str, kind: ShaderType, is_file=False):
+        key = ''
+        if is_file:
+            key = self._resolver.resolve(shader)
+            if key not in self._shaders:
+                logging.info(f'-- Create shader from file <{key}>')
+                with open(key, 'rt') as file:
+                    self._shaders[key] = Shader(kind, code=file.read(), origin=key, is_file=False)
+        else:
+            key = hashlib.sha256(shader).hexdigest()
+            if key not in self._shaders:
+                logging.info(f'-- Create shader from src <{key}>')
+                self._shaders[key] = Shader(kind, code=shader, origin=f'<string#{key}>', is_file=False)
+
+        return key, self._shaders[key]
+
+    def get_or_create_pipeline(self, name: str, vertex_shader: str = None, pixel_shader: str = None):
+        """
+
+        Args:
+            name (str): Specifies the name of the pipline (shader program).
+            vertex_shader (str): Path string or code string of a vertex shader.
+            pixel_shader (str): Path string or code string of a vertex shader.
+
+        Returns:
+            ShaderProgram
+        """
+        if name not in self._pipelines:
+            logging.info(f'-- Create pipeline <{name}>')
+
+            if vertex_shader is not None and pixel_shader is not None:
+                is_file_vs = ';' not in vertex_shader
+                is_file_ps = ';' not in pixel_shader
+
+                vs_name = hashlib.sha256(
+                    vertex_shader.encode('utf-8')).hexdigest() if not is_file_vs else self._resolver.resolve(
+                    vertex_shader)
+                ps_name = hashlib.sha256(
+                    pixel_shader.encode('utf-8')).hexdigest() if not is_file_ps else self._resolver.resolve(
+                    pixel_shader)
+
+                for n, r in self._pipelines.items():
+                    if r.vs == vs_name and r.ps == ps_name:
+                        logging.info(f'Shaders exist in pipeline <{n}>')
+                        return self._pipelines[n].pipeline
+
+            if vertex_shader is None:
+                vs_name, vs = self._get_or_create_shader('shaders/default.vert', ShaderType.Vertex, True)
+            else:
+                is_file_vs = ';' not in vertex_shader
+                vs_name, vs = self._get_or_create_shader(vertex_shader, ShaderType.Vertex, is_file_vs)
+
+            if pixel_shader is None:
+                ps_name, ps = self._get_or_create_shader('shaders/default.frag', ShaderType.Pixel, True)
+            else:
+                is_file_ps = ';' not in pixel_shader
+                ps_name, ps = self._get_or_create_shader(pixel_shader, ShaderType.Fragment, is_file_ps)
+
+            self._pipelines[name] = PipelineRecord(ShaderProgram(vs, ps), vs_name, ps_name)
+
+        logging.info(f'Load pipeline <{name}>')
+        return self._pipelines[name].pipeline
 
 
 default_asset_mgr: AssetManager = AssetManager()

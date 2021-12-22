@@ -193,8 +193,8 @@ class Window(event.EventDispatcher):
         self._default_shader = None
 
         if self.current_context_version >= (3, 3):
-            self._default_shader = ShaderProgram(VertexShader.from_file('shaders/default.vert'),
-                                                 PixelShader.from_file('shaders/default.frag'))
+            from bk7084.assets import default_asset_mgr
+            self._default_shader = default_asset_mgr.get_or_create_pipeline('default_pipeline')
             logging.info("Default shader created.")
 
         self._start_time = time.time()
@@ -476,6 +476,10 @@ class Window(event.EventDispatcher):
         self._camera = Camera(pos, look_at, up, self._width / self._height, fov_v, near, far, degrees, zoom_enabled,
                               safe_rotations)
         self.attach_listeners(self._camera)
+
+    @property
+    def camera(self):
+        return self._camera
 
 
 Window.register_event_type('on_cursor_enter')

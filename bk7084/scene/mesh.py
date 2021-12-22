@@ -8,6 +8,7 @@ import numpy as np
 from .loader.obj import WavefrontReader
 from .. import gl
 from ..assets import default_resolver, default_asset_mgr
+from ..graphics.shader import Shader
 from ..graphics.array import VertexArrayObject
 from ..graphics.buffer import VertexBuffer, IndexBuffer
 from ..graphics.vertex_layout import VertexLayout, VertexAttrib, VertexAttribDescriptor, VertexAttribFormat
@@ -24,7 +25,7 @@ class MeshTopology(enum.Enum):
     Points = gl.GL_POINTS
 
 
-MtlRenderRecord = namedtuple('MtlRenderRecord', ['mtl_idx', 'vao_idx', 'vbo_idx', 'vertex_count'])
+MtlRenderRecord = namedtuple('MtlRenderRecord', ['mtl_idx', 'vao_idx', 'vbo_idx', 'vertex_count', 'pipeline_idx'])
 
 
 class SubMesh:
@@ -33,7 +34,7 @@ class SubMesh:
     which refer to a set of vertices(referenced by index). Vertices can be shared between
     multiple sub-meshes.
 
-    Structure maintained inside of `Mesh` class.
+    Structure maintained inside `Mesh` class.
     """
 
     def __init__(self,
@@ -67,7 +68,6 @@ class Mesh:
 
     todo:
       1. calculate normals
-      2. calculate tangent
       3. calculate bitangent
     """
 
@@ -113,8 +113,12 @@ class Mesh:
                 shapes (list, tuple):
                     Specifies a sequence of shapes used to construct a mesh.
 
-                shader (ShaderProgram):
-                    Specifies the shader going to be used for rendering. In case of non specified,
+                vertex_shader (str):
+                    Specifies the vertex shader going to be used for rendering. In case of non specified,
+                    use framework's default shader (declared inside of Window).
+
+                pixel_shader (str):
+                    Specifies the pixel shader going to be used for rendering. In case of non specified,
                     use framework's default shader (declared inside of Window).
         """
         self._vertex_layout = VertexLayout.default()
@@ -140,11 +144,27 @@ class Mesh:
 
         self._materials = [default_asset_mgr.get_or_create_material('default_material')]
         texture_path = kwargs.get('texture', None)
-        self._alternate_texture = None if texture_path is None else default_asset_mgr.get_or_create_texture(texture_path)
+        self._alternate_texture = None if texture_path is None else default_asset_mgr.get_or_create_texture(
+            texture_path)
 
         self._render_records = {}  # records the rendering information, (sub_mesh_index: mtl_render_record)
         self._sub_meshes = []
         self._sub_mesh_count = 0
+        self._pipelines = [
+            default_asset_mgr.get_or_create_pipeline('default_pipeline',
+                                                     vertex_shader='shaders/default.vert',
+                                                     pixel_shader='shaders/default.frag')
+        ]
+        self._use_customised_pipeline = False
+
+        vertex_shader = kwargs.get('vertex_shader', None)
+        pixel_shader = kwargs.get('pixel_shader', None)
+
+        if vertex_shader is not None or pixel_shader is not None:
+            self._pipelines.append(default_asset_mgr.get_or_create_pipeline(f'{id(self)}_default_pipeline',
+                                                                            vertex_shader,
+                                                                            pixel_shader))
+            self._use_customised_pipeline = True
 
         self._initial_transformation: Mat4 = Mat4.identity()
         self._transformation: Mat4 = Mat4.identity()
@@ -160,9 +180,6 @@ class Mesh:
         self._vertex_buffers: [VertexBuffer] = []
         self._index_buffers: [IndexBuffer] = []
         self._vertex_array_objects: [VertexArrayObject] = []
-
-        from ..app.window import __current_window__
-        self._shader = kwargs.get('shader', __current_window__.default_shader)
 
         shapes = kwargs.get('shapes', None)
         vertices = kwargs.get('vertices', None)
@@ -220,9 +237,9 @@ class Mesh:
                     self._triangulated_face_index.append(len(self._triangles))
                     triangulated = []
                     for i in range(0, vertex_count - 2):
-                        triangulated.append(((f[0][0], *f[0][i+1: i+3]),
-                                             (f[1][0], *f[1][i+1: i+3]),
-                                             (f[2][0], *f[2][i+1: i+3])))
+                        triangulated.append(((f[0][0], *f[0][i + 1: i + 3]),
+                                             (f[1][0], *f[1][i + 1: i + 3]),
+                                             (f[2][0], *f[2][i + 1: i + 3])))
                         self._triangle_count += 1
                         for p in triangulated[-1][0]:
                             self._vertex_triangles[p].append(self._triangle_count - 1)
@@ -261,8 +278,9 @@ class Mesh:
                         for vn_i in content:
                             v_normals.append(self._normals[vn_i])
 
-            v_vertices = np.array([z for x in zip(v_positions, v_colors, v_uvs, v_normals, v_tangents) for y in x for z in y],
-                                  dtype=np.float32).ravel()
+            v_vertices = np.array(
+                [z for x in zip(v_positions, v_colors, v_uvs, v_normals, v_tangents) for y in x for z in y],
+                dtype=np.float32).ravel()
 
             vao = VertexArrayObject()
             vbo = VertexBuffer(len(v_positions), sub_mesh.vertex_layout)
@@ -270,8 +288,9 @@ class Mesh:
             vao.bind_vertex_buffer(vbo, [0, 1, 2, 3, 4])
 
             self._sub_meshes = [sub_mesh]
+            pipeline = 1 if self._use_customised_pipeline else 0
             self._render_records = {
-                0: MtlRenderRecord(0, len(self._vertex_array_objects), len(self._vertex_buffers), len(v_positions))
+                0: MtlRenderRecord(0, len(self._vertex_array_objects), len(self._vertex_buffers), len(v_positions), pipeline)
             }
 
             self._vertex_array_objects.append(vao)
@@ -460,12 +479,14 @@ class Mesh:
                         dtype=np.float32).ravel()
                 elif sub_mesh.vertex_layout.has(VertexAttrib.TexCoord0) and not sub_mesh.vertex_layout.has(
                         VertexAttrib.Normal):
-                    vertices = np.array([z for x in zip(v_positions, v_colors, v_texcoords, v_tangents) for y in x for z in y],
-                                        dtype=np.float32).ravel()
+                    vertices = np.array(
+                        [z for x in zip(v_positions, v_colors, v_texcoords, v_tangents) for y in x for z in y],
+                        dtype=np.float32).ravel()
                 elif not sub_mesh.vertex_layout.has(VertexAttrib.TexCoord0) and sub_mesh.vertex_layout.has(
                         VertexAttrib.Normal):
-                    vertices = np.array([z for x in zip(v_positions, v_colors, v_normals, v_tangents) for y in x for z in y],
-                                        dtype=np.float32).ravel()
+                    vertices = np.array(
+                        [z for x in zip(v_positions, v_colors, v_normals, v_tangents) for y in x for z in y],
+                        dtype=np.float32).ravel()
                 else:
                     vertices = np.array([z for x in zip(v_positions, v_colors, v_tangents) for y in x for z in y],
                                         dtype=np.float32).ravel()
@@ -489,7 +510,9 @@ class Mesh:
 
                 sub_mesh_index = len(self._sub_meshes) - 1
 
-                self._render_records[sub_mesh_index] = MtlRenderRecord(mtl_idx, vao_idx, vbo_idx, vertex_count)
+                pipeline = len(self._pipelines) - 1 if self._use_customised_pipeline else 0
+                self._render_records[sub_mesh_index] = MtlRenderRecord(mtl_idx, vao_idx, vbo_idx, vertex_count,
+                                                                       pipeline)
 
         self._sub_mesh_count = len(self._sub_meshes)
         self._texture_enabled = True
@@ -636,7 +659,8 @@ class Mesh:
     def sub_mesh_count(self):
         return self._sub_mesh_count
 
-    def update_sub_mesh(self, index, new: SubMesh, texture: str = None, normal_map: str = None, create: bool = False):
+    def update_sub_mesh(self, index, new: SubMesh, texture: str = None, normal_map: str = None,
+                        vertex_shader: str = None, pixel_shader: str = None, create: bool = False):
         sub_mesh = self._sub_meshes[index]
         sub_mesh.name = new.name
         sub_mesh.vertex_count = new.vertex_count
@@ -648,7 +672,8 @@ class Mesh:
         vertex_triangles = {}
         for f_i in sub_mesh.triangles:
             start = self._triangulated_face_index[f_i]
-            end = len(self._triangles) if f_i >= len(self._triangulated_face_index) - 1 else self._triangulated_face_index[f_i + 1]
+            end = len(self._triangles) if f_i >= len(self._triangulated_face_index) - 1 else \
+            self._triangulated_face_index[f_i + 1]
             tri_list.extend(self._triangles[start: end])
             for i, tri in enumerate(self._triangles[start: end]):
                 for v_i in tri[0]:
@@ -723,24 +748,27 @@ class Mesh:
             ))
             self._texture_enabled = True
 
+        pipeline = 0
+        if vertex_shader is not None or pixel_shader is not None:
+            self._pipelines.append(
+                default_asset_mgr.get_or_create_pipeline(
+                    f'{id(self)}_sub_mesh_{id(sub_mesh)}_pipeline',
+                    vertex_shader, pixel_shader
+                )
+            )
+            pipeline = len(self._pipelines) - 1
+        else:
+            if self._use_customised_pipeline:
+                pipeline = 1
+
         self._render_records[index] = MtlRenderRecord(mtl_idx,
                                                       vao_idx,
                                                       vbo_idx,
-                                                      sub_mesh.vertex_count)
+                                                      sub_mesh.vertex_count, pipeline)
 
-    def append_sub_mesh(self, sub_mesh: SubMesh, texture: str = ''):
+    def append_sub_mesh(self, sub_mesh: SubMesh, texture: str = '', normal_map: str = None, vertex_shader: str = None, pixel_shader: str = None):
         self._sub_meshes.append(SubMesh())
-        self.update_sub_mesh(len(self._sub_meshes) - 1, sub_mesh, texture, create=True)
-
-    @property
-    def shader(self):
-        return self._shader
-
-    @shader.setter
-    def shader(self, shader):
-        if not shader.is_valid():
-            raise ValueError("Invalid shader.")
-        self._shader = shader
+        self.update_sub_mesh(len(self._sub_meshes) - 1, sub_mesh, texture, normal_map, vertex_shader, pixel_shader, create=True)
 
     def apply_transformation(self, matrix: Mat4):
         self._transformation = matrix * self._transformation
@@ -770,52 +798,55 @@ class Mesh:
         self._initial_transformation = value
 
     def draw(self, matrix=Mat4.identity(), shader=None, **kwargs):
-        _shader = shader if shader is not None and shader.is_valid() else self._shader
         sub_mesh_count = len(self._sub_meshes)
         if len(self._sub_meshes) > 0:
-            with _shader:
+            for idx, record in self._render_records.items():
+                sub_mesh = self._sub_meshes[idx]
+                mtl = self._materials[record.mtl_idx]
+
                 mat = matrix * self._transformation * self._initial_transformation
-                _shader['model_mat'] = mat
-                _shader['shading_enabled'] = self._shading_enabled
-                _shader['in_light_pos'] = kwargs.get('in_light_pos', Vec3(600.0, 600.0, 600.0))
-                _shader['light_color'] = kwargs.get('light_color', Vec3(0.8, 0.8, 0.8))
+                vao = self._vertex_array_objects[record.vao_idx]
+                pipeline = self._pipelines[record.pipeline_idx] if shader is None else shader
 
-                for idx, record in self._render_records.items():
-                    sub_mesh = self._sub_meshes[idx]
-                    mtl = self._materials[record.mtl_idx]
-                    vao = self._vertex_array_objects[record.vao_idx]
+                with pipeline:
+                    from bk7084 import app
+                    pipeline['view_mat'] = app.current_window().camera.view_matrix
+                    pipeline['proj_mat'] = app.current_window().camera.projection_matrix
+                    pipeline['model_mat'] = mat
+                    pipeline['shading_enabled'] = self._shading_enabled
+                    pipeline['in_light_pos'] = kwargs.get('in_light_pos', Vec3(600.0, 600.0, 600.0))
+                    pipeline['light_color'] = kwargs.get('light_color', Vec3(0.8, 0.8, 0.8))
 
-                    _shader['mtl.diffuse'] = mtl.diffuse
-                    _shader['mtl.ambient'] = mtl.ambient
-                    _shader['mtl.specular'] = mtl.specular
-                    _shader['mtl.shininess'] = mtl.shininess
-                    _shader['mtl.enabled'] = self._material_enabled
-                    from bk7084.app import current_window
-                    _shader['time'] = current_window().elapsed_time
-                    _shader['mtl.use_diffuse_map'] = self._texture_enabled
+                    pipeline['mtl.diffuse'] = mtl.diffuse
+                    pipeline['mtl.ambient'] = mtl.ambient
+                    pipeline['mtl.specular'] = mtl.specular
+                    pipeline['mtl.shininess'] = mtl.shininess
+                    pipeline['mtl.enabled'] = self._material_enabled
+                    pipeline['time'] = app.current_window().elapsed_time
+                    pipeline['mtl.use_diffuse_map'] = self._texture_enabled
 
                     if sub_mesh_count > 1:
-                        _shader['mtl.use_normal_map'] = sub_mesh.normal_map_enabled
+                        pipeline['mtl.use_normal_map'] = sub_mesh.normal_map_enabled
                     else:
-                        _shader['mtl.use_normal_map'] = self._normal_map_enabled
+                        pipeline['mtl.use_normal_map'] = self._normal_map_enabled
 
-                    _shader['mtl.use_bump_map'] = self._bump_map_enabled
-                    _shader['mtl.use_parallax_map'] = self._parallax_map_enabled
+                    pipeline['mtl.use_bump_map'] = self._bump_map_enabled
+                    pipeline['mtl.use_parallax_map'] = self._parallax_map_enabled
 
                     diffuse_map = mtl.diffuse_map
 
                     if self._alternate_texture_enabled and self._alternate_texture is not None:
                         diffuse_map = self._alternate_texture
 
-                    _shader['mtl.diffuse_map'] = 0
-                    _shader['mtl.bump_map'] = 1
-                    _shader['mtl.normal_map'] = 2
+                    pipeline['mtl.diffuse_map'] = 0
+                    pipeline['mtl.bump_map'] = 1
+                    pipeline['mtl.normal_map'] = 2
 
-                    _shader.active_texture_unit(0)
+                    pipeline.active_texture_unit(0)
                     with diffuse_map:
-                        _shader.active_texture_unit(1)
+                        pipeline.active_texture_unit(1)
                         with mtl.bump_map:
-                            _shader.active_texture_unit(2)
+                            pipeline.active_texture_unit(2)
                             with mtl.normal_map:
                                 with vao:
                                     gl.glDrawArrays(sub_mesh.topology.value, 0, record.vertex_count)
