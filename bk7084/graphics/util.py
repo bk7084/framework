@@ -151,9 +151,6 @@ class DataUsage(enum.Enum):
     DynamicCopy = gl.GL_DYNAMIC_COPY
 
 
-# TODO: merge includes
-
-
 class ShaderCodeParser:
     @classmethod
     def parse(self, code):

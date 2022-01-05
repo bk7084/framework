@@ -31,7 +31,7 @@ class Buffer(GpuObject, BindSemanticObject):
         # Creates a OpenGL buffer object.
         self._id = gl.glGenBuffers(1)
 
-        # Setup its internal state.
+        # Set up its internal state.
         gl.glBindBuffer(self._target, self._id)
 
         if (not self._mutable) and (gl.current_context_version()[0] >= 4 and gl.current_context_version()[1] >= 4):

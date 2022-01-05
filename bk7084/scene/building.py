@@ -30,12 +30,12 @@ class Component(metaclass=abc.ABCMeta):
     def id(self):
         return self._id
 
-    def draw(self, matrices=None):
+    def draw(self, matrices=None, **kwargs):
         matrix = Mat4.identity()
         if matrices is not None:
             for m in matrices:
                 matrix = m * matrix
-        self.mesh.draw(matrix)
+        self.mesh.draw(matrix, **kwargs)
 
 
 class Building(Entity):
@@ -95,8 +95,8 @@ class Building(Entity):
             else:
                 return []
 
-    def draw(self, shader=None):
+    def draw(self, shader=None, **kwargs):
         for idx, comp in enumerate(self._components):
             parents = self._parent_list(idx, [idx])
             matrices = [self._components[p].transform for p in parents] + [self.transform]
-            comp.draw(matrices)
+            comp.draw(matrices, **kwargs)

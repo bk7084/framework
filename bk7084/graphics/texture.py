@@ -51,7 +51,7 @@ class FilterMode(enum.Enum):
 
 class Texture(GpuObject, BindSemanticObject):
     def __init__(self, image_path, image, kind=TextureKind.DiffuseMap, target=gl.GL_TEXTURE_2D,
-                 wrap_mode=TextureWrapMode.Repeat, filter_mode=FilterMode.Linear):
+                 wrap_mode=TextureWrapMode.Repeat, filter_mode=FilterMode.Linear, gen_mipmap=True):
         super().__init__(gl.GL_TEXTURE_2D, -1)
         self._wrap_mode = wrap_mode
         self._filter_mode = filter_mode
@@ -65,8 +65,10 @@ class Texture(GpuObject, BindSemanticObject):
         self._id = gl.glGenTextures(1)
         gl.glBindTexture(self._target, self._id)
         gl.glTexImage2D(self._target, 0, self._format, self._image.width, self._image.height,
-                            0, self._format, gl.GL_UNSIGNED_BYTE, self._image.raw_data)
-        gl.glGenerateMipmap(self._target)
+                        0, self._format, gl.GL_UNSIGNED_BYTE, self._image.raw_data)
+
+        if gen_mipmap:
+            gl.glGenerateMipmap(self._target)
 
         gl.glTexParameteri(self._target, gl.GL_TEXTURE_WRAP_S, self._wrap_mode.value)
         gl.glTexParameteri(self._target, gl.GL_TEXTURE_WRAP_T, self._wrap_mode.value)

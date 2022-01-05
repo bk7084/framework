@@ -1,5 +1,6 @@
 # TODO: supports other kind of shaders
 # TODO: parse uniforms and generate its getter and setter
+import logging
 import platform
 from collections.abc import Sequence
 
@@ -73,6 +74,8 @@ class ShaderProgram(GpuObject, BindSemanticObject):
                 gl_set_uniform[typ](loc, 1, transpose, value)
             else:
                 gl_set_uniform[typ](loc, 1, value)
+        else:
+            logging.warning(f'Uniform {name} not existed.')
 
     def get_uniform(self, name):
         if name in self._uniforms:

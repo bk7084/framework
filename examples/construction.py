@@ -3,11 +3,11 @@ from bk7084.math import Vec3, Mat4
 from bk7084.misc import PaletteDefault as Palette
 
 # Setup window and add camera
-from bk7084.scene import Mesh, Building, Component
+from bk7084.scene import Mesh, Building, Component, Scene
 from bk7084.scene.mesh import SubMesh
 
 window = Window("BK7084: Construction", width=1024, height=1024)
-window.create_camera(Vec3(4, 2.0, 4.0), Vec3(0, 0, 0), Vec3.unit_y(), 60.0, zoom_enabled=True)
+# window.create_camera(Vec3(4, 2.0, 4.0), Vec3(0, 0, 0), Vec3.unit_y(), 60.0, zoom_enabled=True)
 
 
 class Wall(Component):
@@ -51,10 +51,14 @@ building.append(wall)
 # building.append(wall2, wall)
 # building.append(wall3, wall)
 
+scene = Scene(window, [building])
+scene.create_camera(Vec3(2, 1.0, 2.0), Vec3(0, 0, 0), Vec3.unit_y(), 60.0, zoom_enabled=True, safe_rotations=False)
+
 
 @window.event
 def on_draw(dt):
-    building.draw()
+    # building.draw()
+    scene.draw()
 
 
 @window.event

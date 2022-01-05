@@ -151,7 +151,7 @@ class Scene:
         if self._draw_light:
             for i, l in enumerate(self._lights):
                 self._light_boxes[i].transformation = Mat4.from_translation(l.position)
-                self._light_boxes[i].draw()
+                self._light_boxes[i].draw(camera=self._cameras[self._main_camera])
         for e in self._entities:
             if e.drawable:
-                e.draw(in_light_pos=self._lights[0].position, light_color=self._lights[0].color.rgb)
+                e.draw(in_light_pos=self._lights[0].position, light_color=self._lights[0].color.rgb, camera=self._cameras[self._main_camera])
