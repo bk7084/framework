@@ -401,7 +401,6 @@ class Framebuffer(GpuObject, BindSemanticObject):
                 gl.glReadPixels(0, 0, self._width, self._height, gl.GL_RGBA, gl.GL_UNSIGNED_BYTE, data)
                 filename = f'{datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")}_color_attach.png'
                 filepath = os.path.join(os.getcwd(), filename)
-                print(data)
                 png.from_array(data[::-1], 'RGBA').save(filepath)
                 print(f'Color attachment saved to {filepath}')
 

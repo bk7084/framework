@@ -1,8 +1,13 @@
+import imgui
+
 from .mesh import Mesh
 from .entity import Entity
+from .. import gl
 from ..app import ui
+from ..assets import default_asset_mgr
 from ..camera import Camera
-from ..graphics.lights import PointLight
+from ..graphics.framebuffer import Framebuffer
+from ..graphics.lights import PointLight, DirectionalLight
 from ..misc import PaletteDefault
 from ..math import Mat4, Vec3
 
@@ -12,6 +17,7 @@ class MeshEntity(Entity):
         super().__init__()
         self.mesh = mesh
         self._is_drawable = True
+        self._cast_shadow = self.mesh._cast_shadow
 
     def draw(self, shader=None, **kwargs):
         """
@@ -57,6 +63,7 @@ class Scene:
                     self._entities.append(entity)
 
         self._lights = [light] if light is not None else [PointLight()]
+        # self._lights = [light] if light is not None else [DirectionalLight()]
         self._draw_light = draw_light
         if draw_light:
             self._light_boxes = [Mesh('models/cube.obj') for l in self._lights]
@@ -69,6 +76,10 @@ class Scene:
 
         self._window.attach_listeners(self)
         self._values = 1.0, 2.0, 3.0
+        self._framebuffer = Framebuffer(self._window.width, self._window.height, depth_shader_accessible=True)
+        self._depth_map_pipeline = default_asset_mgr.get_or_create_pipeline('depth_map',
+                                                                            vertex_shader='shaders/depth_map.vert',
+                                                                            pixel_shader='shaders/depth_map.frag')
 
     def set_main_camera(self, index):
         """
@@ -146,8 +157,13 @@ class Scene:
         # ui.begin("Controls")
 
         if ui.tree_node('Light'):
-            _, self._lights[0].position = ui.drag_float3('Position', *self._lights[0].position)
+            if self._lights[0].is_directional:
+                ui.drag_float3('Position', *self._lights[0].position)
+            else:
+                _, self._lights[0].position = ui.drag_float3('Position', *self._lights[0].position)
             _, self._lights[0].color.rgb = ui.color_edit3('Color', *self._lights[0].color.rgb)
+            if self._lights[0].is_directional:
+                _, self._lights[0].direction = ui.drag_float3('Direction', *self._lights[0].direction)
             ui.tree_pop()
 
         if ui.tree_node('Camera'):
@@ -159,17 +175,81 @@ class Scene:
 
         # ui.end()
 
-    def draw(self, shader=None, **kwargs):
+    def draw(self, shader=None, auto_shadow=False, **kwargs):
         """Draw every visible meshes in the scene.
 
         Args:
             shader (ShaderProgram): If specified, this will override the assigned shader of each mesh.
+            auto_shadow (Bool): Specifies if the default shadow is enabled or not.
             **kwargs: Extra uniforms that are going to be passed to shader
         """
         if self._draw_light:
             for i, l in enumerate(self._lights):
                 self._light_boxes[i].transformation = Mat4.from_translation(l.position)
                 self._light_boxes[i].draw(camera=self._cameras[self._main_camera])
+        light = self._lights[0]
+
+        with_shadow, without_shadow = [], []
         for e in self._entities:
-            if e.drawable:
-                e.draw(in_light_pos=self._lights[0].position, light_color=self._lights[0].color.rgb, camera=self._cameras[self._main_camera], shader=shader, **kwargs)
+            (without_shadow, with_shadow)[int(e.cast_shadow and e.drawable)].append(e)
+
+        if auto_shadow:
+            # 1st pass: render to depth map
+            with self._framebuffer:
+                self._framebuffer.enable_depth_test()
+                self._framebuffer.clear(PaletteDefault.Background.as_color().rgba)
+                for e in with_shadow:
+                    e.draw(in_light_pos=light.position,
+                           in_light_dir=light.direction if light.is_directional else Vec3(0.0),
+                           is_directional=light.is_directional,
+                           light_color=light.color.rgb,
+                           light_mat=light.matrix,
+                           near=light._sm_near,
+                           far=light._sm_far,
+                           is_persepctive=light._sm_is_perspective,
+                           camera=self._cameras[self._main_camera],
+                           shader=self._depth_map_pipeline,
+                           **kwargs)
+
+            # 2nd pass: render object as normal with shadow mapping
+            gl.glClearColor(*PaletteDefault.Background.as_color().rgba)
+            gl.glEnable(gl.GL_DEPTH_TEST)
+            gl.glClear(gl.GL_COLOR_BUFFER_BIT | gl.GL_DEPTH_BUFFER_BIT)
+            for e in with_shadow:
+                e.draw(in_light_pos=light.position,
+                       in_light_dir=light.direction if light.is_directional else Vec3(0.0),
+                       is_directional=light.is_directional,
+                       light_color=light.color.rgb,
+                       light_mat=light.matrix,
+                       near=light._sm_near,
+                       far=light._sm_far,
+                       is_persepctive=light._sm_is_perspective,
+                       camera=self._cameras[self._main_camera],
+                       shader=shader,
+                       shadow_map=self._framebuffer.depth_attachments[0],
+                       shadow_map_enabled=True,
+                       **kwargs)
+
+            for e in without_shadow:
+                e.draw(in_light_pos=light.position,
+                       in_light_dir=light.direction if light.is_directional else Vec3(0.0),
+                       is_directional=light.is_directional,
+                       light_color=light.color.rgb,
+                       light_mat=light.matrix,
+                       camera=self._cameras[self._main_camera],
+                       shader=shader,
+                       shadow_map_enabled=False,
+                       **kwargs)
+        else:
+            for e in self._entities:
+                e.draw(in_light_pos=light.position,
+                       in_light_dir=light.direction if light.is_directional else Vec3(0.0),
+                       is_directional=light.is_directional,
+                       light_color=light.color.rgb,
+                       light_mat=light.matrix,
+                       near=light._sm_near,
+                       far=light._sm_far,
+                       is_persepctive=light._sm_is_perspective,
+                       camera=self._cameras[self._main_camera],
+                       shader=shader,
+                       **kwargs)

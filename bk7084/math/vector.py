@@ -255,7 +255,7 @@ class Vec3(Vector):
 
     @property
     def norm(self) -> float:
-        return math.sqrt(np.sum(self ** 2))
+        return math.sqrt(self.dot(self))
 
     @property
     def length_squared(self):
@@ -279,9 +279,9 @@ class Vec3(Vector):
     def normalised(self):
         n = self.norm
         if n == 0. or n == 1.:
-            return self
+            return Vec3(self)
         else:
-            return self / n
+            return Vec3(self.x / n, self.y / n, self.z / n)
 
     @property
     def length_recip(self):

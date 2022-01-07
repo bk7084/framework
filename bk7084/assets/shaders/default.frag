@@ -23,12 +23,30 @@ in vec3 v_tangent;
 in vec3 frag_pos;
 in vec3 world_pos;
 in vec3 light_pos;
+in vec3 light_dir;
+in vec4 frag_pos_light_space;
 
 out vec4 frag_color;
 
 uniform bool shading_enabled;
 uniform Material mtl;
 uniform vec3 light_color;
+uniform bool is_directional;
+uniform bool shadow_map_enabled;
+uniform sampler2D shadow_map;
+
+float calc_shadow(vec4 pos_in_light_space, vec3 normal, vec3 l) {
+    float bias = max(0.00005 * (1.0 - dot(normal, l)), 0.0005);
+    if (shadow_map_enabled) {
+        vec3 proj_coords = pos_in_light_space.xyz / pos_in_light_space.w;
+        proj_coords = proj_coords * 0.5 + 0.5;
+        float depth = proj_coords.z;
+        float max_depth = texture(shadow_map, proj_coords.xy).r;
+        return depth - bias > max_depth ? 1.0 : 0.0;
+    } else {
+        return 0.0;
+    }
+}
 
 
 // Blinn Phong BRDF in Camera Space
@@ -40,7 +58,7 @@ vec3 blinnPhongBRDF(vec3 light_dir, vec3 view_dir, vec3 normal, vec3 diffuse_col
     return color;
 }
 
-vec4 shading(vec3 ambient_color, vec3 light_dir, vec3 view_dir, vec3 light_color, vec3 n, vec3 diffuse_color, vec3 specular_color, float shininess) {
+vec4 shading(vec3 ambient_color, vec3 light_dir, vec3 view_dir, vec3 light_color, vec3 n, vec3 diffuse_color, vec3 specular_color, float shininess, float shadow) {
     vec3 luminance = ambient_color.rgb * 0.1 + diffuse_color * 0.3;
 
     float illuminance = dot(light_dir, n);
@@ -48,7 +66,7 @@ vec4 shading(vec3 ambient_color, vec3 light_dir, vec3 view_dir, vec3 light_color
     if (illuminance > 0.0) {
         vec3 brdf = blinnPhongBRDF(light_dir, view_dir, n, diffuse_color.rgb, specular_color.rgb, shininess);
 
-        luminance += brdf * illuminance * light_color.rgb * 0.6;
+        luminance += (1.0 - shadow) * brdf * illuminance * light_color.rgb * 0.6;
     }
 
     return vec4(luminance, 1.0);
@@ -109,7 +127,13 @@ vec3 normalMap (sampler2D tex) {
 }
 
 void main() {
-    vec3 light_dir = normalize(light_pos - frag_pos);
+    vec3 _light_dir = vec3(0.0);
+    if (is_directional) {
+        _light_dir = -normalize(light_dir);
+    } else {
+        _light_dir = normalize(light_pos - frag_pos);
+    }
+
     vec3 view_dir = normalize(-frag_pos);
     vec3 n = normalize(v_normal);
 
@@ -148,9 +172,10 @@ void main() {
         ambient_color = vec4(0.5, 0.5, 0.5, 1.0);
     }
 
+    float shadow = calc_shadow(frag_pos_light_space, n, _light_dir);
 
     if (shading_enabled) {
-        frag_color = shading(ambient_color.xyz, light_dir.xyz, view_dir.xyz, light_color.xyz, n, diffuse_color.xyz, specular_color.xyz, shininess);
+        frag_color = shading(ambient_color.xyz, _light_dir, view_dir.xyz, light_color.xyz, n, diffuse_color.xyz, specular_color.xyz, shininess, shadow);
     } else {
         frag_color = diffuse_color;
     }

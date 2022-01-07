@@ -13,7 +13,8 @@ from bk7084 import Window, app, Camera, gl, ShaderProgram, VertexShader, PixelSh
 from bk7084.app import ui
 from bk7084.app.input import KeyCode
 from bk7084.assets import default_asset_mgr
-from bk7084.graphics import draw, VertexArrayObject, VertexBuffer, VertexLayout, VertexAttrib, VertexAttribFormat
+from bk7084.graphics import draw, VertexArrayObject, VertexBuffer, VertexLayout, VertexAttrib, VertexAttribFormat, \
+    DirectionalLight
 from bk7084.graphics.framebuffer import Framebuffer, ColorAttachment
 from bk7084.graphics.texture import Texture
 from bk7084.math import Vec3, Mat4
@@ -34,22 +35,25 @@ out vec2 v_texcoord;
 out vec3 v_tangent;
 out vec3 frag_pos;
 out vec3 light_pos;
+out vec3 light_dir;
 out vec4 frag_pos_light_space;
 
 uniform mat4 model_mat;
 uniform mat4 view_mat;
 uniform mat4 proj_mat;
-uniform mat4 light_space_mat;
+uniform mat4 light_mat;
 uniform vec3 in_light_pos;
+uniform vec3 in_light_dir;
 
 void main() {
     vec4 pos = view_mat * model_mat * vec4(a_position, 1.0);
 
     frag_pos = pos.xyz;  // vertex position in camera space
      
-    frag_pos_light_space = light_space_mat * model_mat * vec4(a_position, 1.0);
+    frag_pos_light_space = light_mat * model_mat * vec4(a_position, 1.0);
 
     light_pos = vec3(view_mat * vec4(in_light_pos, 1.0));
+    light_dir = vec3(view_mat * vec4(in_light_dir, 0.0));
 
     v_color = a_color;
     v_texcoord = a_texcoord;
@@ -86,6 +90,7 @@ in vec3 v_tangent;
 in vec3 frag_pos;
 in vec3 world_pos;
 in vec3 light_pos;
+in vec3 light_dir;
 in vec4 frag_pos_light_space;
 
 out vec4 frag_color;
@@ -93,18 +98,20 @@ out vec4 frag_color;
 uniform bool shading_enabled;
 uniform Material mtl;
 uniform vec3 light_color;
+uniform bool is_directional;
 
 uniform bool shadow_map_enabled;
 uniform sampler2D shadow_map;
 
-float calc_shadow(vec4 pos_in_light_space, vec3 normal, vec3 light_dir) {
-    float bias = max(0.05 * (1.0 - dot(normal, light_dir)), 0.005); 
+float calc_shadow(vec4 pos_in_light_space, vec3 normal, vec3 l) {
+    float bias = max(0.00005 * (1.0 - dot(normal, l)), 0.0005); 
     if (shadow_map_enabled) {
         vec3 proj_coords = pos_in_light_space.xyz / pos_in_light_space.w;
         proj_coords = proj_coords * 0.5 + 0.5;
         float depth = proj_coords.z;
         float max_depth = texture(shadow_map, proj_coords.xy).r; 
         return depth - bias > max_depth ? 1.0 : 0.0;
+        //return depth > max_depth ? 1.0 : 0.0;
     } else {
         return 0.0;
     }
@@ -188,7 +195,12 @@ vec3 normalMap (sampler2D tex) {
 }
 
 void main() {
-    vec3 light_dir = normalize(light_pos - frag_pos);
+    vec3 _light_dir = vec3(0.0);
+    if (is_directional)
+        _light_dir = -normalize(light_dir);
+    else
+        _light_dir = normalize(light_pos - frag_pos);
+    
     vec3 view_dir = normalize(-frag_pos);
     vec3 n = normalize(v_normal);
 
@@ -227,12 +239,12 @@ void main() {
         ambient_color = vec4(0.5, 0.5, 0.5, 1.0);
     }
 
-    float shadow = calc_shadow(frag_pos_light_space, n, light_dir.xyz);
+    float shadow = calc_shadow(frag_pos_light_space, n, _light_dir);
 
     if (shading_enabled) {
-        frag_color = shading(ambient_color.xyz, light_dir.xyz, view_dir.xyz, light_color.xyz, n, diffuse_color.xyz, specular_color.xyz, shininess, shadow);
+        frag_color = shading(ambient_color.xyz, _light_dir, view_dir.xyz, light_color.xyz, n, diffuse_color.xyz, specular_color.xyz, shininess, shadow);
     } else {
-        frag_color = (1.0 - shadow) * diffuse_color;
+        frag_color = diffuse_color;
     }
 }
 """
@@ -243,47 +255,66 @@ from bk7084.scene import Mesh, Scene
 
 window = Window("BK7084: shadow mapping", width=1024, height=1024)
 
-cube = Mesh("./models/spot_cow.obj", vertex_shader=vertex_src, pixel_shader=fragment_src)
+cube = Mesh("./models/spot_cow.obj",
+            texture='./textures/checker.png',
+            # vertex_shader=vertex_src, pixel_shader=fragment_src
+)
+cube.cast_shadow = True
 
 ground = Mesh(
-    vertices=[[-10.0, -2.0, -10.0],
-              [10.0,  -2.0, -10.0],
-              [10.0,  -2.0,  10.0],
-              [-10.0, -2.0,  10.0]],
+    vertices=[[-10.0, 0.0, -10.0],
+              [10.0,  0.0, -10.0],
+              [10.0,  0.0,  10.0],
+              [-10.0, 0.0,  10.0]],
     colors=[PaletteDefault.GreenB.as_color()],
     normals=[[0, 1, 0]],
     uvs=[[0.0, 0.0], [1.0, 0.0], [1.0, 1.0], [0.0, 1.0]],
     triangles=[[(0, 1, 2, 3), (0, 1, 2, 3), (0, 0, 0, 0)]],
     texture='./textures/checker.png',
-    vertex_shader=vertex_src,
-    pixel_shader=fragment_src,
+    # vertex_shader=vertex_src,
+    # pixel_shader=fragment_src,
 )
 
+# scene = Scene(window, [cube, ground], light=DirectionalLight(), draw_light=False)
 scene = Scene(window, [cube, ground], draw_light=False)
 scene.create_camera(Vec3(6, 6.0, 6.0), Vec3(0, 0, 0), Vec3.unit_y(), 60.0, zoom_enabled=True, safe_rotations=False, near=0.1, far=100.0)
 
 animate = False
 
-framebuffer = Framebuffer(1024, 1024, depth_shader_accessible=True)
-depth_map_shader = ShaderProgram(
-    VertexShader.from_file('./shaders/depth_map.vert'),
-    PixelShader.from_file('./shaders/depth_map.frag')
-)
+# framebuffer = Framebuffer(1024, 1024, depth_shader_accessible=True)
+# depth_map_shader = ShaderProgram(
+#     VertexShader.from_file('./shaders/depth_map.vert'),
+#     PixelShader.from_file('./shaders/depth_map.frag')
+# )
 
 
 @window.event
 def on_draw(dt):
-    # first pass: render to depth map
-    with framebuffer:
-        framebuffer.enable_depth_test()
-        framebuffer.clear(PaletteDefault.BlueB.as_color().rgba)
-        scene.draw(shader=depth_map_shader, light_space_mat=scene.lights[0].light_space_matrix, near=0.1, far=100.0, is_perspective=False)
+    # # first pass: render to depth map
+    # with framebuffer:
+    #     framebuffer.enable_depth_test()
+    #     framebuffer.clear(PaletteDefault.BlueB.as_color().rgba)
+    #     scene.draw(shader=depth_map_shader)
+    #
+    # # second pass: render scene as normal with shadow mapping (using depth map from 1st pass)
+    # gl.glClearColor(*PaletteDefault.Background.as_color().rgba)
+    # gl.glEnable(gl.GL_DEPTH_TEST)
+    # gl.glClear(gl.GL_COLOR_BUFFER_BIT | gl.GL_DEPTH_BUFFER_BIT)
+    # scene.draw(shadow_map=framebuffer.depth_attachments[0], shadow_map_enabled=True)
 
-    # second pass: render scene as normal with shadow mapping (using depth map from 1st pass)
-    gl.glClearColor(*PaletteDefault.Background.as_color().rgba)
-    gl.glEnable(gl.GL_DEPTH_TEST)
-    gl.glClear(gl.GL_COLOR_BUFFER_BIT | gl.GL_DEPTH_BUFFER_BIT)
-    scene.draw(shadow_map=framebuffer.depth_attachments[0], shadow_map_enabled=True, light_space_mat=scene.lights[0].light_space_matrix)
+    scene.draw(auto_shadow=True)
+
+    # # first pass: render to depth map
+    # with scene._framebuffer:
+    #     scene._framebuffer.enable_depth_test()
+    #     scene._framebuffer.clear(PaletteDefault.BlueB.as_color().rgba)
+    #     scene.draw(shader=scene._depth_map_pipeline)
+    #
+    # # second pass: render scene as normal with shadow mapping (using depth map from 1st pass)
+    # gl.glClearColor(*PaletteDefault.Background.as_color().rgba)
+    # gl.glEnable(gl.GL_DEPTH_TEST)
+    # gl.glClear(gl.GL_COLOR_BUFFER_BIT | gl.GL_DEPTH_BUFFER_BIT)
+    # scene.draw(shadow_map=scene._framebuffer.depth_attachments[0], shadow_map_enabled=True)
 
 
 @window.event
@@ -293,10 +324,16 @@ def on_key_press(key, mods):
         animate = not animate
 
     if key == KeyCode.C:
-        framebuffer.save_color_attachment()
+        scene._framebuffer.save_color_attachment()
 
     if key == KeyCode.D:
-        framebuffer.save_depth_attachment(scene.main_camera.near, scene.main_camera.far, False)
+        scene._framebuffer.save_depth_attachment(scene.main_camera.near, scene.main_camera.far, False)
+
+    if key == KeyCode.Up:
+        ground.apply_transformation(Mat4.from_translation(Vec3(0.0, 0.1, 0.0)))
+
+    if key == KeyCode.Down:
+        ground.apply_transformation(Mat4.from_translation(Vec3(0.0, -0.1, 0.0)))
 
 
 @window.event

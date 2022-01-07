@@ -181,6 +181,8 @@ class Mesh:
         self._index_buffers: [IndexBuffer] = []
         self._vertex_array_objects: [VertexArrayObject] = []
 
+        self._cast_shadow = True
+
         shapes = kwargs.get('shapes', None)
         vertices = kwargs.get('vertices', None)
         colors = kwargs.get('colors', [Mesh.DEFAULT_COLOR])
@@ -368,6 +370,14 @@ class Mesh:
     @alternate_texture_enabled.setter
     def alternate_texture_enabled(self, value):
         self._alternate_texture_enabled = value
+
+    @property
+    def cast_shadow(self):
+        return self._cast_shadow
+
+    @cast_shadow.setter
+    def cast_shadow(self, value):
+        self._cast_shadow = value
 
     def load(self):
         if os.path.exists(self._name):
@@ -820,6 +830,8 @@ class Mesh:
                     pipeline['model_mat'] = mat
                     pipeline['shading_enabled'] = self._shading_enabled
                     pipeline['in_light_pos'] = kwargs.get('in_light_pos', Vec3(600.0, 600.0, 600.0))
+                    pipeline['is_directional'] = kwargs.get('is_directional', False)
+                    pipeline['in_light_dir'] = kwargs.get('in_light_dir', Vec3(1.0, 1.0, 1.0).normalised)
                     pipeline['light_color'] = kwargs.get('light_color', Vec3(0.8, 0.8, 0.8))
 
                     pipeline['mtl.diffuse'] = mtl.diffuse
