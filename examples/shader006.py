@@ -102,7 +102,7 @@ def on_key_press(key, mods):
         framebuffer.save_color_attachment()
 
     if key == KeyCode.D:
-        framebuffer.save_depth_attachment()
+        framebuffer.save_depth_attachment(scene.main_camera.near, scene.main_camera.far)
 
 
 @window.event

@@ -45,6 +45,7 @@ class ShaderProgram(GpuObject, BindSemanticObject):
                            for x in s.uniforms]}
 
         self._attributes = {}
+        self._current_activated_textured_unit = -1
 
         # Allows get/set shader uniform as if it is an attribute of the class.
         for uniform in self._uniforms.keys():
@@ -88,6 +89,11 @@ class ShaderProgram(GpuObject, BindSemanticObject):
     def active_texture_unit(self, index: int):
         if self.is_valid():
             gl.glActiveTexture(gl.GL_TEXTURE0 + index)
+
+    def active_next_texture_unit(self):
+        if self.is_valid():
+            self._current_activated_textured_unit += 1
+            gl.glActiveTexture(gl.GL_TEXTURE0 + self._current_activated_textured_unit)
 
     @property
     def uniforms(self):

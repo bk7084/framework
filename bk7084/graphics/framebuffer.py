@@ -405,17 +405,31 @@ class Framebuffer(GpuObject, BindSemanticObject):
                 png.from_array(data[::-1], 'RGBA').save(filepath)
                 print(f'Color attachment saved to {filepath}')
 
-    def save_depth_attachment(self):
+    def save_depth_attachment(self, near, far, is_perspective=True):
         if self._depth_enabled:
             with self:
                 data = np.zeros((self._height, self._width), dtype=np.float32)
                 gl.glReadPixels(0, 0, self._width, self._height, gl.GL_DEPTH_COMPONENT, gl.GL_FLOAT, data)
                 filename = f'{datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")}_depth_attach.png'
                 filepath = os.path.join(os.getcwd(), filename)
-                data = np.vectorize(lambda x: math.floor(x * 255.0))(data).astype(np.uint8)
-                print(data.shape)
+                data = np.vectorize(Framebuffer._depth_value_normalisation)(data, near, far, is_perspective).astype(np.uint8)
                 png.from_array(data[::-1], 'L').save(filepath)
                 print(f'Depth attachment saved to {filepath}')
+
+    @staticmethod
+    def _depth_value_normalisation(d, near, far, is_perspective):
+        if is_perspective:
+            # from range [0, 1] to NDC in range [-1, 1]
+            ndc = d * 2.0 - 1.0
+            # inverse the transformation to retrieve linear depth value
+            value = (2.0 * near * far) / (far + near - ndc * (far - near))
+            # now the value is between near and far
+            value /= far - near
+            # remap to [0, 255]
+            value = math.floor(value * 255.0)
+        else:
+            value = math.floor(d * 255.0)
+        return value
 
     def save_stencil_attachment(self):
         pass

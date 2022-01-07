@@ -811,6 +811,10 @@ class Mesh:
                 camera = kwargs.get('camera', app.current_window().camera)
 
                 with pipeline:
+                    for key, value in kwargs.items():
+                        if key != 'camera' and key != 'shadow_map':
+                            pipeline[key] = value
+
                     pipeline['view_mat'] = camera.view_matrix
                     pipeline['proj_mat'] = camera.projection_matrix
                     pipeline['model_mat'] = mat
@@ -843,11 +847,21 @@ class Mesh:
                     pipeline['mtl.bump_map'] = 1
                     pipeline['mtl.normal_map'] = 2
 
+                    shadow_map_enabled = kwargs.get('shadow_map_enabled', False)
+                    depth_map = kwargs.get('shadow_map', None)
+
                     pipeline.active_texture_unit(0)
                     with diffuse_map:
                         pipeline.active_texture_unit(1)
                         with mtl.bump_map:
                             pipeline.active_texture_unit(2)
                             with mtl.normal_map:
-                                with vao:
-                                    gl.glDrawArrays(sub_mesh.topology.value, 0, record.vertex_count)
+                                if shadow_map_enabled and depth_map is not None:
+                                    pipeline.active_texture_unit(3)
+                                    pipeline['shadow_map'] = 3
+                                    with depth_map:
+                                        with vao:
+                                            gl.glDrawArrays(sub_mesh.topology.value, 0, record.vertex_count)
+                                else:
+                                    with vao:
+                                        gl.glDrawArrays(sub_mesh.topology.value, 0, record.vertex_count)

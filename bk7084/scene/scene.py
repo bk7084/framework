@@ -14,6 +14,11 @@ class MeshEntity(Entity):
         self._is_drawable = True
 
     def draw(self, shader=None, **kwargs):
+        """
+        Args:
+            shader (ShaderProgram): Shader to use. (Override the shader of mesh)
+            **kwargs: Extra uniforms that are going to be passed to shader
+        """
         self.mesh.draw(shader=shader, **kwargs)
 
 
@@ -77,6 +82,14 @@ class Scene:
         """
         if index != self._main_camera:
             self._switch_to_camera(index)
+
+    @property
+    def lights(self):
+        return self._lights
+
+    @property
+    def main_camera(self):
+        return self._cameras[self._main_camera]
 
     def create_camera(self, pos, look_at, up, fov_v=45.0, near=0.1, far=1000., degrees=True, zoom_enabled=False, safe_rotations=True) -> int:
         """
@@ -146,12 +159,17 @@ class Scene:
 
         # ui.end()
 
-    def draw(self):
-        """Draw every visible meshes in the scene."""
+    def draw(self, shader=None, **kwargs):
+        """Draw every visible meshes in the scene.
+
+        Args:
+            shader (ShaderProgram): If specified, this will override the assigned shader of each mesh.
+            **kwargs: Extra uniforms that are going to be passed to shader
+        """
         if self._draw_light:
             for i, l in enumerate(self._lights):
                 self._light_boxes[i].transformation = Mat4.from_translation(l.position)
                 self._light_boxes[i].draw(camera=self._cameras[self._main_camera])
         for e in self._entities:
             if e.drawable:
-                e.draw(in_light_pos=self._lights[0].position, light_color=self._lights[0].color.rgb, camera=self._cameras[self._main_camera])
+                e.draw(in_light_pos=self._lights[0].position, light_color=self._lights[0].color.rgb, camera=self._cameras[self._main_camera], shader=shader, **kwargs)

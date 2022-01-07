@@ -128,7 +128,7 @@ class AssetManager:
                 with open(key, 'rt') as file:
                     self._shaders[key] = Shader(kind, code=file.read(), origin=key, is_file=False)
         else:
-            key = hashlib.sha256(shader).hexdigest()
+            key = hashlib.sha256(shader.encode('utf-8')).hexdigest()
             if key not in self._shaders:
                 logging.info(f'-- Create shader from src <{key}>')
                 self._shaders[key] = Shader(kind, code=shader, origin=f'<string#{key}>', is_file=False)
