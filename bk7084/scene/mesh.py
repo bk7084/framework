@@ -8,7 +8,6 @@ import numpy as np
 from .loader.obj import WavefrontReader
 from .. import gl
 from ..assets import default_resolver, default_asset_mgr
-from ..graphics.shader import Shader
 from ..graphics.array import VertexArrayObject
 from ..graphics.buffer import VertexBuffer, IndexBuffer
 from ..graphics.vertex_layout import VertexLayout, VertexAttrib, VertexAttribDescriptor, VertexAttribFormat
@@ -82,7 +81,7 @@ class Mesh:
         3. providing vertices and its attributes
 
         Note:
-            If `filepath` is specified, this function will skip arguments inside of `kwargs`.
+            If `filepath` is specified, this function will skip arguments inside `kwargs`.
 
         Args:
             filepath (str):
@@ -92,6 +91,12 @@ class Mesh:
                 Whether to load immediately the mesh when initialised by a OBJ file.
 
             **kwargs:
+                cast_shadow (bool):
+                    Specifies whether the object will generate shadow.
+
+                texture_enabled (bool):
+                    Specifies whether the diffuse map will be used.
+
                 vertices: (array like):
                     Specifies the position of vertices.
 
@@ -166,13 +171,13 @@ class Mesh:
                                                                             pixel_shader))
             self._use_customised_pipeline = True
 
-        self._initial_transformation: Mat4 = Mat4.identity()
+        self._initial_transformation: Mat4 = kwargs.get('initial_transformation', Mat4.identity())
         self._transformation: Mat4 = Mat4.identity()
 
-        self._shading_enabled = True
-        self._texture_enabled = True if self._alternate_texture else False
+        self._shading_enabled = kwargs.get('shading_enabled', True)
         self._material_enabled = True
-        self._alternate_texture_enabled = True if self._alternate_texture else False
+        self._texture_enabled = kwargs.get('texture_enabled', True)
+        self._alternate_texture_enabled = True if self._alternate_texture and self._texture_enabled else False
         self._normal_map_enabled = False
         self._bump_map_enabled = False
         self._parallax_map_enabled = False
@@ -181,7 +186,7 @@ class Mesh:
         self._index_buffers: [IndexBuffer] = []
         self._vertex_array_objects: [VertexArrayObject] = []
 
-        self._cast_shadow = True
+        self._cast_shadow = kwargs.get('cast_shadow', True)
 
         shapes = kwargs.get('shapes', None)
         vertices = kwargs.get('vertices', None)
@@ -525,7 +530,7 @@ class Mesh:
                                                                        pipeline)
 
         self._sub_mesh_count = len(self._sub_meshes)
-        self._texture_enabled = True
+        # self._texture_enabled = True
 
     def _from_shapes(self, *shapes):
         """Construct a mesh from a collection of geometry objects."""

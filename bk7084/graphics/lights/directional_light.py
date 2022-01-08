@@ -5,7 +5,7 @@ from ...misc import Color, PaletteSvg
 
 class DirectionalLight(Light):
     def __init__(self, position: Vec3 = Vec3(8.0, 8.0, 8.0), direction: Vec3 = Vec3(-1.0, -1.0, -1.0),
-                 color: Color = PaletteSvg.White.as_color(), sm_width=40.0, sm_height=40.0, **kwargs):
+                 color: Color = PaletteSvg.White.as_color(), sm_width=20.0, sm_height=20.0, **kwargs):
         """
 
         Args:

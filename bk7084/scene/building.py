@@ -8,10 +8,11 @@ from ..math import Mat4
 
 
 class Component(metaclass=abc.ABCMeta):
-    def __init__(self):
+    def __init__(self, cast_shadow=True):
         self._id = uuid.uuid1()
         self._transform = Mat4.identity()
         self._is_drawable = True
+        self._cast_shadow = cast_shadow
 
     @property
     @abc.abstractmethod
@@ -29,6 +30,22 @@ class Component(metaclass=abc.ABCMeta):
     @property
     def id(self):
         return self._id
+
+    @property
+    def cast_shadow(self):
+        return self._cast_shadow
+
+    @cast_shadow.setter
+    def cast_shadow(self, value):
+        self._cast_shadow = value
+
+    @property
+    def drawable(self):
+        return self._is_drawable
+
+    @drawable.setter
+    def drawable(self, value):
+        self._is_drawable = value
 
     def draw(self, matrices=None, **kwargs):
         matrix = Mat4.identity()
@@ -99,4 +116,4 @@ class Building(Entity):
         for idx, comp in enumerate(self._components):
             parents = self._parent_list(idx, [idx])
             matrices = [self._components[p].transform for p in parents] + [self.transform]
-            comp.draw(matrices, **kwargs)
+            comp.draw(matrices, shader=shader, **kwargs)

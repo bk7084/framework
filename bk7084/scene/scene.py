@@ -1,8 +1,12 @@
+import logging
+
 import imgui
 
+from .building import Component
 from .mesh import Mesh
 from .entity import Entity
 from .. import gl
+from ..app.input import KeyCode, KeyModifier
 from ..app import ui
 from ..assets import default_asset_mgr
 from ..camera import Camera
@@ -13,11 +17,11 @@ from ..math import Mat4, Vec3
 
 
 class MeshEntity(Entity):
-    def __init__(self, mesh: Mesh):
+    def __init__(self, mesh: Mesh, cast_shadow=True):
         super().__init__()
         self.mesh = mesh
         self._is_drawable = True
-        self._cast_shadow = self.mesh._cast_shadow
+        self._cast_shadow = cast_shadow
 
     def draw(self, shader=None, **kwargs):
         """
@@ -61,12 +65,17 @@ class Scene:
                     self._entities.append(MeshEntity(entity))
                 elif isinstance(entity, Entity):
                     self._entities.append(entity)
+                elif isinstance(entity, Component):
+                    self._entities.append(entity)
 
         self._lights = [light] if light is not None else [PointLight()]
         # self._lights = [light] if light is not None else [DirectionalLight()]
         self._draw_light = draw_light
         if draw_light:
-            self._light_boxes = [Mesh('models/cube.obj') for l in self._lights]
+            self._light_spheres = [
+                Mesh('models/uv_sphere.obj',
+                     texture_enabled=False,
+                     initial_transformation=Mat4.from_scale(Vec3(0.1, 0.1, 0.1))) for _ in self._lights]
         self._cameras = []
         self._main_camera = -1
         if camera is not None:
@@ -76,7 +85,7 @@ class Scene:
 
         self._window.attach_listeners(self)
         self._values = 1.0, 2.0, 3.0
-        self._framebuffer = Framebuffer(self._window.width, self._window.height, depth_shader_accessible=True)
+        self._depth_map_framebuffer = Framebuffer(self._window.width, self._window.height, depth_shader_accessible=True)
         self._depth_map_pipeline = default_asset_mgr.get_or_create_pipeline('depth_map',
                                                                             vertex_shader='shaders/depth_map.vert',
                                                                             pixel_shader='shaders/depth_map.frag')
@@ -152,6 +161,10 @@ class Scene:
         self._main_camera = to_idx
         self._window.attach_listeners(self._cameras[to_idx])
         self._cameras[to_idx].on_resize(self._window.width, self._window.height)
+        
+    @property
+    def depth_map_framebuffer(self):
+        return self._depth_map_framebuffer
 
     def on_gui(self):
         # ui.begin("Controls")
@@ -175,6 +188,11 @@ class Scene:
 
         # ui.end()
 
+    def on_key_press(self, key, mods):
+        if key == KeyCode.D and mods == KeyModifier.Ctrl:
+            main_cam = self._cameras[self._main_camera]
+            self._depth_map_framebuffer.save_depth_attachment(main_cam.near, main_cam.far, self._lights[0].is_perspective)
+
     def draw(self, shader=None, auto_shadow=False, **kwargs):
         """Draw every visible meshes in the scene.
 
@@ -183,10 +201,6 @@ class Scene:
             auto_shadow (Bool): Specifies if the default shadow is enabled or not.
             **kwargs: Extra uniforms that are going to be passed to shader
         """
-        if self._draw_light:
-            for i, l in enumerate(self._lights):
-                self._light_boxes[i].transformation = Mat4.from_translation(l.position)
-                self._light_boxes[i].draw(camera=self._cameras[self._main_camera])
         light = self._lights[0]
 
         with_shadow, without_shadow = [], []
@@ -195,15 +209,11 @@ class Scene:
 
         if auto_shadow:
             # 1st pass: render to depth map
-            with self._framebuffer:
-                self._framebuffer.enable_depth_test()
-                self._framebuffer.clear(PaletteDefault.Background.as_color().rgba)
+            with self._depth_map_framebuffer:
+                self._depth_map_framebuffer.enable_depth_test()
+                self._depth_map_framebuffer.clear(PaletteDefault.Background.as_color().rgba)
                 for e in with_shadow:
-                    e.draw(in_light_pos=light.position,
-                           in_light_dir=light.direction if light.is_directional else Vec3(0.0),
-                           is_directional=light.is_directional,
-                           light_color=light.color.rgb,
-                           light_mat=light.matrix,
+                    e.draw(light_mat=light.matrix,
                            near=light._sm_near,
                            far=light._sm_far,
                            is_persepctive=light._sm_is_perspective,
@@ -212,7 +222,7 @@ class Scene:
                            **kwargs)
 
             # 2nd pass: render object as normal with shadow mapping
-            gl.glClearColor(*PaletteDefault.Background.as_color().rgba)
+            gl.glClearColor(*PaletteDefault.BlueA.as_color().rgba)
             gl.glEnable(gl.GL_DEPTH_TEST)
             gl.glClear(gl.GL_COLOR_BUFFER_BIT | gl.GL_DEPTH_BUFFER_BIT)
             for e in with_shadow:
@@ -221,12 +231,9 @@ class Scene:
                        is_directional=light.is_directional,
                        light_color=light.color.rgb,
                        light_mat=light.matrix,
-                       near=light._sm_near,
-                       far=light._sm_far,
-                       is_persepctive=light._sm_is_perspective,
                        camera=self._cameras[self._main_camera],
                        shader=shader,
-                       shadow_map=self._framebuffer.depth_attachments[0],
+                       shadow_map=self._depth_map_framebuffer.depth_attachments[0],
                        shadow_map_enabled=True,
                        **kwargs)
 
@@ -253,3 +260,8 @@ class Scene:
                        camera=self._cameras[self._main_camera],
                        shader=shader,
                        **kwargs)
+
+        if self._draw_light:
+            for i, l in enumerate(self._lights):
+                self._light_spheres[i].transformation = Mat4.from_translation(l.position)
+                self._light_spheres[i].draw(camera=self._cameras[self._main_camera])

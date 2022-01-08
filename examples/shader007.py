@@ -255,11 +255,22 @@ from bk7084.scene import Mesh, Scene
 
 window = Window("BK7084: shadow mapping", width=1024, height=1024)
 
-cube = Mesh("./models/spot_cow.obj",
+cube = Mesh("./models/uv_sphere.obj",
+            texture='./textures/checker.png',
+            texture_enabled=True
+            # vertex_shader=vertex_src, pixel_shader=fragment_src
+)
+# cube.cast_shadow = True
+# cube.shading_enabled = False
+# cube.texture_enabled = False
+print(cube.alternate_texture_enabled)
+
+cow = Mesh("./models/spot_cow.obj",
             texture='./textures/checker.png',
             # vertex_shader=vertex_src, pixel_shader=fragment_src
 )
-cube.cast_shadow = True
+cow.cast_shadow = True
+cow.apply_transformation(Mat4.from_translation(Vec3(2.0, 0.0, 2.0)))
 
 ground = Mesh(
     vertices=[[-10.0, 0.0, -10.0],
@@ -276,7 +287,7 @@ ground = Mesh(
 )
 
 # scene = Scene(window, [cube, ground], light=DirectionalLight(), draw_light=False)
-scene = Scene(window, [cube, ground], draw_light=False)
+scene = Scene(window, [cube, ground, cow], draw_light=True)
 scene.create_camera(Vec3(6, 6.0, 6.0), Vec3(0, 0, 0), Vec3.unit_y(), 60.0, zoom_enabled=True, safe_rotations=False, near=0.1, far=100.0)
 
 animate = False
@@ -324,10 +335,10 @@ def on_key_press(key, mods):
         animate = not animate
 
     if key == KeyCode.C:
-        scene._framebuffer.save_color_attachment()
+        scene._depth_map_framebuffer.save_color_attachment()
 
     if key == KeyCode.D:
-        scene._framebuffer.save_depth_attachment(scene.main_camera.near, scene.main_camera.far, False)
+        scene._depth_map_framebuffer.save_depth_attachment(scene.main_camera.near, scene.main_camera.far, False)
 
     if key == KeyCode.Up:
         ground.apply_transformation(Mat4.from_translation(Vec3(0.0, 0.1, 0.0)))
@@ -340,6 +351,7 @@ def on_key_press(key, mods):
 def on_update(dt):
     if animate:
         cube.apply_transformation(Mat4.from_axis_angle(Vec3.unit_y(), 45 * dt, True))
+        cow.apply_transformation(Mat4.from_axis_angle(Vec3.unit_y(), -45 * dt, True))
 
 
 app.init(window)

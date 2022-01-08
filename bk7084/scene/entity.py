@@ -3,12 +3,12 @@ import uuid
 
 
 class Entity(metaclass=abc.ABCMeta):
-    def __init__(self, name=None):
+    def __init__(self, name=None, cast_shadow=True):
         self._id = uuid.uuid1()
         self._name = str(name) if name else 'Unnamed{}'.format(self.__class__.__name__)
         self._is_visible = True
         self._is_drawable = False
-        self._cast_shadow = False
+        self._cast_shadow = cast_shadow
 
     @property
     def visible(self):

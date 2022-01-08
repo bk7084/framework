@@ -5,7 +5,7 @@ from ...misc import PaletteSvg, Color
 
 class PointLight(Light):
     def __init__(self, position: Vec3 = Vec3(5.0, 5.0, 5.0), color: Color = PaletteSvg.White.as_color(),
-                 sm_width=40.0, sm_height=40.0, **kwargs):
+                 sm_width=20.0, sm_height=20.0, **kwargs):
         super().__init__(position, color, sm_width=sm_width, sm_height=sm_height, **kwargs)
         self._position = position
         self._color = color
