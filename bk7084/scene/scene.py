@@ -89,6 +89,7 @@ class Scene:
         self._depth_map_pipeline = default_asset_mgr.get_or_create_pipeline('depth_map',
                                                                             vertex_shader='shaders/depth_map.vert',
                                                                             pixel_shader='shaders/depth_map.frag')
+        self._is_wire_frame = False
 
     def set_main_camera(self, index):
         """
@@ -167,7 +168,6 @@ class Scene:
         return self._depth_map_framebuffer
 
     def on_gui(self):
-        # ui.begin("Controls")
 
         if ui.tree_node('Light'):
             if self._lights[0].is_directional:
@@ -184,6 +184,10 @@ class Scene:
                 if len(self._cameras) > 0:
                     self._switch_to_camera((self._main_camera + 1) % len(self._cameras))
                     print(self._main_camera)
+            ui.tree_pop()
+
+        if ui.tree_node('Rendering'):
+            _, self._is_wire_frame = ui.checkbox('Wireframe', self._is_wire_frame)
             ui.tree_pop()
 
         # ui.end()
@@ -207,24 +211,31 @@ class Scene:
         for e in self._entities:
             (without_shadow, with_shadow)[int(e.cast_shadow and e.drawable)].append(e)
 
+        current_polygon_mode = gl.glGetIntegerv(gl.GL_POLYGON_MODE)[0]
+
         if auto_shadow:
             # 1st pass: render to depth map
-            with self._depth_map_framebuffer:
-                self._depth_map_framebuffer.enable_depth_test()
-                self._depth_map_framebuffer.clear(PaletteDefault.Background.as_color().rgba)
-                for e in with_shadow:
-                    e.draw(light_mat=light.matrix,
-                           near=light._sm_near,
-                           far=light._sm_far,
-                           is_persepctive=light._sm_is_perspective,
-                           camera=self._cameras[self._main_camera],
-                           shader=self._depth_map_pipeline,
-                           **kwargs)
+            if current_polygon_mode != gl.GL_LINE:
+                with self._depth_map_framebuffer:
+                    self._depth_map_framebuffer.enable_depth_test()
+                    self._depth_map_framebuffer.clear(PaletteDefault.Background.as_color().rgba)
+                    for e in with_shadow:
+                        e.draw(light_mat=light.matrix,
+                               near=light._sm_near,
+                               far=light._sm_far,
+                               is_persepctive=light._sm_is_perspective,
+                               camera=self._cameras[self._main_camera],
+                               shader=self._depth_map_pipeline,
+                               **kwargs)
 
             # 2nd pass: render object as normal with shadow mapping
             gl.glClearColor(*PaletteDefault.BlueA.as_color().rgba)
             gl.glEnable(gl.GL_DEPTH_TEST)
             gl.glClear(gl.GL_COLOR_BUFFER_BIT | gl.GL_DEPTH_BUFFER_BIT)
+            if self._is_wire_frame:
+                gl.glPolygonMode(gl.GL_FRONT_AND_BACK, gl.GL_LINE)
+            else:
+                gl.glPolygonMode(gl.GL_FRONT_AND_BACK, gl.GL_FILL)
             for e in with_shadow:
                 e.draw(in_light_pos=light.position,
                        in_light_dir=light.direction if light.is_directional else Vec3(0.0),
@@ -247,7 +258,12 @@ class Scene:
                        shader=shader,
                        shadow_map_enabled=False,
                        **kwargs)
+            gl.glPolygonMode(gl.GL_FRONT_AND_BACK, current_polygon_mode)
         else:
+            if self._is_wire_frame:
+                gl.glPolygonMode(gl.GL_FRONT_AND_BACK, gl.GL_LINE)
+            else:
+                gl.glPolygonMode(gl.GL_FRONT_AND_BACK, gl.GL_FILL)
             for e in self._entities:
                 e.draw(in_light_pos=light.position,
                        in_light_dir=light.direction if light.is_directional else Vec3(0.0),
@@ -260,8 +276,10 @@ class Scene:
                        camera=self._cameras[self._main_camera],
                        shader=shader,
                        **kwargs)
+            gl.glPolygonMode(gl.GL_FRONT_AND_BACK, current_polygon_mode)
 
         if self._draw_light:
             for i, l in enumerate(self._lights):
                 self._light_spheres[i].transformation = Mat4.from_translation(l.position)
                 self._light_spheres[i].draw(camera=self._cameras[self._main_camera])
+

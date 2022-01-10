@@ -36,16 +36,30 @@ uniform bool shadow_map_enabled;
 uniform sampler2D shadow_map;
 
 float calc_shadow(vec4 pos_in_light_space, vec3 normal, vec3 l) {
-    float bias = max(0.00005 * (1.0 - dot(normal, l)), 0.0005);
+    float bias = max(0.0005 * (1.0 - dot(normal, l)), 0.0005);
+    float shadow = 0.0;
     if (shadow_map_enabled) {
         vec3 proj_coords = pos_in_light_space.xyz / pos_in_light_space.w;
         proj_coords = proj_coords * 0.5 + 0.5;
+
+        if (proj_coords.z > 1.0)
+            return shadow;
+
+        // Simplest percentage-closer filtering:
+        //   sampling the surrounding texels of the depth map and average the results
+        vec2 texel_size = 1.0 / textureSize(shadow_map, 0);
+
         float depth = proj_coords.z;
-        float max_depth = texture(shadow_map, proj_coords.xy).r;
-        return depth - bias > max_depth ? 1.0 : 0.0;
-    } else {
-        return 0.0;
+        for (int x = -1; x <= 1; ++x) {
+            for (int y = -1; y <= 1; ++y) {
+                float max_depth = texture(shadow_map, proj_coords.xy + vec2(x, y) * texel_size).r;
+                shadow += depth - bias > max_depth ? 1.0 : 0.0;
+            }
+        }
+        shadow /= 9.0;
     }
+
+    return shadow;
 }
 
 

@@ -8,6 +8,7 @@ from collections.abc import Sequence
 import numpy as np
 import png
 
+from .texture import TextureWrapMode
 from .. import gl
 from .util import GpuObject, BindSemanticObject
 
@@ -33,7 +34,7 @@ class AttachmentKind(enum.Enum):
 
 class Attachment(GpuObject, BindSemanticObject):
     """An attachment is an image (texture)."""
-    def __init__(self, width, height, kind: AttachmentKind, internal_fmt, fmt, dtype, shader_accessible=True):
+    def __init__(self, width, height, kind: AttachmentKind, internal_fmt, fmt, dtype, shader_accessible=True, **kwargs):
         """
 
         Args:
@@ -65,6 +66,8 @@ class Attachment(GpuObject, BindSemanticObject):
         self._internal_format = internal_fmt
         self._format = fmt
         self._dtype = dtype
+        self._wrap_mode = kwargs.get('wrap_mode', TextureWrapMode.ClampBorder)
+        self._border_color = kwargs.get('border_color', (1.0, 1.0, 1.0))
         self._is_dirty = True
 
         self._create()
@@ -140,6 +143,9 @@ class Attachment(GpuObject, BindSemanticObject):
                             self._dtype, None)
             gl.glTexParameteri(self._target, gl.GL_TEXTURE_MIN_FILTER, gl.GL_LINEAR)
             gl.glTexParameteri(self._target, gl.GL_TEXTURE_MAG_FILTER, gl.GL_LINEAR)
+            gl.glTexParameteri(self._target, gl.GL_TEXTURE_WRAP_S, self._wrap_mode.value)
+            gl.glTexParameteri(self._target, gl.GL_TEXTURE_WRAP_T, self._wrap_mode.value)
+            gl.glTexParameterfv(self._target, gl.GL_TEXTURE_BORDER_COLOR, self._border_color)
         else:
             gl.glRenderbufferStorage(self._target, self._format, self._width, self._height)
 

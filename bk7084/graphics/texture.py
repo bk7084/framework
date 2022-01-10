@@ -38,10 +38,11 @@ class TextureWrapMode(enum.Enum):
     # Tiles the texture, creating a repeating pattern (repeat wrapping).
     Repeat = gl.GL_REPEAT
     # Clamps the texture to the last pixel at the edge (clamp to edge wrapping).
-    Clamp = gl.GL_CLAMP_TO_EDGE
+    ClampEdge = gl.GL_CLAMP_TO_EDGE
     # Tiles the texture, creating a repeating pattern by mirroring it at every integer
     # boundary (mirrored repeat wrapping).
     Mirror = gl.GL_MIRRORED_REPEAT
+    ClampBorder = gl.GL_CLAMP_TO_BORDER
 
 
 class FilterMode(enum.Enum):
