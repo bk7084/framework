@@ -237,11 +237,11 @@ class Scene:
         visible_count, occluded_count, received_energy = _calc_energy(energy_map)
         visibility_ratio = visible_count / (occluded_count + visible_count)
         energy_ratio = received_energy / (occluded_count + visible_count)
-        # print('occluded pixel count: ', occluded_count)
-        # print('visible pixel count: ', visible_count)
-        # print('visibility ratio: ', visibility_ratio)
-        # print('energy ratio: ', energy_ratio)
-        # print('energy: ', received_energy)
+        print('occluded pixel count: ', occluded_count)
+        print('visible pixel count: ', visible_count)
+        print('visibility ratio: ', visibility_ratio)
+        print('energy ratio: ', energy_ratio)
+        print('energy: ', received_energy)
 
     def draw(self, shader=None, auto_shadow=False, **kwargs):
         """Draw every visible meshes in the scene.
