@@ -30,7 +30,7 @@ class PointLight(Light):
 
     def _update(self):
         up = Vec3.unit_y()
-        dir = -self._position
+        dir = (-self._position).normalised
         if dir == -Vec3.unit_y():
             up = Vec3.unit_x()
         elif dir == -Vec3.unit_y():
@@ -39,12 +39,19 @@ class PointLight(Light):
         self._proj_mat = Mat4.orthographic_gl(-self._sm_width / 2.0, self._sm_width / 2.0,
                                               -self._sm_height / 2.0, self._sm_height / 2.0,
                                               self._sm_near, self._sm_far)
+        self._is_dirty = False
 
     @property
     def matrix(self):
         if self._is_dirty:
             self._update()
         return self._proj_mat * self._view_mat
+
+    @property
+    def view_matrix(self):
+        if self._is_dirty:
+            self._update()
+        return self._view_mat
 
     @property
     def is_directional(self):

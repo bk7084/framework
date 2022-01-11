@@ -112,6 +112,16 @@ class Building(Entity):
             else:
                 return []
 
+    def transform_of(self, comp):
+        matrix = Mat4.identity()
+        if comp in self._components:
+            idx = self._components.index(comp)
+            parents = self._parent_list(idx, [idx])
+            matrices = [self._components[p].transform for p in parents] + [self.transform]
+            for m in matrices:
+                matrix = m * matrix
+        return matrix
+
     def draw(self, shader=None, **kwargs):
         for idx, comp in enumerate(self._components):
             parents = self._parent_list(idx, [idx])

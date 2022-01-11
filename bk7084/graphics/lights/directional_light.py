@@ -44,6 +44,12 @@ class DirectionalLight(Light):
         return self._proj_mat * self._view_mat
 
     @property
+    def view_matrix(self):
+        if self._is_dirty:
+            self._update()
+        return self._view_mat
+
+    @property
     def direction(self):
         return self._direction
 

@@ -1,8 +1,10 @@
 import logging
+import timeit
 
-import imgui
+from numba import njit, prange
+import numpy as np
 
-from .building import Component
+from .building import Component, Building
 from .mesh import Mesh
 from .entity import Entity
 from .. import gl
@@ -10,6 +12,10 @@ from ..app.input import KeyCode, KeyModifier
 from ..app import ui
 from ..assets import default_asset_mgr
 from ..camera import Camera
+from ..graphics.lights.light import Light
+from ..graphics.vertex_layout import VertexLayout, VertexAttrib, VertexAttribFormat
+from ..graphics.buffer import VertexBuffer
+from ..graphics.array import VertexArrayObject
 from ..graphics.framebuffer import Framebuffer
 from ..graphics.lights import PointLight, DirectionalLight
 from ..misc import PaletteDefault
@@ -89,6 +95,10 @@ class Scene:
         self._depth_map_pipeline = default_asset_mgr.get_or_create_pipeline('depth_map',
                                                                             vertex_shader='shaders/depth_map.vert',
                                                                             pixel_shader='shaders/depth_map.frag')
+        self._energy_framebuffer = Framebuffer(self._window.width, self._window.height)
+        self._energy_pipeline = default_asset_mgr.get_or_create_pipeline('energy_pipeline',
+                                                                         vertex_shader='shaders/energy_map.vert',
+                                                                         pixel_shader='shaders/energy_map.frag')
         self._is_wire_frame = False
 
     def set_main_camera(self, index):
@@ -193,9 +203,45 @@ class Scene:
         # ui.end()
 
     def on_key_press(self, key, mods):
-        if key == KeyCode.D and mods == KeyModifier.Ctrl:
+        if key == KeyCode.D and mods == KeyModifier.Shift:
             main_cam = self._cameras[self._main_camera]
             self._depth_map_framebuffer.save_depth_attachment(main_cam.near, main_cam.far, self._lights[0].is_perspective)
+
+        if key == KeyCode.C and mods == KeyModifier.Shift:
+            self._depth_map_framebuffer.save_color_attachment()
+
+    def energy_ratio_of(self, building: Building, comp: Component, light: Light = None):
+        light = self._lights[0] if light is None else light
+        model_mat = building.transform_of(comp)
+        light_mat = light.matrix
+        light_view_mat = light.view_matrix
+        light_pos = light.position
+        with self._energy_framebuffer:
+            self._energy_framebuffer.enable_depth_test()
+            self._energy_framebuffer.clear((1.0, 1.0, 1.0, 1.0))
+            if comp.mesh.sub_mesh_count > 0:
+                with self._energy_pipeline:
+                    self._energy_pipeline['model_mat'] = model_mat
+                    self._energy_pipeline['depth_map'] = 0
+                    self._energy_pipeline['light_mat'] = light_mat
+                    self._energy_pipeline['light_pos'] = light_pos
+                    self._energy_pipeline['light_view_mat'] = light_view_mat
+                    self._energy_pipeline['resolution'] = (self._window.width, self._window.height)
+                    for idx, record in comp.mesh.render_records.items():
+                        self._energy_pipeline.active_texture_unit(0)
+                        with self._depth_map_framebuffer.depth_attachments[0]:
+                            with comp.mesh._vertex_array_objects[record.vao_idx]:
+                                gl.glDrawArrays(comp.mesh.sub_meshes[idx].topology.value, 0, record.vertex_count)
+        energy_map = self._energy_framebuffer.save_color_attachment(save_as_image=False)
+        energy_map = energy_map.reshape((-1, 4))
+        visible_count, occluded_count, received_energy = _calc_energy(energy_map)
+        visibility_ratio = visible_count / (occluded_count + visible_count)
+        energy_ratio = received_energy / (occluded_count + visible_count)
+        # print('occluded pixel count: ', occluded_count)
+        # print('visible pixel count: ', visible_count)
+        # print('visibility ratio: ', visibility_ratio)
+        # print('energy ratio: ', energy_ratio)
+        # print('energy: ', received_energy)
 
     def draw(self, shader=None, auto_shadow=False, **kwargs):
         """Draw every visible meshes in the scene.
@@ -282,4 +328,19 @@ class Scene:
             for i, l in enumerate(self._lights):
                 self._light_spheres[i].transformation = Mat4.from_translation(l.position)
                 self._light_spheres[i].draw(camera=self._cameras[self._main_camera])
+
+
+@njit(parallel=True, fastmath=True)
+def _calc_energy(data):
+    occluded_count = 0
+    visible_count = 0
+    received_energy = 0.0
+    for i in prange(data.shape[0]):  # iterate over rows
+        if data[i][0] == 255 and data[i][1] == 0 and data[i][2] == 0:
+            occluded_count += 1
+        if data[i][0] == 0 and data[i][2] == 0:
+            visible_count += 1
+            received_energy += data[i][1] / 255.0
+    return visible_count, occluded_count, received_energy
+
 

@@ -822,6 +822,8 @@ class Mesh:
                 mat = matrix * self._transformation * self._initial_transformation
                 vao = self._vertex_array_objects[record.vao_idx]
                 pipeline = self._pipelines[record.pipeline_idx] if shader is None else shader
+
+                camera_enabled = kwargs.get('camera_enabled', True)
                 from bk7084 import app
                 camera = kwargs.get('camera', app.current_window().camera)
 
@@ -830,8 +832,10 @@ class Mesh:
                         if key != 'camera' and key != 'shadow_map':
                             pipeline[key] = value
 
-                    pipeline['view_mat'] = camera.view_matrix
-                    pipeline['proj_mat'] = camera.projection_matrix
+                    if camera_enabled:
+                        pipeline['view_mat'] = camera.view_matrix
+                        pipeline['proj_mat'] = camera.projection_matrix
+
                     pipeline['model_mat'] = mat
                     pipeline['shading_enabled'] = self._shading_enabled
                     pipeline['in_light_pos'] = kwargs.get('in_light_pos', Vec3(600.0, 600.0, 600.0))

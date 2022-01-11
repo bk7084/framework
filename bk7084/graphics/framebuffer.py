@@ -399,27 +399,31 @@ class Framebuffer(GpuObject, BindSemanticObject):
             for s in self._stencil:
                 s.resize(width, height)
 
-    def save_color_attachment(self):
+    def save_color_attachment(self, filename=None, save_as_image=True):
         if self._color_enabled:
             with self:
                 data = np.zeros((self._height, self._width * 4), dtype=np.uint8)
                 gl.glReadBuffer(gl.GL_COLOR_ATTACHMENT0)
                 gl.glReadPixels(0, 0, self._width, self._height, gl.GL_RGBA, gl.GL_UNSIGNED_BYTE, data)
-                filename = f'{datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")}_color_attach.png'
-                filepath = os.path.join(os.getcwd(), filename)
-                png.from_array(data[::-1], 'RGBA').save(filepath)
-                print(f'Color attachment saved to {filepath}')
+                if save_as_image:
+                    filename = f'{datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")}_color_attach.png' if filename is None else filename
+                    filepath = os.path.join(os.getcwd(), filename)
+                    png.from_array(data[::-1], 'RGBA').save(filepath)
+                    print(f'Color attachment saved to {filepath}')
+                return data
 
-    def save_depth_attachment(self, near, far, is_perspective=True):
+    def save_depth_attachment(self, near, far, is_perspective=True, filename=None, save_as_image=True):
         if self._depth_enabled:
             with self:
                 data = np.zeros((self._height, self._width), dtype=np.float32)
                 gl.glReadPixels(0, 0, self._width, self._height, gl.GL_DEPTH_COMPONENT, gl.GL_FLOAT, data)
-                filename = f'{datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")}_depth_attach.png'
-                filepath = os.path.join(os.getcwd(), filename)
                 data = np.vectorize(Framebuffer._depth_value_normalisation)(data, near, far, is_perspective).astype(np.uint8)
-                png.from_array(data[::-1], 'L').save(filepath)
-                print(f'Depth attachment saved to {filepath}')
+                if save_as_image:
+                    filename = f'{datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")}_depth_attach.png' if filename is None else filename
+                    filepath = os.path.join(os.getcwd(), filename)
+                    png.from_array(data[::-1], 'L').save(filepath)
+                    print(f'Depth attachment saved to {filepath}')
+                return data
 
     @staticmethod
     def _depth_value_normalisation(d, near, far, is_perspective):

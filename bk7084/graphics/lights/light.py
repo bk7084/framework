@@ -61,5 +61,10 @@ class Light(metaclass=abc.ABCMeta):
 
     @property
     @abc.abstractmethod
+    def view_matrix(self):
+        raise NotImplementedError
+
+    @property
+    @abc.abstractmethod
     def is_perspective(self):
         raise NotImplementedError

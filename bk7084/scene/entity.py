@@ -33,3 +33,11 @@ class Entity(metaclass=abc.ABCMeta):
     @cast_shadow.setter
     def cast_shadow(self, value):
         self._cast_shadow = value
+
+    @property
+    def name(self):
+        return self._name
+
+    @name.setter
+    def name(self, value):
+        self._name = value

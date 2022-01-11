@@ -129,7 +129,7 @@ class Camera:
             gl.glLoadTransposeMatrixf(self._view_mat)
 
     def on_resize(self, width, height):
-        self._d_angle_x = 2.0 * math.pi / width
+        self._d_angle_x = 2.0 * math.pi / width if width != 0 else 0.0
         self._d_angle_y = math.pi / height
         self._aspect_ratio = width / height
         self._update_matrices()
