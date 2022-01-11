@@ -242,6 +242,7 @@ class Scene:
         print('visibility ratio: ', visibility_ratio)
         print('energy ratio: ', energy_ratio)
         print('energy: ', received_energy)
+        return energy_ratio
 
     def draw(self, shader=None, auto_shadow=False, **kwargs):
         """Draw every visible meshes in the scene.
