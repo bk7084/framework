@@ -210,7 +210,7 @@ class Scene:
         if key == KeyCode.C and mods == KeyModifier.Shift:
             self._depth_map_framebuffer.save_color_attachment()
 
-    def energy_ratio_of(self, building: Building, comp: Component, light: Light = None):
+    def energy_ratio_of(self, building: Building, comp: Component, light: Light = None, save_energy_map=False):
         light = self._lights[0] if light is None else light
         model_mat = building.transform_of(comp)
         light_mat = light.matrix
@@ -232,7 +232,7 @@ class Scene:
                         with self._depth_map_framebuffer.depth_attachments[0]:
                             with comp.mesh._vertex_array_objects[record.vao_idx]:
                                 gl.glDrawArrays(comp.mesh.sub_meshes[idx].topology.value, 0, record.vertex_count)
-        energy_map = self._energy_framebuffer.save_color_attachment(save_as_image=False)
+        energy_map = self._energy_framebuffer.save_color_attachment(save_as_image=save_energy_map)
         energy_map = energy_map.reshape((-1, 4))
         visible_count, occluded_count, received_energy = _calc_energy(energy_map)
         visibility_ratio = visible_count / (occluded_count + visible_count)
