@@ -812,6 +812,28 @@ class Mesh:
     def initial_transformation(self, value: Mat4):
         self._initial_transformation = value
 
+    @property
+    def vertex_array_objects(self):
+        return self._vertex_array_objects
+
+    def compute_energy(self, shader, transform, light, viewport_size, depth_map):
+        model_mat = transform * self._transformation * self._initial_transformation
+        if len(self._sub_meshes) > 0:
+            with shader:
+                shader['model_mat'] = model_mat
+                shader['depth_map'] = 0
+                shader['light_mat'] = light.matrix
+                shader['light_pos'] = light.position
+                shader['light_view_mat'] = light.view_matrix
+                shader['resolution'] = viewport_size
+                shader.active_texture_unit(0)
+                for idx, record in self._render_records.items():
+                    sub_mesh = self._sub_meshes[idx]
+                    vao = self._vertex_array_objects[record.vao_idx]
+                    with depth_map:
+                        with vao:
+                            gl.glDrawArrays(sub_mesh.topology.value, 0, record.vertex_count)
+
     def draw(self, matrix=Mat4.identity(), shader=None, **kwargs):
         sub_mesh_count = len(self._sub_meshes)
         if len(self._sub_meshes) > 0:

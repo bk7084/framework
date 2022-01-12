@@ -9,7 +9,6 @@ out vec3 light_dir;
 uniform vec3 light_pos;
 uniform mat4 light_mat;
 uniform mat4 light_view_mat;
-
 uniform mat4 model_mat;
 
 void main() {

@@ -210,29 +210,8 @@ class Scene:
         if key == KeyCode.C and mods == KeyModifier.Shift:
             self._depth_map_framebuffer.save_color_attachment()
 
-    def energy_ratio_of(self, building: Building, comp: Component, light: Light = None, save_energy_map=False):
-        light = self._lights[0] if light is None else light
-        model_mat = building.transform_of(comp)
-        light_mat = light.matrix
-        light_view_mat = light.view_matrix
-        light_pos = light.position
-        with self._energy_framebuffer:
-            self._energy_framebuffer.enable_depth_test()
-            self._energy_framebuffer.clear((1.0, 1.0, 1.0, 1.0))
-            if comp.mesh.sub_mesh_count > 0:
-                with self._energy_pipeline:
-                    self._energy_pipeline['model_mat'] = model_mat
-                    self._energy_pipeline['depth_map'] = 0
-                    self._energy_pipeline['light_mat'] = light_mat
-                    self._energy_pipeline['light_pos'] = light_pos
-                    self._energy_pipeline['light_view_mat'] = light_view_mat
-                    self._energy_pipeline['resolution'] = (self._window.width, self._window.height)
-                    for idx, record in comp.mesh.render_records.items():
-                        self._energy_pipeline.active_texture_unit(0)
-                        with self._depth_map_framebuffer.depth_attachments[0]:
-                            with comp.mesh._vertex_array_objects[record.vao_idx]:
-                                gl.glDrawArrays(comp.mesh.sub_meshes[idx].topology.value, 0, record.vertex_count)
-        energy_map = self._energy_framebuffer.save_color_attachment(save_as_image=save_energy_map)
+    @staticmethod
+    def _compute_energy(energy_map):
         energy_map = energy_map.reshape((-1, 4))
         visible_count, occluded_count, received_energy = _calc_energy(energy_map)
         visibility_ratio = visible_count / (occluded_count + visible_count)
@@ -243,6 +222,34 @@ class Scene:
         print('energy ratio: ', energy_ratio)
         print('energy: ', received_energy)
         return energy_ratio
+
+    def energy_of_building_component(self, building: Building, comp: Component, light: Light = None, save_energy_map=False):
+        light = self._lights[0] if light is None else light
+        light_mat = light.matrix
+        light_view_mat = light.view_matrix
+        light_pos = light.position
+        with self._energy_framebuffer:
+            self._energy_framebuffer.enable_depth_test()
+            self._energy_framebuffer.clear((1.0, 1.0, 1.0, 1.0))
+            comp.compute_energy(self._energy_pipeline, light, self._window.size,
+                                self._depth_map_framebuffer.depth_attachments[0],
+                                [building.transform_of(comp)])
+
+        energy_map = self._energy_framebuffer.save_color_attachment(save_as_image=save_energy_map)
+        return self._compute_energy(energy_map)
+
+    def energy_of_building(self, building: Building, light: Light = None, save_energy_map=False):
+        light = self._lights[0] if light is None else light
+
+        with self._energy_framebuffer:
+            self._energy_framebuffer.enable_depth_test()
+            self._energy_framebuffer.clear((1.0, 1.0, 1.0, 1.0))
+            building.compute_energy(self._energy_pipeline, light,
+                                    self._window.size,
+                                    self._depth_map_framebuffer.depth_attachments[0])
+
+        energy_map = self._energy_framebuffer.save_color_attachment(save_as_image=save_energy_map)
+        return self._compute_energy(energy_map)
 
     def draw(self, shader=None, auto_shadow=False, **kwargs):
         """Draw every visible meshes in the scene.

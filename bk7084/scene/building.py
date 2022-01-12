@@ -54,6 +54,13 @@ class Component(metaclass=abc.ABCMeta):
                 matrix = m * matrix
         self.mesh.draw(matrix, **kwargs)
 
+    def compute_energy(self, shader, light, viewport_size, depth_map, matrices=None):
+        transform = Mat4.identity()
+        if matrices is not None:
+            for m in matrices:
+                transform = m * transform
+        self.mesh.compute_energy(shader, transform, light, viewport_size, depth_map)
+
 
 class Building(Entity):
     def __init__(self, name=None):
@@ -127,3 +134,9 @@ class Building(Entity):
             parents = self._parent_list(idx, [idx])
             matrices = [self._components[p].transform for p in parents] + [self.transform]
             comp.draw(matrices, shader=shader, **kwargs)
+
+    def compute_energy(self, shader, light, viewport_size, depth_map):
+        for idx, comp in enumerate(self._components):
+            parents = self._parent_list(idx, [idx])
+            matrices = [self._components[p].transform for p in parents] + [self.transform]
+            comp.compute_energy(shader, light, viewport_size, depth_map, matrices)
