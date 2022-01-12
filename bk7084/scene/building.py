@@ -48,18 +48,20 @@ class Component(metaclass=abc.ABCMeta):
         self._is_drawable = value
 
     def draw(self, matrices=None, **kwargs):
-        matrix = Mat4.identity()
-        if matrices is not None:
-            for m in matrices:
-                matrix = m * matrix
-        self.mesh.draw(matrix, **kwargs)
+        if self._is_drawable:
+            matrix = Mat4.identity()
+            if matrices is not None:
+                for m in matrices:
+                    matrix = m * matrix
+            self.mesh.draw(matrix, **kwargs)
 
     def compute_energy(self, shader, light, viewport_size, depth_map, matrices=None):
-        transform = Mat4.identity()
-        if matrices is not None:
-            for m in matrices:
-                transform = m * transform
-        self.mesh.compute_energy(shader, transform, light, viewport_size, depth_map)
+        if self._is_drawable:
+            transform = Mat4.identity()
+            if matrices is not None:
+                for m in matrices:
+                    transform = m * transform
+            self.mesh.compute_energy(shader, transform, light, viewport_size, depth_map)
 
 
 class Building(Entity):
@@ -131,12 +133,14 @@ class Building(Entity):
 
     def draw(self, shader=None, **kwargs):
         for idx, comp in enumerate(self._components):
-            parents = self._parent_list(idx, [idx])
-            matrices = [self._components[p].transform for p in parents] + [self.transform]
-            comp.draw(matrices, shader=shader, **kwargs)
+            if comp.drawable:
+                parents = self._parent_list(idx, [idx])
+                matrices = [self._components[p].transform for p in parents] + [self.transform]
+                comp.draw(matrices, shader=shader, **kwargs)
 
     def compute_energy(self, shader, light, viewport_size, depth_map):
         for idx, comp in enumerate(self._components):
-            parents = self._parent_list(idx, [idx])
-            matrices = [self._components[p].transform for p in parents] + [self.transform]
-            comp.compute_energy(shader, light, viewport_size, depth_map, matrices)
+            if comp.drawable:
+                parents = self._parent_list(idx, [idx])
+                matrices = [self._components[p].transform for p in parents] + [self.transform]
+                comp.compute_energy(shader, light, viewport_size, depth_map, matrices)

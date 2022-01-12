@@ -6,6 +6,7 @@ import OpenGL.error
 
 from .variable import glsl_types
 from .. import gl
+import uuid
 
 
 class BindSemanticObject(metaclass=abc.ABCMeta):
@@ -28,6 +29,7 @@ class BindSemanticObject(metaclass=abc.ABCMeta):
 class GpuObject:
     def __init__(self, gl_type, gl_id):
         self._id = gl_id
+        self._uuid = uuid.uuid1()
         self._type = gl_type
         atexit.register(self.__delete)
 
@@ -50,6 +52,10 @@ class GpuObject:
     @property
     def handle(self):
         return self._id
+
+    @property
+    def uuid(self):
+        return self._uuid
 
     @property
     def gl_type(self):

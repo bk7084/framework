@@ -71,7 +71,7 @@ class ShaderProgram(GpuObject, BindSemanticObject):
     def set_uniform(self, name, value, transpose=True):
         if name in self._uniforms:
             typ, loc = self._uniforms[name]
-            if typ == gl.GL_FLOAT_MAT2 or typ == gl.GL_FLOAT_MAT3 or typ == gl.GL_FLOAT_MAT4:
+            if typ in (gl.GL_FLOAT_MAT2, gl.GL_FLOAT_MAT3, gl.GL_FLOAT_MAT4):
                 gl_set_uniform[typ](loc, 1, transpose, value)
             else:
                 gl_set_uniform[typ](loc, 1, value)

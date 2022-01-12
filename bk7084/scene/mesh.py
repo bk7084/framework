@@ -834,9 +834,13 @@ class Mesh:
                         with vao:
                             gl.glDrawArrays(sub_mesh.topology.value, 0, record.vertex_count)
 
+    def _load_pipeline_uniforms(self, pipeline, excluded=('camera', 'shadow_map'), **kwargs):
+        for key, value in kwargs.items():
+            if key not in excluded:
+                pipeline[key] = value
+
     def draw(self, matrix=Mat4.identity(), shader=None, **kwargs):
-        sub_mesh_count = len(self._sub_meshes)
-        if len(self._sub_meshes) > 0:
+        if self._sub_mesh_count > 0:
             for idx, record in self._render_records.items():
                 sub_mesh = self._sub_meshes[idx]
                 mtl = self._materials[record.mtl_idx]
@@ -873,7 +877,7 @@ class Mesh:
                     pipeline['time'] = app.current_window().elapsed_time
                     pipeline['mtl.use_diffuse_map'] = self._texture_enabled
 
-                    if sub_mesh_count > 1:
+                    if self._sub_mesh_count > 1:
                         pipeline['mtl.use_normal_map'] = sub_mesh.normal_map_enabled
                     else:
                         pipeline['mtl.use_normal_map'] = self._normal_map_enabled
