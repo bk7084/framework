@@ -194,7 +194,12 @@ class Building(Entity):
                 if len(mesh.sub_meshes_raw) > 0:
                     for sub_mesh_texture in mesh.sub_meshes_raw:
                         sub_mesh, texture = sub_mesh_texture
-                        sub_mesh.triangles = [idx + tri_offset for idx in sub_mesh.triangles]
+                        triangle_idx = []
+                        for f_i in sub_mesh.triangles:
+                            start = mesh._triangulated_face_index[f_i]
+                            end = n_triangles if f_i >= len(mesh._triangulated_face_index) - 1 else mesh._triangulated_face_index[f_i + 1]
+                            triangle_idx += list(range(start + tri_offset, end + tri_offset))
+                        sub_mesh.triangles = triangle_idx
                         if texture in sub_mesh_dict:
                             sub_mesh_dict[texture].append(sub_mesh)
                         else:
