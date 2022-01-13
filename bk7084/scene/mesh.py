@@ -734,7 +734,7 @@ class Mesh:
     def update_sub_mesh(self, index, new: SubMesh, texture: str = None, normal_map: str = None,
                         vertex_shader: str = None, pixel_shader: str = None, create: bool = False):
         if len(self.sub_meshes_raw) == 0:
-            self._sub_meshes_raw.append((new, texture, normal_map, vertex_shader, pixel_shader))
+            self._sub_meshes_raw.append((new, texture))
 
         sub_mesh = self._sub_meshes[index]
         sub_mesh.name = new.name
@@ -842,7 +842,7 @@ class Mesh:
                                                       sub_mesh.vertex_count, pipeline)
 
     def append_sub_mesh(self, sub_mesh: SubMesh, texture: str = '', normal_map: str = None, vertex_shader: str = None, pixel_shader: str = None):
-        self._sub_meshes_raw.append((sub_mesh, texture, normal_map, vertex_shader, pixel_shader))
+        self._sub_meshes_raw.append((sub_mesh, texture))
         self._sub_meshes.append(SubMesh())
         self.update_sub_mesh(len(self._sub_meshes) - 1, sub_mesh, texture, normal_map, vertex_shader, pixel_shader, create=True)
 
