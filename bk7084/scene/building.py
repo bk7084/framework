@@ -154,7 +154,7 @@ class Building(Entity):
         normals, n_offset = [], 0
         triangles, tri_offset = [], 0
         sub_mesh_dict = {}
-        for idx, comp in enumerate(self._components):
+        for comp in self._components:
             if comp.drawable:
                 transform = np.array(self.transform_of(comp))
                 mesh = comp.mesh
