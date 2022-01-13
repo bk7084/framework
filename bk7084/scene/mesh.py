@@ -148,12 +148,13 @@ class Mesh:
         self._vertex_triangles = []  # the triangle indices that correspond to each vertex
 
         self._materials = [default_asset_mgr.get_or_create_material('default_material')]
-        texture_path = kwargs.get('texture', None)
-        self._alternate_texture = None if texture_path is None else default_asset_mgr.get_or_create_texture(
-            texture_path)
+        self._texture_path = kwargs.get('texture', None)
+        self._alternate_texture = None if self._texture_path is None else default_asset_mgr.get_or_create_texture(
+            self._texture_path)
 
         self._render_records = {}  # records the rendering information, (sub_mesh_index: mtl_render_record)
         self._sub_meshes = []
+        self._sub_meshes_raw = [] # stores the unprocessed submesh inputs, for easy merging of meshes
         self._sub_mesh_count = 0
         self._pipelines = [
             default_asset_mgr.get_or_create_pipeline('default_pipeline',
@@ -684,8 +685,15 @@ class Mesh:
     def sub_mesh_count(self):
         return self._sub_mesh_count
 
+    @property
+    def sub_meshes_raw(self):
+        return self._sub_meshes_raw
+
     def update_sub_mesh(self, index, new: SubMesh, texture: str = None, normal_map: str = None,
                         vertex_shader: str = None, pixel_shader: str = None, create: bool = False):
+        if len(self.sub_meshes_raw) == 0:
+            self._sub_meshes_raw.append((new, texture, normal_map, vertex_shader, pixel_shader))
+
         sub_mesh = self._sub_meshes[index]
         sub_mesh.name = new.name
         sub_mesh.vertex_count = new.vertex_count
@@ -792,6 +800,7 @@ class Mesh:
                                                       sub_mesh.vertex_count, pipeline)
 
     def append_sub_mesh(self, sub_mesh: SubMesh, texture: str = '', normal_map: str = None, vertex_shader: str = None, pixel_shader: str = None):
+        self._sub_meshes_raw.append((sub_mesh, texture, normal_map, vertex_shader, pixel_shader))
         self._sub_meshes.append(SubMesh())
         self.update_sub_mesh(len(self._sub_meshes) - 1, sub_mesh, texture, normal_map, vertex_shader, pixel_shader, create=True)
 

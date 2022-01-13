@@ -2,7 +2,7 @@ import abc
 import uuid
 from collections import namedtuple
 
-from . import Mesh
+from .mesh import Mesh, SubMesh
 from .entity import Entity
 from ..math import Mat4
 from ..misc import PaletteDefault as Palette
@@ -154,7 +154,8 @@ class Building(Entity):
         vertices, v_offset = [], 0
         uvs, uv_offset = [], 0
         normals, n_offset = [], 0
-        triangles = []
+        triangles, tri_offset = [], 0
+        sub_meshes = []
         for idx, comp in enumerate(self._components):
             if comp.drawable:
                 parents = self._parent_list(idx, [idx])
@@ -179,19 +180,32 @@ class Building(Entity):
 
                 uvs.append(mesh.uvs)
 
+                # Increment triangle indices with index offset
                 comp_triangles = mesh.triangles
+                n_triangles = len(comp_triangles)
                 for tri in comp_triangles:
                     v_idx = tuple(idx + v_offset for idx in tri[0])
                     uv_idx = tuple(idx + uv_offset for idx in tri[1])
                     n_idx = tuple(idx + n_offset for idx in tri[2])
                     triangles += [(v_idx, uv_idx, n_idx)]
 
+                # Create submesh or take over submeshes for each component
+                if len(mesh.sub_meshes_raw) > 0:
+                    for sub_mesh in mesh.sub_meshes_raw:
+                        sub_mesh[0].triangles = [idx + tri_offset for idx in sub_mesh[0].triangles]
+                        sub_meshes.append(sub_mesh)
+                else:
+                    sub_mesh = (SubMesh(triangles=(np.arange(n_triangles) + tri_offset).tolist()), mesh._texture_path)
+                    sub_meshes.append(sub_mesh)
+
                 # Offset for triangle references
                 v_offset += mesh.vertices.shape[0]
                 uv_offset += mesh.uvs.shape[0]
                 n_offset += mesh.vertex_normals.shape[0]
+                tri_offset += n_triangles
 
-        return Mesh(
+        # Create mesh
+        mesh = Mesh(
             vertices=np.concatenate(vertices, axis=0).tolist(),
             colors=[Palette.GreenA.as_color()],
             normals=np.concatenate(normals, axis=0).tolist(),
@@ -199,3 +213,10 @@ class Building(Entity):
             triangles=triangles
         )
 
+        Add submeshes to mesh
+        if len(sub_meshes) > 0:
+            mesh.update_sub_mesh(0, *sub_meshes[0])
+        if len(sub_meshes) > 1:
+            for i in range(1, len(sub_meshes)):
+                mesh.append_sub_mesh(*sub_meshes[i])
+        return mesh
