@@ -51,6 +51,13 @@ class SubMesh:
         self.topology: MeshTopology = topology
         self.vertex_layout: VertexLayout = vertex_layout
         self.normal_map_enabled: bool = normal_map_enabled
+    
+    @staticmethod
+    def from_submeshes(sub_meshes, name=''):
+        triangles = []
+        for sub_mesh in sub_meshes:
+            triangles += sub_mesh.triangles
+        return SubMesh(triangles=triangles, name=name)
 
 
 class Mesh:

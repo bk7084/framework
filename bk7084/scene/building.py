@@ -220,20 +220,14 @@ class Building(Entity):
         textures_sub_meshes = list(sub_mesh_dict.items())
         if len(textures_sub_meshes) > 0:
             texture, sub_meshes = textures_sub_meshes[0]
-            sub_mesh = self.merge_sub_meshes(sub_meshes, name=texture)
+            sub_mesh = SubMesh.from_submeshes(sub_meshes, name=texture)
             mesh.update_sub_mesh(0, sub_mesh, texture=texture)
         if len(textures_sub_meshes) > 1:
             for i in range(1, len(textures_sub_meshes)):
                 texture, sub_meshes = textures_sub_meshes[i]
-                sub_mesh = self.merge_sub_meshes(sub_meshes, name=texture)
+                sub_mesh = SubMesh.from_submeshes(sub_meshes, name=texture)
                 mesh.append_sub_mesh(sub_mesh, texture=texture)
         return mesh
-
-    def merge_sub_meshes(self, sub_meshes, name=''):
-        triangles = []
-        for sub_mesh in sub_meshes:
-            triangles += sub_mesh.triangles
-        return SubMesh(triangles=triangles, name=name)
 
     @property
     def meshes(self):
