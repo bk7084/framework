@@ -76,7 +76,7 @@ class Scene:
         self._lights = []
         delta = 180.0 / num_lights
         for i in range(num_lights):
-            position = Mat4.from_rotation_z(delta * i, True) * Vec4(15.0, 0.0, 15.0, 1.0)
+            position = Mat4.from_rotation_z(delta * i, True) * Vec4(15.0, 1.0, 15.0, 1.0)
             self._lights.append(PointLight(Vec3(position)))
         self._current_light = 0
 
@@ -119,6 +119,10 @@ class Scene:
     @property
     def lights(self):
         return self._lights
+
+    @property
+    def current_light(self):
+        return self._lights[self._current_light]
 
     @property
     def main_camera(self):
@@ -239,18 +243,15 @@ class Scene:
         visible_count, occluded_count, received_energy = _calc_energy(energy_map)
         visibility_ratio = visible_count / (occluded_count + visible_count)
         energy_ratio = received_energy / (occluded_count + visible_count)
-        print('occluded pixel count: ', occluded_count)
-        print('visible pixel count: ', visible_count)
-        print('visibility ratio: ', visibility_ratio)
-        print('energy ratio: ', energy_ratio)
-        print('energy: ', received_energy)
+        # print('occluded pixel count: ', occluded_count)
+        # print('visible pixel count: ', visible_count)
+        # print('visibility ratio: ', visibility_ratio)
+        # print('energy ratio: ', energy_ratio)
+        # print('energy: ', received_energy)
         return energy_ratio
 
     def energy_of_building_component(self, building: Building, comp: Component, light: Light = None, save_energy_map=False):
-        light = self._lights[0] if light is None else light
-        light_mat = light.matrix
-        light_view_mat = light.view_matrix
-        light_pos = light.position
+        light = self._lights[self._current_light] if light is None else light
         with self._energy_framebuffer:
             self._energy_framebuffer.enable_depth_test()
             self._energy_framebuffer.clear((1.0, 1.0, 1.0, 1.0))
@@ -261,16 +262,19 @@ class Scene:
         energy_map = self._energy_framebuffer.save_color_attachment(save_as_image=save_energy_map)
         return self._compute_energy(energy_map)
 
-    def energy_of_building(self, building: Building, light: Light = None, save_energy_map=False):
-        light = self._lights[0] if light is None else light
+    def energy_of_building(self, building: Building, light: Light = None, save_energy_map=False, mesh_transform=Mat4.identity()):
+        light = self._lights[self._current_light] if light is None else light
 
         with self._energy_framebuffer:
             self._energy_framebuffer.enable_depth_test()
             self._energy_framebuffer.clear((1.0, 1.0, 1.0, 1.0))
-            building.compute_energy(self._energy_pipeline, light,
-                                    self._window.size,
-                                    self._depth_map_framebuffer.depth_attachments[0])
-
+            if isinstance(building, Building):
+                building.compute_energy(self._energy_pipeline, light,
+                                        self._window.size,
+                                        self._depth_map_framebuffer.depth_attachments[0])
+            elif isinstance(building, Mesh):
+                building.compute_energy(self._energy_pipeline, mesh_transform, light, self._window.size,
+                                        self._depth_map_framebuffer.depth_attachments[0])
         energy_map = self._energy_framebuffer.save_color_attachment(save_as_image=save_energy_map)
         return self._compute_energy(energy_map)
 
@@ -485,9 +489,8 @@ class Scene:
             gl.glPolygonMode(gl.GL_FRONT_AND_BACK, current_polygon_mode)
 
         if self._draw_light:
-            for i, l in enumerate(self._lights):
-                self._light_spheres[i].transformation = Mat4.from_translation(l.position)
-                self._light_spheres[i].draw(camera=self._cameras[self._main_camera])
+            self._light_sphere.transformation = Mat4.from_translation(self._lights[self._current_light].position)
+            self._light_sphere.draw(camera=self._cameras[self._main_camera])
 
 
 @njit(parallel=True, fastmath=True)

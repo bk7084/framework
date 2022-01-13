@@ -894,10 +894,10 @@ class Mesh:
                 shader['light_pos'] = light.position
                 shader['light_view_mat'] = light.view_matrix
                 shader['resolution'] = viewport_size
-                shader.active_texture_unit(0)
                 for idx, record in self._render_records.items():
                     sub_mesh = self._sub_meshes[idx]
                     vao = self._vertex_array_objects[record.vao_idx]
+                    shader.active_texture_unit(0)
                     with depth_map:
                         with vao:
                             gl.glDrawArrays(sub_mesh.topology.value, 0, record.vertex_count)
