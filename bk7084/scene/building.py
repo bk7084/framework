@@ -156,14 +156,7 @@ class Building(Entity):
         sub_mesh_dict = {}
         for idx, comp in enumerate(self._components):
             if comp.drawable:
-                parents = self._parent_list(idx, [idx])
-                matrices = [self._components[p].transform for p in parents] + [self.transform]
-                transform = Mat4.identity()
-                if matrices is not None:
-                    for m in matrices:
-                        transform = m * transform
-                transform = np.array(transform)
-
+                transform = np.array(self.transform_of(comp))
                 mesh = comp.mesh
                 
                 # Transform vertices with model matrix
