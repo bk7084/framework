@@ -10,6 +10,7 @@ from ..graphics.program import ShaderProgram
 from ..graphics.shader import Shader, ShaderType
 from ..graphics.material import Material
 from ..graphics.texture import TextureWrapMode, FilterMode, TextureKind, Texture
+from ..scene import mesh
 
 
 class AssetKind(enum.Enum):
@@ -29,6 +30,7 @@ class AssetManager:
         self._images = {}
         self._shaders = {}
         self._pipelines = {}
+        self._meshes = {}
 
     def get_or_create_image(self, image_path):
         """
@@ -181,6 +183,21 @@ class AssetManager:
 
         logging.info(f'Load pipeline <{name}>')
         return self._pipelines[name].pipeline
+
+    def get_pipeline(self, uuid):
+        if len(self._pipelines) > 0:
+            for record in self._pipelines.values():
+                if record.pipeline.uuid == uuid:
+                    return record.pipeline
+        return None
+
+    def get_or_create_mesh(self, name: str, filepath: str):
+        if name not in self._meshes:
+            path = self._resolver.resolve(filepath)
+            logging.info(f'-- Create mesh <{name}@{path}>')
+            self._meshes[name] = mesh.Mesh(path)
+
+        return self._meshes[name]
 
 
 default_asset_mgr: AssetManager = AssetManager()

@@ -11,12 +11,10 @@ from ..misc import PaletteDefault as Palette
 import numpy as np
 
 
-class Component(metaclass=abc.ABCMeta):
-    def __init__(self, cast_shadow=True):
-        self._id = uuid.uuid1()
+class Component(Entity):
+    def __init__(self, name=None, cast_shadow=True):
+        super(Component, self).__init__(name, cast_shadow)
         self._transform = Mat4.identity()
-        self._is_drawable = True
-        self._cast_shadow = cast_shadow
 
     @property
     @abc.abstractmethod
@@ -30,10 +28,6 @@ class Component(metaclass=abc.ABCMeta):
     @transform.setter
     def transform(self, value: Mat4):
         self._transform = value
-
-    @property
-    def id(self):
-        return self._id
 
     @property
     def cast_shadow(self):
@@ -50,6 +44,10 @@ class Component(metaclass=abc.ABCMeta):
     @drawable.setter
     def drawable(self, value):
         self._is_drawable = value
+
+    @property
+    def meshes(self):
+        return [(self.mesh, self._transform)]
 
     def draw(self, matrices=None, **kwargs):
         if self._is_drawable:
@@ -74,13 +72,12 @@ class Building(Entity):
         self._components = []  # stores the Component objects
         self._root_components = []  # store the Component objects index
         self._hierarchy = {}  # store the parent index of components: { comp_index: parent_index }
-        self._is_drawable = True
         self._transform = Mat4.identity()
 
     def append(self, comp: Component, parent: Component = None):
         exists = False
         for c in self._components:
-            if c.id == comp.id:
+            if c.uuid == comp.uuid:
                 exists = True
                 break
 
@@ -227,7 +224,6 @@ class Building(Entity):
             triangles=triangles
         )
 
-        # Add submeshes to mesh
         textures_sub_meshes = list(sub_mesh_dict.items())
         if len(textures_sub_meshes) > 0:
             texture, sub_meshes = textures_sub_meshes[0]
@@ -245,3 +241,7 @@ class Building(Entity):
         for sub_mesh in sub_meshes:
             triangles += sub_mesh.triangles
         return SubMesh(triangles=triangles, name=name)
+
+    @property
+    def meshes(self):
+        return [(comp.mesh, self.transform_of(comp)) for comp in self._components]
