@@ -1,6 +1,8 @@
 import logging
 import timeit
+import itertools
 
+from bk7084 import app
 from numba import njit, prange
 import numpy as np
 
@@ -26,8 +28,6 @@ class MeshEntity(Entity):
     def __init__(self, mesh: Mesh, cast_shadow=True):
         super().__init__()
         self.mesh = mesh
-        self._is_drawable = True
-        self._cast_shadow = cast_shadow
 
     def draw(self, shader=None, **kwargs):
         """
@@ -36,6 +36,10 @@ class MeshEntity(Entity):
             **kwargs: Extra uniforms that are going to be passed to shader
         """
         self.mesh.draw(shader=shader, **kwargs)
+
+    @property
+    def meshes(self):
+        return [(self.mesh, Mat4.identity())]
 
 
 class Scene:
@@ -100,6 +104,7 @@ class Scene:
                                                                          vertex_shader='shaders/energy_map.vert',
                                                                          pixel_shader='shaders/energy_map.frag')
         self._is_wire_frame = False
+        self._rendering_info = self.extract_rendering_info()
 
     def set_main_camera(self, index):
         """
@@ -177,6 +182,24 @@ class Scene:
     def depth_map_framebuffer(self):
         return self._depth_map_framebuffer
 
+    def extract_rendering_info(self):
+        # True --> cast shadow
+        # False --> do not cast shadow
+        info = {
+            True: {},
+            False: {},
+        }
+        for entity in self._entities:
+            cast_shadow = entity.cast_shadow
+            if entity.drawable:
+                for mesh, transform in entity.meshes:
+                    for pipeline_uuid, records in mesh.rendering_info.items():
+                        if pipeline_uuid not in info[cast_shadow]:
+                            info[cast_shadow][pipeline_uuid] = []
+                        for record in records:
+                            info[cast_shadow][pipeline_uuid].append((*record, transform))
+        return info
+
     def on_gui(self):
 
         if ui.tree_node('Light'):
@@ -200,7 +223,8 @@ class Scene:
             _, self._is_wire_frame = ui.checkbox('Wireframe', self._is_wire_frame)
             ui.tree_pop()
 
-        # ui.end()
+    def on_update(self, dt):
+        self._rendering_info = self.extract_rendering_info()
 
     def on_key_press(self, key, mods):
         if key == KeyCode.D and mods == KeyModifier.Shift:
@@ -251,6 +275,131 @@ class Scene:
         energy_map = self._energy_framebuffer.save_color_attachment(save_as_image=save_energy_map)
         return self._compute_energy(energy_map)
 
+    def draw_v2(self, shader=None, auto_shadow=False, **kwargs):
+        light = self._lights[0]
+        camera = self._cameras[self._main_camera]
+        old_polygon_mode = gl.glGetIntegerv(gl.GL_POLYGON_MODE)[0]
+
+        if auto_shadow:
+            # two passes
+            # 1st pass
+            if old_polygon_mode != gl.GL_LINE:
+                with self._depth_map_framebuffer:
+                    gl.glEnable(gl.GL_DEPTH_TEST)
+                    self._depth_map_framebuffer.clear(PaletteDefault.Background.as_color().rgba)
+                    with self._depth_map_pipeline:
+                        for _, records in self._rendering_info[True].items():
+                            self._bind_light(self._depth_map_pipeline, light)
+                            for record in records:
+                                vao, topology, count, _, _, _, _, _, _, _, _, mesh_transform, transform = record
+                                self._depth_map_pipeline['model_mat'] = transform * mesh_transform
+                                with vao:
+                                    gl.glDrawArrays(topology, 0, count)
+            # second pass
+            gl.glClearColor(*PaletteDefault.BlueA.as_color().rgba)
+            gl.glEnable(gl.GL_DEPTH_TEST)
+            gl.glClear(gl.GL_COLOR_BUFFER_BIT | gl.GL_DEPTH_BUFFER_BIT)
+            if self._is_wire_frame:
+                gl.glPolygonMode(gl.GL_FRONT_AND_BACK, gl.GL_LINE)
+            else:
+                gl.glPolygonMode(gl.GL_FRONT_AND_BACK, gl.GL_FILL)
+
+            for cast_shadow, info in self._rendering_info.items():
+                for pipeline_uuid, records in info.items():
+                    pipeline = default_asset_mgr.get_pipeline(pipeline_uuid)
+                    with pipeline:
+                        pipeline['time'] = app.current_window().elapsed_time
+                        self._bind_light(pipeline, light)
+                        self._bind_camera(pipeline, camera)
+                        for record in records:
+                            vao, topology, count, mtl, diffuse_map, shading_enabled, \
+                            mtl_enabled, tex_enabled, normal_map_enabled, bump_map_enabled, \
+                            parallax_map_enabled, mesh_transform, transform = record
+                            pipeline['shading_enabled'] = shading_enabled
+                            pipeline['model_mat'] = transform * mesh_transform
+                            if cast_shadow:
+                                pipeline['shadow_map_enabled'] = True
+                            else:
+                                pipeline['shadow_map_enabled'] = True
+                            self._bind_material(pipeline, mtl, mtl_enabled, tex_enabled, normal_map_enabled,
+                                                bump_map_enabled, parallax_map_enabled)
+                            with vao:
+                                pipeline.active_texture_unit(0)
+                                with diffuse_map:
+                                    pipeline.active_texture_unit(1)
+                                    with mtl.bump_map:
+                                        pipeline.active_texture_unit(2)
+                                        with mtl.normal_map:
+                                            pipeline.active_texture_unit(3)
+                                            with self._depth_map_framebuffer.depth_attachments[0]:
+                                                gl.glDrawArrays(topology, 0, count)
+
+            gl.glPolygonMode(gl.GL_FRONT_AND_BACK, old_polygon_mode)
+        else:
+            # single pass
+            if shader is not None:
+                with shader:
+                    self._bind_light(shader, light)
+                    self._bind_camera(shader, camera)
+
+            if self._is_wire_frame:
+                gl.glPolygonMode(gl.GL_FRONT_AND_BACK, gl.GL_LINE)
+            else:
+                gl.glPolygonMode(gl.GL_FRONT_AND_BACK, gl.GL_FILL)
+
+            for pipeline_uuid, records in itertools.chain(self._rendering_info[True].items(), self._rendering_info[False].items()):
+                pipeline = default_asset_mgr.get_pipeline(pipeline_uuid)
+                with pipeline:
+                    pipeline['time'] = app.current_window().elapsed_time
+                    self._bind_light(pipeline, light)
+                    self._bind_camera(pipeline, camera)
+                    for record in records:
+                        vao, topology, count, mtl, diffuse_map, shading_enabled, \
+                        mtl_enabled, tex_enabled, normal_map_enabled, bump_map_enabled,\
+                        parallax_map_enabled, mesh_transform, transform = record
+                        pipeline['shading_enabled'] = shading_enabled
+                        pipeline['model_mat'] = transform * mesh_transform
+                        self._bind_material(pipeline, mtl, mtl_enabled, tex_enabled, normal_map_enabled, bump_map_enabled, parallax_map_enabled)
+                        with vao:
+                            pipeline.active_texture_unit(0)
+                            with diffuse_map:
+                                pipeline.active_texture_unit(1)
+                                with mtl.bump_map:
+                                    pipeline.active_texture_unit(2)
+                                    with mtl.normal_map:
+                                        gl.glDrawArrays(topology, 0, count)
+            gl.glPolygonMode(gl.GL_FRONT_AND_BACK, old_polygon_mode)
+
+    def _bind_light(self, pipeline, light):
+        pipeline['in_light_pos'] = light.position
+        pipeline['in_light_dir'] = light.direction if light.is_directional else Vec3(0.0)
+        pipeline['is_directional'] = light.is_directional
+        pipeline['light_color'] = light.color.rgb
+        pipeline['light_mat'] = light.matrix
+        pipeline['near'] = light._sm_near
+        pipeline['far'] = light._sm_far
+        pipeline['is_persepctive'] = light._sm_is_perspective
+
+    def _bind_material(self, pipeline, mtl, mtl_enabled, tex_enabled, normal_map_enabled, bump_map_enabled, parallax_map_enabled):
+        pipeline['mtl.diffuse'] = mtl.diffuse
+        pipeline['mtl.ambient'] = mtl.ambient
+        pipeline['mtl.specular'] = mtl.specular
+        pipeline['mtl.shininess'] = mtl.shininess
+        pipeline['mtl.enabled'] = mtl_enabled
+        pipeline['mtl.use_diffuse_map'] = tex_enabled
+        pipeline['mtl.use_normal_map'] = normal_map_enabled
+        pipeline['mtl.use_bump_map'] = bump_map_enabled
+        pipeline['mtl.use_parallax_map'] = parallax_map_enabled
+
+        pipeline['mtl.diffuse_map'] = 0
+        pipeline['mtl.bump_map'] = 1
+        pipeline['mtl.normal_map'] = 2
+        pipeline['shadow_map'] = 3
+
+    def _bind_camera(self, pipeline, camera):
+        pipeline['view_mat'] = camera.view_matrix
+        pipeline['proj_mat'] = camera.projection_matrix
+
     def draw(self, shader=None, auto_shadow=False, **kwargs):
         """Draw every visible meshes in the scene.
 
@@ -271,7 +420,7 @@ class Scene:
             # 1st pass: render to depth map
             if current_polygon_mode != gl.GL_LINE:
                 with self._depth_map_framebuffer:
-                    self._depth_map_framebuffer.enable_depth_test()
+                    gl.glEnable(gl.GL_DEPTH_TEST)
                     self._depth_map_framebuffer.clear(PaletteDefault.Background.as_color().rgba)
                     for e in with_shadow:
                         e.draw(light_mat=light.matrix,
@@ -350,5 +499,3 @@ def _calc_energy(data):
             visible_count += 1
             received_energy += data[i][1] / 255.0
     return visible_count, occluded_count, received_energy
-
-

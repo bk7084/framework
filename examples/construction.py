@@ -30,8 +30,8 @@ class Wall(Component):
 
         self._mesh.update_sub_mesh(0, SubMesh(name='body', triangles=[0, 1, 2, 3], normal_map_enabled=True),
                                    texture='models/brick.jpg', normal_map='models/brick_normal_map.png')
-        self._mesh.append_sub_mesh(SubMesh(name='window', triangles=[4]), texture='models/window.jpg',
-                                   pixel_shader='shaders/example2.frag')
+        self._mesh.append_sub_mesh(SubMesh(name='window', triangles=[4]), texture='models/window.jpg')
+                                   # pixel_shader='shaders/example2.frag')
         self._mesh.texture_enabled = True
         # self._mesh.apply_transformation(Mat4.from_rotation_y(45, True))
 
@@ -41,6 +41,8 @@ class Wall(Component):
 
 
 wall = Wall(1.0, 1.0)
+print(wall.mesh.sub_meshes)
+print(wall.mesh.rendering_info)
 # wall2 = Wall(1.0, 1.0, texture1='textures/checker_huge.png', texture2='textures/checker_large.png')
 # wall2.transform = Mat4.from_translation(Vec3(1.0, 0.0, 0.0))
 # wall3 = Wall(1.0, 1.0, texture1='textures/checker_small.png', texture2='textures/checker_color.png')
@@ -58,7 +60,8 @@ scene.create_camera(Vec3(2, 1.0, 2.0), Vec3(0, 0, 0), Vec3.unit_y(), 60.0, zoom_
 @window.event
 def on_draw(dt):
     # building.draw()
-    scene.draw()
+    # scene.draw()
+    scene.draw_v2()
 
 
 @window.event

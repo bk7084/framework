@@ -22,7 +22,8 @@ animate = False
 
 @window.event
 def on_draw(dt):
-    scene.draw()
+    # scene.draw()
+    scene.draw_v2()
 
 
 @window.event

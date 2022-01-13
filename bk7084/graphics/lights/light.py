@@ -68,3 +68,7 @@ class Light(metaclass=abc.ABCMeta):
     @abc.abstractmethod
     def is_perspective(self):
         raise NotImplementedError
+
+    @property
+    def is_directional(self):
+        return NotImplementedError

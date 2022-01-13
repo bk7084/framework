@@ -4,12 +4,15 @@ import os
 from collections import namedtuple
 
 import numpy as np
+from numba import njit, prange
 
 from .loader.obj import WavefrontReader
 from .. import gl
-from ..assets import default_resolver, default_asset_mgr
+from ..assets.resolver import default_resolver
+from ..assets.manager import default_asset_mgr
 from ..graphics.array import VertexArrayObject
 from ..graphics.buffer import VertexBuffer, IndexBuffer
+from ..graphics.query import Query, QueryTarget
 from ..graphics.vertex_layout import VertexLayout, VertexAttrib, VertexAttribDescriptor, VertexAttribFormat
 from ..math import Mat4, Vec3
 from ..misc import PaletteDefault, Color
@@ -151,6 +154,8 @@ class Mesh:
         self._texture_path = kwargs.get('texture', None)
         self._alternate_texture = None if self._texture_path is None else default_asset_mgr.get_or_create_texture(
             self._texture_path)
+        self._bounds = ((0.0, 0.0, 0.0), (0.0, 0.0, 0.0))  # min, max
+        self._bounds_transform = Mat4.identity()
 
         self._render_records = {}  # records the rendering information, (sub_mesh_index: mtl_render_record)
         self._sub_meshes = []
@@ -304,6 +309,8 @@ class Mesh:
             self._vertex_array_objects.append(vao)
             self._vertex_buffers.append(vbo)
 
+        self.calculate_bounds_and_transform()
+
     @staticmethod
     def _process_color(count, colors):
         output_colors = None
@@ -320,6 +327,32 @@ class Mesh:
                 output_colors = np.asarray(
                     [c.rgba for color in [colors, [Mesh.DEFAULT_COLOR] * num] for c in color]).reshape((count, 4))
         return output_colors
+
+    @property
+    def rendering_info(self):
+        info = {}
+        for sub_mesh_idx, record in self._render_records.items():
+            pipeline = self._pipelines[record.pipeline_idx]
+            vao = self._vertex_array_objects[record.vao_idx]
+            vertex_count = record.vertex_count
+            mtl = self._materials[record.mtl_idx]
+            topology = self._sub_meshes[sub_mesh_idx].topology.value
+            diffuse_map = mtl.diffuse_map
+            if self._alternate_texture_enabled and self._alternate_texture is not None:
+                diffuse_map = self._alternate_texture
+            transform = self._transformation * self._initial_transformation
+            if pipeline.uuid not in info:
+                info[pipeline.uuid] = []
+            info[pipeline.uuid].append((vao, topology, vertex_count, mtl,
+                                        diffuse_map,
+                                        self._shading_enabled,
+                                        self._material_enabled,
+                                        self._texture_enabled,
+                                        self._normal_map_enabled,
+                                        self._bump_map_enabled,
+                                        self._parallax_map_enabled,
+                                        transform))
+        return info
 
     @property
     def shading_enabled(self):
@@ -395,6 +428,7 @@ class Mesh:
 
         self._vertex_count = len(mesh_data['vertices'])
         self._vertices = np.asarray(mesh_data['vertices'], dtype=np.float32).reshape((-1, 3))
+        self._bounds = calc_bounds(self._vertices)
 
         self._normal_count = len(mesh_data['normals'])
         self._normals = np.asarray(mesh_data['normals'], dtype=np.float32).reshape((-1, 3))
@@ -536,6 +570,7 @@ class Mesh:
     def _from_shapes(self, *shapes):
         """Construct a mesh from a collection of geometry objects."""
         # todo: improve performance by merge buffers of objects with same draw type or of the same type
+        # todo: bounds
         if len(shapes) == 0:
             raise ValueError('Geometry objects are empty when trying to construct a mesh.')
 
@@ -688,6 +723,13 @@ class Mesh:
     @property
     def sub_meshes_raw(self):
         return self._sub_meshes_raw
+
+    def bounds(self):
+        return self._bounds
+    
+    @property
+    def bounds_transform(self):
+        return self._transformation * self._initial_transformation * self._bounds_transform
 
     def update_sub_mesh(self, index, new: SubMesh, texture: str = None, normal_map: str = None,
                         vertex_shader: str = None, pixel_shader: str = None, create: bool = False):
@@ -853,10 +895,38 @@ class Mesh:
                         with vao:
                             gl.glDrawArrays(sub_mesh.topology.value, 0, record.vertex_count)
 
+    def calculate_bounds_and_transform(self):
+        self._bounds = calc_bounds(self._vertices)
+        min_ = self._bounds[0]
+        max_ = self._bounds[1]
+        translation = Vec3((min_[0] + max_[0]) / 2.0,
+                           (min_[1] + max_[1]) / 2.0,
+                           (min_[2] + max_[2]) / 2.0)
+        scale = Vec3((max_[0] - min_[0]) / 2.0,
+                     (max_[1] - min_[1]) / 2.0,
+                     (max_[2] - min_[2]) / 2.0)
+        self._bounds_transform = Mat4([[scale.x, 0.,       0.,      translation.x],
+                                       [0.,       scale.y, 0.,      translation.y],
+                                       [0.,       0.,      scale.z, translation.z],
+                                       [0.,       0.,      0.,      1.]])
+
+
     def _load_pipeline_uniforms(self, pipeline, excluded=('camera', 'shadow_map'), **kwargs):
         for key, value in kwargs.items():
             if key not in excluded:
                 pipeline[key] = value
+
+    def is_occluded(self, pipeline):
+        cube = default_asset_mgr.get_or_create_mesh('cube', 'models/cube.obj')
+        query = Query(QueryTarget.SamplesPassed)
+        query.begin()
+        record = cube.sub_meshes[0]
+        pipeline['model_mat'] = self.bounds_transform
+        with cube._vertex_array_objects[record.vao_idx]:
+            gl.glDrawArrays(gl.GL_TRIANGLES, 0, record.vertex_count)
+        query.end()
+        samples_passed = query.results()[0]
+        return samples_passed > 0
 
     def draw(self, matrix=Mat4.identity(), shader=None, **kwargs):
         if self._sub_mesh_count > 0:
@@ -931,3 +1001,16 @@ class Mesh:
                                 else:
                                     with vao:
                                         gl.glDrawArrays(sub_mesh.topology.value, 0, record.vertex_count)
+
+
+@njit(parallel=True, fastmath=True)
+def calc_bounds(vertices):
+    min = [np.float32(10000.0), np.float32(10000.0), np.float32(10000.0)]
+    max = [np.float32(-10000.0), np.float32(-10000.0), np.float32(-10000.0)]
+    for i in prange(vertices.shape[0]):
+        for j in range(vertices.shape[1]):
+            if vertices[i][j] <= min[j]:
+                min[j] = vertices[i][j]
+            if vertices[i][j] >= max[j]:
+                max[j] = vertices[i][j]
+    return min, max

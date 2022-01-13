@@ -255,15 +255,16 @@ from bk7084.scene import Mesh, Scene
 
 window = Window("BK7084: shadow mapping", width=1024, height=1024)
 
-cube = Mesh("./models/uv_sphere.obj",
-            texture='./textures/checker.png',
-            texture_enabled=True
-            # vertex_shader=vertex_src, pixel_shader=fragment_src
-)
+sphere = Mesh("./models/uv_sphere.obj",
+              texture='./textures/checker.png',
+              texture_enabled=True
+              # vertex_shader=vertex_src, pixel_shader=fragment_src
+              )
 # cube.cast_shadow = True
 # cube.shading_enabled = False
 # cube.texture_enabled = False
-print(cube.alternate_texture_enabled)
+# print(sphere.alternate_texture_enabled)
+cube = default_asset_mgr.get_or_create_mesh('cube', 'models/cube.obj')
 
 cow = Mesh("./models/spot_cow.obj",
             texture='./textures/checker.png',
@@ -271,6 +272,8 @@ cow = Mesh("./models/spot_cow.obj",
 )
 cow.cast_shadow = True
 cow.apply_transformation(Mat4.from_translation(Vec3(2.0, 0.0, 2.0)))
+
+cube.transformation = cow.bounds_transform
 
 ground = Mesh(
     vertices=[[-10.0, 0.0, -10.0],
@@ -287,7 +290,7 @@ ground = Mesh(
 )
 
 # scene = Scene(window, [cube, ground], light=DirectionalLight(), draw_light=False)
-scene = Scene(window, [cube, ground, cow], draw_light=True)
+scene = Scene(window, [sphere, ground, cow, cube], draw_light=True)
 scene.create_camera(Vec3(6, 6.0, 6.0), Vec3(0, 0, 0), Vec3.unit_y(), 60.0, zoom_enabled=True, safe_rotations=False, near=0.1, far=100.0)
 
 animate = False
@@ -313,7 +316,8 @@ def on_draw(dt):
     # gl.glClear(gl.GL_COLOR_BUFFER_BIT | gl.GL_DEPTH_BUFFER_BIT)
     # scene.draw(shadow_map=framebuffer.depth_attachments[0], shadow_map_enabled=True)
 
-    scene.draw(auto_shadow=True)
+    # scene.draw(auto_shadow=False)
+    scene.draw_v2(auto_shadow=True)
 
     # # first pass: render to depth map
     # with scene._framebuffer:
@@ -350,7 +354,7 @@ def on_key_press(key, mods):
 @window.event
 def on_update(dt):
     if animate:
-        cube.apply_transformation(Mat4.from_axis_angle(Vec3.unit_y(), 45 * dt, True))
+        sphere.apply_transformation(Mat4.from_axis_angle(Vec3.unit_y(), 45 * dt, True))
         cow.apply_transformation(Mat4.from_axis_angle(Vec3.unit_y(), -45 * dt, True))
 
 
