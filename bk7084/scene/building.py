@@ -149,6 +149,9 @@ class Building(Entity):
     def convert_to_mesh(self):
         """ Converts a building to a single mesh that can be rendered more quickly.
         """
+        if len(self._components) == 0:
+            return None
+            
         vertices, v_offset = [], 0
         uvs, uv_offset = [], 0
         normals, n_offset = [], 0
