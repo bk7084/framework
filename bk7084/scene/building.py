@@ -1,4 +1,5 @@
 import abc
+from re import S
 import uuid
 from collections import namedtuple
 
@@ -155,7 +156,7 @@ class Building(Entity):
         uvs, uv_offset = [], 0
         normals, n_offset = [], 0
         triangles, tri_offset = [], 0
-        sub_meshes = []
+        sub_mesh_dict = {}
         for idx, comp in enumerate(self._components):
             if comp.drawable:
                 parents = self._parent_list(idx, [idx])
@@ -191,12 +192,20 @@ class Building(Entity):
 
                 # Create submesh or take over submeshes for each component
                 if len(mesh.sub_meshes_raw) > 0:
-                    for sub_mesh in mesh.sub_meshes_raw:
-                        sub_mesh[0].triangles = [idx + tri_offset for idx in sub_mesh[0].triangles]
-                        sub_meshes.append(sub_mesh)
+                    for sub_mesh_texture in mesh.sub_meshes_raw:
+                        sub_mesh, texture = sub_mesh_texture
+                        sub_mesh.triangles = [idx + tri_offset for idx in sub_mesh.triangles]
+                        if texture in sub_mesh_dict:
+                            sub_mesh_dict[texture].append(sub_mesh)
+                        else:
+                            sub_mesh_dict[texture] = [sub_mesh]
                 else:
-                    sub_mesh = (SubMesh(triangles=(np.arange(n_triangles) + tri_offset).tolist()), mesh._texture_path)
-                    sub_meshes.append(sub_mesh)
+                    sub_mesh = SubMesh(triangles=(np.arange(n_triangles) + tri_offset).tolist())
+                    texture = mesh._texture_path
+                    if texture in sub_mesh_dict:
+                        sub_mesh_dict[texture].append(sub_mesh)
+                    else:
+                        sub_mesh_dict[texture] = [sub_mesh]
 
                 # Offset for triangle references
                 v_offset += mesh.vertices.shape[0]
@@ -213,10 +222,21 @@ class Building(Entity):
             triangles=triangles
         )
 
-        Add submeshes to mesh
-        if len(sub_meshes) > 0:
-            mesh.update_sub_mesh(0, *sub_meshes[0])
-        if len(sub_meshes) > 1:
-            for i in range(1, len(sub_meshes)):
-                mesh.append_sub_mesh(*sub_meshes[i])
+        # Add submeshes to mesh
+        textures_sub_meshes = list(sub_mesh_dict.items())
+        if len(textures_sub_meshes) > 0:
+            texture, sub_meshes = textures_sub_meshes[0]
+            sub_mesh = self.merge_sub_meshes(sub_meshes, name=texture)
+            mesh.update_sub_mesh(0, sub_mesh, texture=texture)
+        if len(textures_sub_meshes) > 1:
+            for i in range(1, len(textures_sub_meshes)):
+                texture, sub_meshes = textures_sub_meshes[i]
+                sub_mesh = self.merge_sub_meshes(sub_meshes, name=texture)
+                mesh.append_sub_mesh(sub_mesh, texture=texture)
         return mesh
+
+    def merge_sub_meshes(self, sub_meshes, name=''):
+        triangles = []
+        for sub_mesh in sub_meshes:
+            triangles += sub_mesh.triangles
+        return SubMesh(triangles=triangles, name=name)
