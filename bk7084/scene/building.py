@@ -5,6 +5,9 @@ from collections import namedtuple
 from . import Mesh
 from .entity import Entity
 from ..math import Mat4
+from ..misc import PaletteDefault as Palette
+
+import numpy as np
 
 
 class Component(metaclass=abc.ABCMeta):
@@ -144,3 +147,55 @@ class Building(Entity):
                 parents = self._parent_list(idx, [idx])
                 matrices = [self._components[p].transform for p in parents] + [self.transform]
                 comp.compute_energy(shader, light, viewport_size, depth_map, matrices)
+
+    def convert_to_mesh(self):
+        """ Converts a building to a single mesh that can be rendered more quickly.
+        """
+        vertices, v_offset = [], 0
+        uvs, uv_offset = [], 0
+        normals, n_offset = [], 0
+        triangles = []
+        for idx, comp in enumerate(self._components):
+            if comp.drawable:
+                parents = self._parent_list(idx, [idx])
+                matrices = [self._components[p].transform for p in parents] + [self.transform]
+                transform = Mat4.identity()
+                if matrices is not None:
+                    for m in matrices:
+                        transform = m * transform
+                transform = np.array(transform)
+
+                mesh = comp.mesh
+                
+                # Transform vertices with model matrix
+                comp_vertices = (transform @ np.concatenate((mesh.vertices, np.ones_like(mesh.vertices[:, 0:1])), axis=1).T).T
+                comp_vertices = comp_vertices[:, :3] / comp_vertices[:, 3:]
+                vertices.append(comp_vertices)
+
+                # Correctly transform the normals with the inverse transpose
+                comp_normals = (np.linalg.inv(transform).T @ np.concatenate((mesh.vertex_normals, np.ones_like(mesh.vertex_normals[:, 0:1])), axis=1).T).T
+                comp_normals = comp_normals[:, :3] / np.linalg.norm(comp_normals[:, :3], axis=1).clip(1e-5)
+                normals.append(comp_normals)
+
+                uvs.append(mesh.uvs)
+
+                comp_triangles = mesh.triangles
+                for tri in comp_triangles:
+                    v_idx = tuple(idx + v_offset for idx in tri[0])
+                    uv_idx = tuple(idx + uv_offset for idx in tri[1])
+                    n_idx = tuple(idx + n_offset for idx in tri[2])
+                    triangles += [(v_idx, uv_idx, n_idx)]
+
+                # Offset for triangle references
+                v_offset += mesh.vertices.shape[0]
+                uv_offset += mesh.uvs.shape[0]
+                n_offset += mesh.vertex_normals.shape[0]
+
+        return Mesh(
+            vertices=np.concatenate(vertices, axis=0).tolist(),
+            colors=[Palette.GreenA.as_color()],
+            normals=np.concatenate(normals, axis=0).tolist(),
+            uvs=np.concatenate(uvs, axis=0).tolist(),
+            triangles=triangles
+        )
+

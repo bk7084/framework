@@ -622,12 +622,17 @@ class Mesh:
     @property
     def vertices(self):
         """Returns the vertex positions."""
-        raise self._vertices
+        return self._vertices
 
     @vertices.setter
     def vertices(self, positions):
         self._vertices = np.asarray(positions, dtype=np.float32).ravel()
         self._vertex_count = len(self._vertices) / 3
+
+    @property
+    def uvs(self):
+        """Returns the vertex uvs."""
+        return self._uvs
 
     @property
     def vertex_count(self):
@@ -653,6 +658,11 @@ class Mesh:
     def vertex_normals(self, normals):
         """Vertex normals of the mesh."""
         self._normals = normals
+
+    @property
+    def triangles(self):
+        """Triangles of the mesh."""
+        return self._triangles
 
     @property
     def materials(self):
