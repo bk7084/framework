@@ -1,10 +1,8 @@
-import logging
-import timeit
 import itertools
 
 from bk7084 import app
+from bk7084.math import Vec4
 from numba import njit, prange
-import numpy as np
 
 from .building import Component, Building
 from .mesh import Mesh
@@ -15,9 +13,6 @@ from ..app import ui
 from ..assets import default_asset_mgr
 from ..camera import Camera
 from ..graphics.lights.light import Light
-from ..graphics.vertex_layout import VertexLayout, VertexAttrib, VertexAttribFormat
-from ..graphics.buffer import VertexBuffer
-from ..graphics.array import VertexArrayObject
 from ..graphics.framebuffer import Framebuffer
 from ..graphics.lights import PointLight, DirectionalLight
 from ..misc import PaletteDefault
@@ -46,7 +41,7 @@ class Scene:
     """
     Scene manages the rendering of meshes, lights and cameras.
     """
-    def __init__(self, window, entities=(), camera=None, light=None, draw_light=False,
+    def __init__(self, window, entities=(), camera=None, num_lights=12, draw_light=False,
                  bg_color=PaletteDefault.Background.as_color(), **kwargs):
         """
         Initialisation of a Scene object.
@@ -78,14 +73,16 @@ class Scene:
                 elif isinstance(entity, Component):
                     self._entities.append(entity)
 
-        self._lights = [light] if light is not None else [PointLight()]
-        # self._lights = [light] if light is not None else [DirectionalLight()]
+        self._lights = []
+        delta = 180.0 / num_lights
+        for i in range(num_lights):
+            position = Mat4.from_rotation_z(delta * i, True) * Vec4(15.0, 0.0, 15.0, 1.0)
+            self._lights.append(PointLight(Vec3(position)))
+        self._current_light = 0
+
         self._draw_light = draw_light
-        if draw_light:
-            self._light_spheres = [
-                Mesh('models/uv_sphere.obj',
-                     texture_enabled=False,
-                     initial_transformation=Mat4.from_scale(Vec3(0.1, 0.1, 0.1))) for _ in self._lights]
+        self._light_sphere = Mesh('models/uv_sphere.obj', texture_enabled=False,
+                                  initial_transformation=Mat4.from_scale(Vec3(0.1, 0.1, 0.1)))
         self._cameras = []
         self._main_camera = -1
         if camera is not None:
@@ -201,15 +198,17 @@ class Scene:
         return info
 
     def on_gui(self):
-
         if ui.tree_node('Light'):
-            if self._lights[0].is_directional:
+            if self._lights[self._current_light].is_directional:
                 ui.drag_float3('Position', *self._lights[0].position)
             else:
                 _, self._lights[0].position = ui.drag_float3('Position', *self._lights[0].position)
             _, self._lights[0].color.rgb = ui.color_edit3('Color', *self._lights[0].color.rgb)
             if self._lights[0].is_directional:
                 _, self._lights[0].direction = ui.drag_float3('Direction', *self._lights[0].direction)
+            if ui.button('Next light'):
+                self._current_light += 1
+                self._current_light %= len(self._lights)
             ui.tree_pop()
 
         if ui.tree_node('Camera'):
@@ -276,7 +275,7 @@ class Scene:
         return self._compute_energy(energy_map)
 
     def draw_v2(self, shader=None, auto_shadow=False, **kwargs):
-        light = self._lights[0]
+        light = self._lights[self._current_light]
         camera = self._cameras[self._main_camera]
         old_polygon_mode = gl.glGetIntegerv(gl.GL_POLYGON_MODE)[0]
 
@@ -370,6 +369,10 @@ class Scene:
                                         gl.glDrawArrays(topology, 0, count)
             gl.glPolygonMode(gl.GL_FRONT_AND_BACK, old_polygon_mode)
 
+        if self._draw_light:
+            self._light_sphere.transformation = Mat4.from_translation(self._lights[self._current_light].position)
+            self._light_sphere.draw(camera=self._cameras[self._main_camera])
+
     def _bind_light(self, pipeline, light):
         pipeline['in_light_pos'] = light.position
         pipeline['in_light_dir'] = light.direction if light.is_directional else Vec3(0.0)
@@ -408,7 +411,7 @@ class Scene:
             auto_shadow (Bool): Specifies if the default shadow is enabled or not.
             **kwargs: Extra uniforms that are going to be passed to shader
         """
-        light = self._lights[0]
+        light = self._lights[self._current_light]
 
         with_shadow, without_shadow = [], []
         for e in self._entities:

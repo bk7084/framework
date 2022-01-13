@@ -73,7 +73,6 @@ class Matrix(np.ndarray):
 
     def __mul__(self, other):
         if isinstance(other, numbers.Number):
-            print('yes')
             return np.multiply(self, other).view(type(self))
         elif isinstance(other, np.ndarray) and self.shape[1] == other.shape[0]:
             result = np.matmul(self, other)
