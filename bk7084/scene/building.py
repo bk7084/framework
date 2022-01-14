@@ -152,11 +152,11 @@ class Building(Entity):
         if len(self._components) == 0:
             return None
             
-        uvs, uv_offset = [], 0
-        normals, n_offset = [], 0
+        vertices_dict, vertex_idx = {}, 0
+        uvs_dict, uvs_idx = {}, 0
+        normals_dict, normal_idx = {}, 0
         triangles, tri_offset = [], 0
         sub_mesh_dict = {}
-        vertices_dict, vertex_idx = {}, 0
         for comp in self._components:
             if comp.drawable:
                 transform = np.array(self.transform_of(comp))
@@ -165,30 +165,46 @@ class Building(Entity):
                 # Transform vertices with model matrix
                 comp_vertices = (transform @ np.concatenate((mesh.vertices, np.ones_like(mesh.vertices[:, 0:1])), axis=1).T).T
                 comp_vertices = comp_vertices[:, :3] / comp_vertices[:, 3:]
-                vertices_idx = []
+                vertices_indices = []
                 for i in range(comp_vertices.shape[0]):
                     v = comp_vertices[i].tostring()
                     if v in vertices_dict:
-                        vertices_idx.append(vertices_dict[v][0])
+                        vertices_indices.append(vertices_dict[v][0])
                     else:
-                        vertices_idx.append(vertex_idx)
+                        vertices_indices.append(vertex_idx)
                         vertices_dict[v] = (vertex_idx, comp_vertices[i])
                         vertex_idx += 1
 
                 # Correctly transform the normals with the inverse transpose
                 comp_normals = (np.linalg.inv(transform).T @ np.concatenate((mesh.vertex_normals, np.ones_like(mesh.vertex_normals[:, 0:1])), axis=1).T).T
                 comp_normals = comp_normals[:, :3] / np.linalg.norm(comp_normals[:, :3], axis=1, keepdims=True).clip(1e-5)
-                normals.append(comp_normals)
+                normals_indices = []
+                for i in range(comp_normals.shape[0]):
+                    n = comp_normals[i].tostring()
+                    if n in normals_dict:
+                        normals_indices.append(normals_dict[n][0])
+                    else:
+                        normals_indices.append(normal_idx)
+                        normals_dict[n] = (normal_idx, comp_normals[i])
+                        normal_idx += 1
 
-                uvs.append(mesh.uvs)
+                uvs_indices = []
+                for i in range(mesh.uvs.shape[0]):
+                    uv = mesh.uvs[i].tostring()
+                    if uv in uvs_dict:
+                        uvs_indices.append(uvs_dict[uv][0])
+                    else:
+                        uvs_indices.append(uvs_idx)
+                        uvs_dict[uv] = (uvs_idx, mesh.uvs[i])
+                        uvs_idx += 1
 
                 # Increment triangle indices with index offset, use correct vertex idx for reused vertices
                 comp_triangles = mesh.triangles
                 n_triangles = len(comp_triangles)
                 for tri in comp_triangles:
-                    v_idx = tuple(vertices_idx[idx] for idx in tri[0])
-                    uv_idx = tuple(idx + uv_offset for idx in tri[1])
-                    n_idx = tuple(idx + n_offset for idx in tri[2])
+                    v_idx = tuple(vertices_indices[idx] for idx in tri[0])
+                    uv_idx = tuple(uvs_indices[idx] for idx in tri[1])
+                    n_idx = tuple(normals_indices[idx] for idx in tri[2])
                     triangles += [(v_idx, uv_idx, n_idx)]
 
                 # Create submesh or take over submeshes for each component
@@ -214,17 +230,17 @@ class Building(Entity):
                         sub_mesh_dict[texture] = [sub_mesh]
 
                 # Offset for triangle references
-                uv_offset += mesh.uvs.shape[0]
-                n_offset += mesh.vertex_normals.shape[0]
                 tri_offset += n_triangles
 
         # Create mesh
         _, vertices = zip(*list(vertices_dict.values()))
+        _, normals = zip(*list(normals_dict.values()))
+        _, uvs = zip(*list(uvs_dict.values()))
         mesh = Mesh(
-            vertices= np.vstack(vertices).tolist(),
+            vertices=np.vstack(vertices).tolist(),
             colors=[Palette.GreenA.as_color()],
-            normals=np.concatenate(normals, axis=0).tolist(),
-            uvs=np.concatenate(uvs, axis=0).tolist(),
+            normals=np.vstack(normals).tolist(),
+            uvs=np.vstack(uvs).tolist(),
             triangles=triangles
         )
 
