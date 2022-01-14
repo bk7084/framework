@@ -152,11 +152,11 @@ class Building(Entity):
         if len(self._components) == 0:
             return None
             
-        vertices, v_offset = [], 0
         uvs, uv_offset = [], 0
         normals, n_offset = [], 0
         triangles, tri_offset = [], 0
         sub_mesh_dict = {}
+        vertices_dict, vertex_idx = {}, 0
         for comp in self._components:
             if comp.drawable:
                 transform = np.array(self.transform_of(comp))
@@ -165,7 +165,14 @@ class Building(Entity):
                 # Transform vertices with model matrix
                 comp_vertices = (transform @ np.concatenate((mesh.vertices, np.ones_like(mesh.vertices[:, 0:1])), axis=1).T).T
                 comp_vertices = comp_vertices[:, :3] / comp_vertices[:, 3:]
-                vertices.append(comp_vertices)
+                vertices_idx = []
+                for i in range(comp_vertices.shape[0]):
+                    if comp_vertices[i] in vertices_dict:
+                        vertices_idx.append(vertices_dict[comp_vertices[i]])
+                    else:
+                        vertices_idx.append(vertex_idx)
+                        vertices_dict[comp_vertices[i]] = vertex_idx
+                        vertex_idx += 1
 
                 # Correctly transform the normals with the inverse transpose
                 comp_normals = (np.linalg.inv(transform).T @ np.concatenate((mesh.vertex_normals, np.ones_like(mesh.vertex_normals[:, 0:1])), axis=1).T).T
@@ -174,11 +181,11 @@ class Building(Entity):
 
                 uvs.append(mesh.uvs)
 
-                # Increment triangle indices with index offset
+                # Increment triangle indices with index offset, use correct vertex idx for reused vertices
                 comp_triangles = mesh.triangles
                 n_triangles = len(comp_triangles)
                 for tri in comp_triangles:
-                    v_idx = tuple(idx + v_offset for idx in tri[0])
+                    v_idx = tuple(vertices_idx[idx] for idx in tri[0])
                     uv_idx = tuple(idx + uv_offset for idx in tri[1])
                     n_idx = tuple(idx + n_offset for idx in tri[2])
                     triangles += [(v_idx, uv_idx, n_idx)]
@@ -206,14 +213,13 @@ class Building(Entity):
                         sub_mesh_dict[texture] = [sub_mesh]
 
                 # Offset for triangle references
-                v_offset += mesh.vertices.shape[0]
                 uv_offset += mesh.uvs.shape[0]
                 n_offset += mesh.vertex_normals.shape[0]
                 tri_offset += n_triangles
 
         # Create mesh
         mesh = Mesh(
-            vertices=np.concatenate(vertices, axis=0).tolist(),
+            vertices= np.vstack(list(vertices_dict.keys())).tolist(),
             colors=[Palette.GreenA.as_color()],
             normals=np.concatenate(normals, axis=0).tolist(),
             uvs=np.concatenate(uvs, axis=0).tolist(),
