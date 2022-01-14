@@ -167,11 +167,12 @@ class Building(Entity):
                 comp_vertices = comp_vertices[:, :3] / comp_vertices[:, 3:]
                 vertices_idx = []
                 for i in range(comp_vertices.shape[0]):
-                    if comp_vertices[i] in vertices_dict:
-                        vertices_idx.append(vertices_dict[comp_vertices[i]])
+                    v = comp_vertices[i].tostring()
+                    if v in vertices_dict:
+                        vertices_idx.append(vertices_dict[v][0])
                     else:
                         vertices_idx.append(vertex_idx)
-                        vertices_dict[comp_vertices[i]] = vertex_idx
+                        vertices_dict[v] = (vertex_idx, comp_vertices[i])
                         vertex_idx += 1
 
                 # Correctly transform the normals with the inverse transpose
@@ -218,8 +219,9 @@ class Building(Entity):
                 tri_offset += n_triangles
 
         # Create mesh
+        _, vertices = zip(*list(vertices_dict.values()))
         mesh = Mesh(
-            vertices= np.vstack(list(vertices_dict.keys())).tolist(),
+            vertices= np.vstack(vertices).tolist(),
             colors=[Palette.GreenA.as_color()],
             normals=np.concatenate(normals, axis=0).tolist(),
             uvs=np.concatenate(uvs, axis=0).tolist(),
