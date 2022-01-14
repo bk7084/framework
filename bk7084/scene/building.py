@@ -169,7 +169,7 @@ class Building(Entity):
 
                 # Correctly transform the normals with the inverse transpose
                 comp_normals = (np.linalg.inv(transform).T @ np.concatenate((mesh.vertex_normals, np.ones_like(mesh.vertex_normals[:, 0:1])), axis=1).T).T
-                comp_normals = comp_normals[:, :3] / np.linalg.norm(comp_normals[:, :3], axis=1).clip(1e-5)
+                comp_normals = comp_normals[:, :3] / np.linalg.norm(comp_normals[:, :3], axis=1, keepdims=True).clip(1e-5)
                 normals.append(comp_normals)
 
                 uvs.append(mesh.uvs)
