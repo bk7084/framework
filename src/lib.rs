@@ -43,7 +43,7 @@ fn run() {
 
 /// A Python module implemented in Rust.
 #[pymodule]
-fn bk7084(_py: Python, m: &PyModule) -> PyResult<()> {
+fn bk7084rs(_py: Python, m: &PyModule) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(sum_as_string, m)?)?;
     m.add_function(wrap_pyfunction!(run, m)?)?;
     Ok(())

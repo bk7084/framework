@@ -1,11 +1,14 @@
 [package]
-name = "bk7084"
+name = "bk7084-rs"
 version = "0.1.0"
 edition = "2021"
 
 [lib]
 name = "bk7084"
 crate-type = ["cdylib"]
+
+[package.metadata.maturin]
+name = "bk7084.bk7084rs"
 
 [dependencies]
 cfg-if = "1"
