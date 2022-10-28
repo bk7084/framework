@@ -1,7 +1,10 @@
+import inspect
 import logging
 import os
 
+from .event import EventDispatcher
 from .window import Window
+from ..rs import AppState, run_main_loop
 
 __all__ = [
     'current_time',
@@ -9,7 +12,66 @@ __all__ = [
     'gl_context_version',
     'init',
     'run'
+    'App',
 ]
+
+
+class App:
+    def __init__(self, title: str = "BK7084", width: int = 600, height: int = 600, resizable: bool = True, fullscreen: bool = False):
+        self._state = AppState(title, width, height, resizable, fullscreen)
+        self._state.register_event_types([
+            "on_cursor_enter",
+            "on_cursor_leave",
+            "on_cursor_move",
+            "on_draw",
+            "on_exit",
+            "on_resize",
+            "on_mouse_motion",
+            "on_mouse_drag",
+            "on_mouse_press",
+            "on_mouse_release",
+            "on_mouse_scroll",
+            "on_key_press",
+            "on_key_release",
+            "on_update",
+            "on_init",
+            ])
+
+    def init(self):
+        # self.dispatch('on_init')
+        pass
+
+    def run(self):
+        run_main_loop(self._state)
+
+    def attach_listener(self, name, listener):
+        self._state.attach_listener(name, listener)
+
+    def event(self, *args):
+        """Decorator to register an event handler.
+
+        Args:
+            *args: Event name(s) to register.
+
+        Returns:
+            Callable: Decorator function.
+        """
+        if len(args) == 0:  # @app.event()
+            def decorator(func):
+                self._state.attach_listener(func.__name__, func)
+            return decorator
+
+        elif inspect.isroutine(args[0]):  # @app.event
+            fn = args[0]
+            fn_name = fn.__name__
+            self._state.attach_listener(fn_name, fn)
+            return args[0]
+
+        elif type(args[0]) in (str,):  # @app.event('on_resize')
+            def decorator(func):
+                self._state.attach_listener(args[0], func)
+            return decorator
+
 
 logging.basicConfig(level=os.environ.get('LOGLEVEL', 'ERROR'))
 
