@@ -1,12 +1,14 @@
 use std::collections::HashMap;
 use std::sync::Arc;
+use pyo3::ffi::PyWeakReference;
 use winit::event_loop::{EventLoop, EventLoopBuilder, EventLoopProxy};
 use winit::window::{Fullscreen, Window, WindowBuilder};
 use pyo3::prelude::*;
 use pyo3::types::{PyDict, PyString, PyTuple};
 use winit::dpi::PhysicalSize;
 use crate::context::GpuContext;
-use winit::event::{Event, KeyboardInput, WindowEvent};
+use winit::event::{Event, KeyboardInput, ModifiersState, WindowEvent};
+use crate::input::{InputState, KeyCode, MouseButton};
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
 pub enum UserEvent {
@@ -25,11 +27,13 @@ pub struct AppState {
     pub height: u32,
     pub resizable: bool,
     pub fullscreen: bool,
-    pub gpu_ctx: Option<GpuContext>,
-    pub event_loop: Option<Arc<EventLoopProxy<UserEvent>>>,
-    on_update: Option<PyObject>,
-    event_listeners: HashMap<String, Vec<PyObject>>,
 
+    pub gpu_ctx: Option<GpuContext>,
+
+    #[pyo3(get)]
+    input_state: InputState,
+    event_loop: Option<Arc<EventLoopProxy<UserEvent>>>,
+    event_listeners: HashMap<String, Vec<PyObject>>,
     start_time: std::time::Instant,
     prev_time: std::time::Instant,
     curr_time: std::time::Instant,
@@ -37,25 +41,30 @@ pub struct AppState {
 
 unsafe impl Send for AppState {}
 
+/// Python interface for AppState
 #[pymethods]
 impl AppState {
     #[new]
-    pub fn new(title: String, width: u32, height: u32, resizable: bool, fullscreen: bool) -> Self {
+    pub fn new(title: String, width: u32, height: u32, resizable: bool, fullscreen: bool) -> PyResult<Self> {
         let now = std::time::Instant::now();
-        Self {
-            title,
-            width,
-            height,
-            resizable,
-            fullscreen,
-            gpu_ctx: None,
-            event_loop: None,
-            on_update: None,
-            event_listeners: Default::default(),
-            start_time: now,
-            prev_time: now,
-            curr_time: now,
-        }
+        Python::with_gil(|py| {
+            Ok(
+                Self {
+                    title,
+                    width,
+                    height,
+                    resizable,
+                    fullscreen,
+                    gpu_ctx: None,
+                    input_state: Default::default(),
+                    event_loop: None,
+                    event_listeners: Default::default(),
+                    start_time: now,
+                    prev_time: now,
+                    curr_time: now,
+                }
+            )
+        })
     }
 
     /// Register an event type.
@@ -72,13 +81,13 @@ impl AppState {
         }
     }
 
-    /// Attach an event listener to an event type.
-    pub fn attach_listener(&mut self, event_type: String, listener: PyObject) {
+    /// Attach a handler to an event type.
+    pub fn attach_event_handler(&mut self, event_type: String, listener: PyObject) {
         self.event_listeners.entry(event_type).or_insert(Vec::new()).push(listener);
     }
 
-    /// Detach an event listener from an event type.
-    pub fn detach_listener(&mut self, event_type: String, listener: PyObject) {
+    /// Detach a handler from an event type.
+    pub fn detach_event_handler(&mut self, event_type: String, listener: PyObject) {
         if let Some(listeners) = self.event_listeners.get_mut(&event_type) {
             listeners.retain(|l| !l.is(&listener));
         }
@@ -86,7 +95,7 @@ impl AppState {
 
     /// Dispatch an event to all attached listeners.
     #[pyo3(text_signature = "($self, event_name, *args, **kwargs)")]
-    pub fn dispatch(&self, event_name: &str, args: &PyTuple, kwargs: Option<&PyDict>) -> PyResult<()> {
+    pub fn dispatch_event(&self, event_name: &str, args: &PyTuple, kwargs: Option<&PyDict>) -> PyResult<()> {
         if let Some(listeners) = self.event_listeners.get(event_name) {
             for listener in listeners {
                 Python::with_gil(|py| {
@@ -102,33 +111,25 @@ impl AppState {
     }
 
     pub fn resize(&mut self, width: u32, height: u32) {
-        self.resize_inner(PhysicalSize::new(width, height));
-    }
-
-    pub fn toggle_fullscreen(&mut self) {
-        self.fullscreen = !self.fullscreen;
-        self.event_loop.as_ref().unwrap().send_event(UserEvent::ToggleFullscreen).unwrap();
-    }
-
-    pub fn register_on_update(&mut self, on_update: PyObject) {
-        println!("register_on_update");
-        self.on_update = Some(on_update);
-    }
-}
-
-impl AppState {
-    pub fn resize_inner(&mut self, new_size: PhysicalSize<u32>) {
-        if new_size.width > 0 && new_size.height > 0 {
-            (self.width, self.height) = (new_size.width, new_size.height);
+        if width > 0 && height > 0 {
+            (self.width, self.height) = (width, height);
             match &mut self.gpu_ctx {
                 Some(ctx) => {
-                    ctx.resize(new_size);
+                    ctx.resize(width, height);
                 },
                 None => {}
             }
         }
     }
 
+    pub fn toggle_fullscreen(&mut self) {
+        self.fullscreen = !self.fullscreen;
+        self.event_loop.as_ref().unwrap().send_event(UserEvent::ToggleFullscreen).unwrap();
+    }
+}
+
+/// Implementation of the methods only available to Rust.
+impl AppState {
     pub fn init(&mut self, event_loop: &EventLoop<UserEvent>) -> Window {
         env_logger::init();
         let window = WindowBuilder::new()
@@ -144,13 +145,48 @@ impl AppState {
 
     /// Returns true if an event has been fully processed.
     pub fn process_input(&mut self, event: &WindowEvent) -> bool {
-        false
+        match event {
+            WindowEvent::ModifiersChanged(state) => {
+                self.input_state.update_modifier_states(*state);
+                true
+            }
+            WindowEvent::KeyboardInput { input, .. } => {
+                match input {
+                    KeyboardInput {
+                        virtual_keycode: Some(keycode),
+                        state,
+                        ..
+                    } => {
+                        self.input_state.update_key_states(*keycode, *state);
+                        true
+                    },
+                    _ => {
+                        false
+                    }
+                }
+            },
+            WindowEvent::CursorMoved { position, .. } => {
+                self.input_state.update_cursor_delta(*position);
+                true
+            },
+            WindowEvent::MouseInput {
+                 state, button, ..
+            } => {
+                self.input_state.update_mouse_button_states(*button, *state);
+                true
+            },
+            WindowEvent::MouseWheel { delta, ..} => {
+                self.input_state.update_scroll_delta(*delta);
+                true
+            }
+            _ => { false }
+        }
     }
 
     pub fn update(&mut self, dt: f32) {
         Python::with_gil(|py| {
-            self.dispatch("on_update",
-                          PyTuple::new(py, &[dt.into_py(py)]), None).unwrap();
+            self.dispatch_event("on_update",
+                                PyTuple::new(py, &[dt.into_py(py)]), None).unwrap();
         });
     }
 
@@ -208,7 +244,7 @@ pub fn run_main_loop(mut app: AppState) {
 
     event_loop.run(move |event, _, control_flow| {
         app.curr_time = std::time::Instant::now();
-        app.update(app.delta_time());
+        let dt = app.delta_time();
         app.prev_time = app.curr_time;
 
         match event {
@@ -216,35 +252,24 @@ pub fn run_main_loop(mut app: AppState) {
                 ref event, window_id
             } if window_id == win_id => if !app.process_input(event) {
                 match event {
-                    WindowEvent::CloseRequested
-                    | WindowEvent::KeyboardInput {
-                        input: KeyboardInput {
-                            state: winit::event::ElementState::Pressed,
-                            virtual_keycode: Some(winit::event::VirtualKeyCode::Escape),
-                            ..
-                        },
-                        ..
-                    } => {
+                    WindowEvent::CloseRequested => {
                         *control_flow = winit::event_loop::ControlFlow::Exit
                     },
-                    WindowEvent::KeyboardInput {
-                        input: KeyboardInput {
-                            state: winit::event::ElementState::Pressed,
-                            virtual_keycode: Some(winit::event::VirtualKeyCode::F11),
-                            ..
-                        },
-                        ..
-                    } => {
-                        app.toggle_fullscreen();
-                    },
-                    WindowEvent::Resized(physical_size) => {
-                        app.resize_inner(*physical_size);
+                    WindowEvent::Resized(sz) => {
+                        app.resize(sz.width, sz.height);
                     },
                     WindowEvent::ScaleFactorChanged { new_inner_size, .. } => {
-                        app.resize_inner(**new_inner_size);
+                        app.resize(new_inner_size.width, new_inner_size.height);
                     },
                     _ => {}
                 }
+                if app.input_state.is_key_pressed(KeyCode::F11) {
+                    app.toggle_fullscreen();
+                }
+                if app.input_state.is_key_pressed(KeyCode::Escape) {
+                    *control_flow = winit::event_loop::ControlFlow::Exit;
+                }
+                app.update(dt);
             },
             Event::UserEvent(event) => match event {
                 UserEvent::ToggleFullscreen => {

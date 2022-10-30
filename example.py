@@ -8,11 +8,12 @@ a = 0
 def on_update(dt):
     global a
     a += 10 * dt
-    print(a)
+    if app.is_key_pressed(bk.KeyCode.Y):
+        print(a)
 
 @app.event
 def on_draw(dt):
-
+    print("draw")
 
 
 app.init()

@@ -17,8 +17,7 @@ impl GpuContext {
     pub async fn new(window: &winit::window::Window) -> Self {
         profiling::scope!("GpuContext::new");
         let win_size = window.inner_size();
-        // Create instance handle to GPU
-        // Backends::all => Vulkan + Metal + DX12 + Browser WebGPU
+        // Create instance handle to GPU and automatically select the backend according to the platform.
         let instance = Arc::new(wgpu::Instance::new(wgpu::Backends::all()));
         // An abstract type of surface to present rendered images to.
         let surface = Arc::new(unsafe { instance.create_surface(window) });
@@ -36,6 +35,7 @@ impl GpuContext {
                     concat!(file!(), ":", line!())
                 )
             }));
+        println!("Using GPU: {}", adapter.get_info().name);
         let features = adapter.features();
         // Logical device and command queue
         let (device, queue) = adapter
@@ -94,9 +94,9 @@ impl GpuContext {
         }
     }
 
-    pub fn resize(&mut self, new_size: winit::dpi::PhysicalSize<u32>) {
-        self.surface_config.width = new_size.width;
-        self.surface_config.height = new_size.height;
+    pub fn resize(&mut self, width: u32, height: u32) {
+        self.surface_config.width = width;
+        self.surface_config.height = height;
         self.surface.configure(&self.device, &self.surface_config);
     }
 }

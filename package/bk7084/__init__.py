@@ -5,16 +5,11 @@ from . import geometry
 from . import graphics
 from .app.window import *
 from .app import ui
-from .app import App
 from . import math
-from . import rs
+
+from .app import App
+from .rs import KeyCode
 
 __version__ = (0, 2, 0)
 
-
-__doc__ = bk7084rs.__doc__
-
-print(bk7084rs.__doc__)
-
-if hasattr(bk7084rs, "__all__"):
-	__all__ = bk7084rs.__all__
+__all__ = [App]
