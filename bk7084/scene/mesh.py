@@ -208,16 +208,16 @@ class Mesh:
         normals = kwargs.get('normals', None)
         faces = kwargs.get('triangles', None)
 
-        if filepath:
+        if filepath: # load from file
             self._name = str(filepath)
             if load_immediately:
                 self._read_from_file(filepath, colors, kwargs.get('texture', None), resolver)
             else:
                 self._tmp_colors = colors
-        elif shapes is not None:
+        elif shapes is not None: # load from shapes
             self._name = 'unnamed_{}'.format(self.__class__.__name__)
             self._from_shapes(shapes)
-        else:
+        else: # load from vertices, uvs, normals, faces
             if not (vertices and colors and uvs and normals and faces):
                 missing_attributes = [name for attrib, name in ((vertices, 'vertices'), (colors, 'colors'),
                                                                 (uvs, 'uvs'), (normals, 'normals'),

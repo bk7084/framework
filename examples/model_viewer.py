@@ -1,3 +1,5 @@
+import tkinter.filedialog
+
 import imgui
 
 from bk7084 import Window, app, Camera
@@ -9,7 +11,7 @@ from bk7084.math import Vec3, Mat4
 # Setup window and add camera
 from bk7084.scene import Mesh, Scene
 
-window = Window("BK7084: Simple Scene", width=1024, height=1024)
+window = Window("BK7084: Simple Scene", width=600, height=600)
 
 cow = Mesh("./models/spot_cow.obj")
 scene = Scene(window, [cow], draw_light=True)
@@ -42,6 +44,12 @@ def on_update(dt):
 
 @window.event
 def on_gui():
+    global cow
+    if ui.button("Open"):
+        files = tkinter.filedialog.askopenfilenames()
+        if files:
+            cow = Mesh(files[0])
+
     if ui.tree_node('Mesh'):
         if ui.radio_button('normal map', cow.normal_map_enabled):
             cow.normal_map_enabled = not cow.normal_map_enabled
