@@ -69,8 +69,8 @@ class AppState:
         """
         ...
 
-    def input(self) -> InputState:
+    def cursor_position(self) -> List[float, float]:
         """
-        Get the current input state.
+        Get the current cursor position in window coordinates.
         """
         ...

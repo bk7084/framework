@@ -42,10 +42,6 @@ class App:
         # self.dispatch('on_init')
         pass
 
-    @property
-    def input(self):
-        return self._state.input_state()
-
     def run(self):
         run_main_loop(self._state)
 
@@ -56,26 +52,30 @@ class App:
         self._state.resize(width, height)
         self._state.dispatch_event('on_resize', width, height)
 
+    @property
+    def input(self):
+        return self._state.input_state()
+
     def is_key_pressed(self, key: KeyCode) -> bool:
-        self._state.input_state.is_key_pressed(key)
+        return self._state.is_key_pressed(key)
 
     def is_key_released(self, key: KeyCode) -> bool:
-        self._state.input_state.is_key_released(key)
+        return self._state.is_key_released(key)
 
     def is_mouse_button_pressed(self, button: MouseButton) -> bool:
-        self._state.input_state.is_mouse_button_pressed(button)
+        return self._state.is_mouse_button_pressed(button)
 
     def is_mouse_button_released(self, button: MouseButton) -> bool:
-        self._state.input_state.is_mouse_button_released(button)
+        return self._state.is_mouse_button_released(button)
 
     def cursor_position(self) -> (float, float):
-        self._state.input_state.cursor_position()
+        return self._state.cursor_position()
 
     def cursor_delta(self) -> (float, float):
-        self._state.input_state.cursor_delta()
+        return self._state.cursor_delta()
 
     def scroll_delta(self) -> float:
-        self._state.input_state.scroll_delta()
+        return self._state.scroll_delta()
 
     def event(self, *args):
         """Decorator to register an event handler.

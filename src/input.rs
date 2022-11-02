@@ -395,12 +395,12 @@ impl From<MouseButton> for WinitMouseButton {
 #[pyclass]
 #[derive(Debug, Clone)]
 pub struct InputState {
-    keys: HashMap<VirtualKeyCode, bool>,
-    mouse_buttons: HashMap<WinitMouseButton, bool>,
-    modifiers: ModifiersState,
-    scroll_delta: f32,
-    cursor_delta: [f32; 2],
-    cursor_pos: [f32; 2],
+    pub(crate) keys: HashMap<VirtualKeyCode, bool>,
+    pub(crate) mouse_buttons: HashMap<WinitMouseButton, bool>,
+    pub(crate) modifiers: ModifiersState,
+    pub(crate) scroll_delta: f32,
+    pub(crate) cursor_delta: [f32; 2],
+    pub(crate) cursor_pos: [f32; 2],
 }
 
 impl Default for InputState {

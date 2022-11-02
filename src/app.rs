@@ -30,8 +30,7 @@ pub struct AppState {
 
     pub gpu_ctx: Option<GpuContext>,
 
-    #[pyo3(get)]
-    input_state: InputState,
+    input_state: Py<InputState>,
     event_loop: Option<Arc<EventLoopProxy<UserEvent>>>,
     event_listeners: HashMap<String, Vec<PyObject>>,
     start_time: std::time::Instant,
@@ -56,7 +55,7 @@ impl AppState {
                     resizable,
                     fullscreen,
                     gpu_ctx: None,
-                    input_state: Default::default(),
+                    input_state: Py::new(py, InputState::default())?,
                     event_loop: None,
                     event_listeners: Default::default(),
                     start_time: now,
@@ -95,12 +94,11 @@ impl AppState {
 
     /// Dispatch an event to all attached listeners.
     #[pyo3(text_signature = "($self, event_name, *args, **kwargs)")]
-    pub fn dispatch_event(&self, event_name: &str, args: &PyTuple, kwargs: Option<&PyDict>) -> PyResult<()> {
+    pub fn dispatch_event(&self, py: Python<'_>, event_name: &str, args: &PyTuple, kwargs: Option<&PyDict>) -> PyResult<()> {
         if let Some(listeners) = self.event_listeners.get(event_name) {
             for listener in listeners {
-                Python::with_gil(|py| {
-                    listener.call(py, args, kwargs).unwrap();
-                })
+                // println!("[rs] cursor pos: {:?}", self.input_state);
+                listener.call(py, args, kwargs).unwrap();
             }
         }
         Ok(())
@@ -126,6 +124,68 @@ impl AppState {
         self.fullscreen = !self.fullscreen;
         self.event_loop.as_ref().unwrap().send_event(UserEvent::ToggleFullscreen).unwrap();
     }
+
+    pub fn is_key_pressed(&self, key_code: KeyCode) -> bool {
+        let key_code = winit::event::VirtualKeyCode::from(key_code);
+        Python::with_gil(|py| {
+            let input: InputState = self.input_state.extract(py).unwrap();
+            *input.keys.get(&key_code).unwrap_or(&false)
+        })
+    }
+
+    pub fn is_key_released(&self, key_code: KeyCode) -> bool {
+        !self.is_key_pressed(key_code)
+    }
+
+    pub fn is_mouse_button_pressed(&self, button: MouseButton) -> bool {
+        // *self.input_state.mouse_buttons.get(&button.into()).unwrap_or(&false)
+        false
+    }
+
+    pub fn is_mouse_button_released(&self, button: MouseButton) -> bool {
+        !self.is_mouse_button_pressed(button)
+    }
+
+    pub fn is_shift_pressed(&self) -> bool {
+        // self.input_state.modifiers.shift()
+        false
+    }
+
+    pub fn is_ctrl_pressed(&self) -> bool {
+        // self.input_state.modifiers.ctrl()
+        false
+    }
+
+    pub fn is_alt_pressed(&self) -> bool {
+        // self.input_state.modifiers.alt()
+        false
+    }
+
+    pub fn is_super_pressed(&self) -> bool {
+        // self.input_state.modifiers.logo()
+        false
+    }
+
+    pub fn cursor_position(&self) -> [f32; 2] {
+        Python::with_gil(|py| {
+            let input: InputState = self.input_state.extract(py).unwrap();
+            input.cursor_pos
+        })
+    }
+
+    pub fn cursor_delta(&self) -> [f32; 2] {
+        // self.input_state.cursor_delta
+        [0.0, 0.0]
+    }
+
+    pub fn scroll_delta(&self) -> f32 {
+        // self.input_state.scroll_delta
+        0.0
+    }
+
+    pub fn input_state(&mut self, py: Python) -> Py<InputState> {
+        self.input_state.clone_ref(py)
+    }
 }
 
 /// Implementation of the methods only available to Rust.
@@ -147,17 +207,25 @@ impl AppState {
     pub fn process_input(&mut self, event: &WindowEvent) -> bool {
         match event {
             WindowEvent::ModifiersChanged(state) => {
-                self.input_state.update_modifier_states(*state);
+                println!("ModifiersChanged: {:?}", state);
+                Python::with_gil(|py| {
+                    let mut input: InputState = self.input_state.extract(py).unwrap();
+                    input.update_modifier_states(*state);
+                });
                 true
             }
             WindowEvent::KeyboardInput { input, .. } => {
+                println!("KeyboardInput: {:?}", input);
                 match input {
                     KeyboardInput {
                         virtual_keycode: Some(keycode),
                         state,
                         ..
                     } => {
-                        self.input_state.update_key_states(*keycode, *state);
+                        Python::with_gil(|py| {
+                            let mut input: InputState = self.input_state.extract(py).unwrap();
+                            input.update_key_states(*keycode, *state);
+                        });
                         true
                     },
                     _ => {
@@ -166,17 +234,28 @@ impl AppState {
                 }
             },
             WindowEvent::CursorMoved { position, .. } => {
-                self.input_state.update_cursor_delta(*position);
+                println!("CursorMoved: {:?}", position);
+                Python::with_gil(|py| {
+                    let mut input: InputState = self.input_state.extract(py).unwrap();
+                    input.update_cursor_delta(*position);
+                    println!("cursor pos: {:?}", input.cursor_pos);
+                });
                 true
             },
             WindowEvent::MouseInput {
                  state, button, ..
             } => {
-                self.input_state.update_mouse_button_states(*button, *state);
+                Python::with_gil(|py| {
+                    let mut input: InputState = self.input_state.extract(py).unwrap();
+                    input.update_mouse_button_states(*button, *state);
+                });
                 true
             },
             WindowEvent::MouseWheel { delta, ..} => {
-                self.input_state.update_scroll_delta(*delta);
+                Python::with_gil(|py| {
+                    let mut input: InputState = self.input_state.extract(py).unwrap();
+                    input.update_scroll_delta(*delta);
+                });
                 true
             }
             _ => { false }
@@ -184,8 +263,10 @@ impl AppState {
     }
 
     pub fn update(&mut self, dt: f32) {
+        // println!("cursor pos: {:?}", self.input_state.cursor_pos);
         Python::with_gil(|py| {
-            self.dispatch_event("on_update",
+            self.dispatch_event(py,
+                                "on_update",
                                 PyTuple::new(py, &[dt.into_py(py)]), None).unwrap();
         });
     }
@@ -251,6 +332,7 @@ pub fn run_main_loop(mut app: AppState) {
             Event::WindowEvent {
                 ref event, window_id
             } if window_id == win_id => if !app.process_input(event) {
+                println!("Handling the rest of the events");
                 match event {
                     WindowEvent::CloseRequested => {
                         *control_flow = winit::event_loop::ControlFlow::Exit
@@ -263,13 +345,12 @@ pub fn run_main_loop(mut app: AppState) {
                     },
                     _ => {}
                 }
-                if app.input_state.is_key_pressed(KeyCode::F11) {
+                if app.is_key_pressed(KeyCode::F11) {
                     app.toggle_fullscreen();
                 }
-                if app.input_state.is_key_pressed(KeyCode::Escape) {
+                if app.is_key_pressed(KeyCode::Escape) {
                     *control_flow = winit::event_loop::ControlFlow::Exit;
                 }
-                app.update(dt);
             },
             Event::UserEvent(event) => match event {
                 UserEvent::ToggleFullscreen => {
@@ -293,5 +374,7 @@ pub fn run_main_loop(mut app: AppState) {
             },
             _ => {}
         }
+
+        app.update(dt);
     });
 }
