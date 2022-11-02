@@ -266,14 +266,14 @@ sphere = Mesh("./models/uv_sphere.obj",
 # print(sphere.alternate_texture_enabled)
 cube = default_asset_mgr.get_or_create_mesh('cube', 'models/cube.obj')
 
-cow = Mesh("./models/spot_cow.obj",
-            texture='./textures/checker.png',
-            # vertex_shader=vertex_src, pixel_shader=fragment_src
-)
-cow.cast_shadow = True
-cow.apply_transformation(Mat4.from_translation(Vec3(2.0, 0.0, 2.0)))
+model = Mesh("./models/spot_cow.obj",
+             texture='./textures/checker.png',
+             # vertex_shader=vertex_src, pixel_shader=fragment_src
+             )
+model.cast_shadow = True
+model.apply_transformation(Mat4.from_translation(Vec3(2.0, 0.0, 2.0)))
 
-cube.transformation = cow.bounds_transform
+cube.transformation = model.bounds_transform
 
 ground = Mesh(
     vertices=[[-10.0, 0.0, -10.0],
@@ -290,7 +290,7 @@ ground = Mesh(
 )
 
 # scene = Scene(window, [cube, ground], light=DirectionalLight(), draw_light=False)
-scene = Scene(window, [sphere, ground, cow, cube], draw_light=True)
+scene = Scene(window, [sphere, ground, model, cube], draw_light=True)
 scene.create_camera(Vec3(6, 6.0, 6.0), Vec3(0, 0, 0), Vec3.unit_y(), 60.0, zoom_enabled=True, safe_rotations=False, near=0.1, far=100.0)
 
 animate = False
@@ -355,7 +355,7 @@ def on_key_press(key, mods):
 def on_update(dt):
     if animate:
         sphere.apply_transformation(Mat4.from_axis_angle(Vec3.unit_y(), 45 * dt, True))
-        cow.apply_transformation(Mat4.from_axis_angle(Vec3.unit_y(), -45 * dt, True))
+        model.apply_transformation(Mat4.from_axis_angle(Vec3.unit_y(), -45 * dt, True))
 
 
 app.init(window)

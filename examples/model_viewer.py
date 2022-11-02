@@ -13,8 +13,10 @@ from bk7084.scene import Mesh, Scene
 
 window = Window("BK7084: Simple Scene", width=600, height=600)
 
-cow = Mesh("./models/spot_cow.obj")
-scene = Scene(window, [cow], draw_light=True)
+scene = Scene(window, draw_light=True)
+model = scene.load_mesh_entity("./models/cottage.obj")
+# model.meshes[0][0].texture_enabled = True
+
 scene.create_camera(Vec3(2, 1.0, 2.0), Vec3(0, 0, 0), Vec3.unit_y(), 60.0, zoom_enabled=True, safe_rotations=False)
 scene.create_camera(Vec3(-2, 1.0, 2.0), Vec3(0, 0, 0), Vec3.unit_y(), 60.0, zoom_enabled=True, safe_rotations=False)
 scene.create_camera(Vec3(2, 1.0, -2.0), Vec3(0, 0, 0), Vec3.unit_y(), 60.0, zoom_enabled=True, safe_rotations=False)
@@ -39,27 +41,30 @@ def on_key_press(key, mods):
 def on_update(dt):
     if animate:
         pass
-        cow.apply_transformation(Mat4.from_axis_angle(Vec3.unit_y(), 45.0 * dt, True))
+        model.apply_transformation(Mat4.from_axis_angle(Vec3.unit_y(), 45.0 * dt, True))
 
 
 @window.event
 def on_gui():
-    global cow
-    if ui.button("Open"):
-        files = tkinter.filedialog.askopenfilenames()
-        if files:
-            cow = Mesh(files[0])
-
+    global model
     if ui.tree_node('Mesh'):
-        if ui.radio_button('normal map', cow.normal_map_enabled):
-            cow.normal_map_enabled = not cow.normal_map_enabled
+        if ui.radio_button('texture', model.meshes[0][0].texture_enabled):
+            model.meshes[0][0].texture_enabled = not model.meshes[0][0].texture_enabled
 
-        if ui.radio_button('bump map', cow.bump_map_enabled):
-            cow.bump_map_enabled = not cow.bump_map_enabled
+        if ui.radio_button('normal map', model.meshes[0][0].normal_map_enabled):
+            model.meshes[0][0].normal_map_enabled = not model.meshes[0][0].normal_map_enabled
 
-        if ui.radio_button('parallax map', cow.parallax_map_enabled):
-            cow.parallax_map_enabled = not cow.parallax_map_enabled
+        if ui.radio_button('bump map', model.meshes[0][0].bump_map_enabled):
+            model.meshes[0][0].bump_map_enabled = not model.meshes[0][0].bump_map_enabled
+
+        if ui.radio_button('parallax map', model.meshes[0][0].parallax_map_enabled):
+            model.meshes[0][0].parallax_map_enabled = not model.meshes[0][0].parallax_map_enabled
         ui.tree_pop()
+
+    if ui.button("Open"):
+        file = tkinter.filedialog.askopenfilename(filetypes=[("OBJ", "*.obj")])
+        if file:
+            model = scene.load_mesh_entity(file)
 
 
 app.init(window)

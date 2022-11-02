@@ -63,21 +63,3 @@ class Material:
                                            self.shininess,
                                            self.refractive_index,
                                            self.dissolve)
-
-    # @classmethod
-    # def default(cls, texture=None):
-    #     return cls(
-    #         'default_material',
-    #         texture,
-    #         [1.0, 1.0, 1.0],
-    #         [1.0, 1.0, 1.0],
-    #         [1.0, 1.0, 1.0],
-    #         1.0,
-    #         1.0,
-    #         1.0,
-    #         0.0
-    #     )
-    #
-    # @property
-    # def is_default(self):
-    #     return self._is_default
