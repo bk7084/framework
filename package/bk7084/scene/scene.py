@@ -201,6 +201,11 @@ class Scene:
                             info[cast_shadow][pipeline_uuid].append((*record, transform))
         return info
 
+    def load_mesh_entity(self, filename):
+        entity = MeshEntity(Mesh(filename))
+        self._entities.append(entity)
+        return entity
+
     def on_gui(self):
         if ui.tree_node('Light'):
             if self._lights[self._current_light].is_directional:

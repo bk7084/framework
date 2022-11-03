@@ -82,7 +82,7 @@ class Mesh:
 
     DEFAULT_COLOR = PaletteDefault.BrownB.as_color()
 
-    def __init__(self, filepath=None, load_immediately=True, resolver=default_resolver, **kwargs):
+    def __init__(self, filepath=None, resolver=default_resolver, **kwargs):
         """
         Creation and initialisation of a Mesh. A mesh can be created by:
 
@@ -97,16 +97,7 @@ class Mesh:
             filepath (str):
                 Specifies the path of the model file to be loaded.
 
-            load_immediately (bool):
-                Whether to load immediately the mesh when initialised by a OBJ file.
-
             **kwargs:
-                cast_shadow (bool):
-                    Specifies whether the object will generate shadow.
-
-                texture_enabled (bool):
-                    Specifies whether the diffuse map will be used.
-
                 vertices: (array like):
                     Specifies the position of vertices.
 
@@ -125,8 +116,25 @@ class Mesh:
                 texture: (str):
                     Specifies the texture image file.
 
-                shapes (list, tuple):
-                    Specifies a sequence of shapes used to construct a mesh.
+                initial_transform (Mat4):
+                    Specifies the initial transform of the mesh. Can also be specified after the mesh is created.
+
+                transform (Mat4):
+                    Specifies the transform of the mesh. Can also be specified after the mesh is created.
+
+                shading_enabled (bool):
+                    Specifies whether the shading is enabled (using Phong model).
+
+                material_enabled (bool):
+                    Specifies whether the material is enabled. If enabled, the mesh will be rendered with the
+                    material loaded from the model file or the default material if no material is loaded. In
+                    case the material is not enabled, the mesh will be rendered with vertex colors.
+
+                texture_enabled (bool):
+                    Specifies whether the diffuse map will be used.
+
+                cast_shadow (bool):
+                    Specifies whether the object will generate shadow.
 
                 vertex_shader (str):
                     Specifies the vertex shader going to be used for rendering. In case of non specified,
@@ -158,15 +166,14 @@ class Mesh:
         self._vertex_triangles = []  # the triangle indices that correspond to each vertex
 
         self._materials = [default_asset_mgr.get_or_create_material('default_material')]
-        self._texture_path = kwargs.get('texture', None)
-        self._alternate_texture = None if self._texture_path is None else default_asset_mgr.get_or_create_texture(
-            self._texture_path)
+        _texture_path = kwargs.get('texture', None)
+        self._texture = default_asset_mgr.get_or_create_texture(_texture_path) if _texture_path is not None else None
         self._bounds = ((0.0, 0.0, 0.0), (0.0, 0.0, 0.0))  # min, max
         self._bounds_transform = Mat4.identity()
 
         self._render_records = {}  # records the rendering information, (sub_mesh_index: mtl_render_record)
         self._sub_meshes = []
-        self._sub_meshes_raw = [] # stores the unprocessed submesh inputs, for easy merging of meshes
+        self._sub_meshes_raw = []  # stores the unprocessed submesh inputs, for easy merging of meshes
         self._sub_mesh_count = 0
         self._pipelines = [
             default_asset_mgr.get_or_create_pipeline('default_pipeline',
@@ -184,13 +191,14 @@ class Mesh:
                                                                             pixel_shader))
             self._use_customised_pipeline = True
 
+        # initial transformation applied to the mesh
         self._initial_transformation: Mat4 = kwargs.get('initial_transformation', Mat4.identity())
+        # transformation applied to the mesh
         self._transformation: Mat4 = Mat4.identity()
 
         self._shading_enabled = kwargs.get('shading_enabled', True)
-        self._material_enabled = True
-        self._texture_enabled = kwargs.get('texture_enabled', True)
-        self._alternate_texture_enabled = True if self._alternate_texture and self._texture_enabled else False
+        self._material_enabled = kwargs.get('material_enabled', True)  # by default, use material if available
+        self._texture_enabled = kwargs.get('texture_enabled', False)  # by default, texture is not enabled
         self._normal_map_enabled = False
         self._bump_map_enabled = False
         self._parallax_map_enabled = False
@@ -201,27 +209,19 @@ class Mesh:
 
         self._cast_shadow = kwargs.get('cast_shadow', True)
 
-        shapes = kwargs.get('shapes', None)
-        vertices = kwargs.get('vertices', None)
         colors = kwargs.get('colors', [Mesh.DEFAULT_COLOR])
-        uvs = kwargs.get('uvs', None)
-        normals = kwargs.get('normals', None)
-        faces = kwargs.get('triangles', None)
-
-        if filepath:
+        if filepath:  # load from file
             self._name = str(filepath)
-            if load_immediately:
-                self._read_from_file(filepath, colors, kwargs.get('texture', None), resolver)
-            else:
-                self._tmp_colors = colors
-        elif shapes is not None:
-            self._name = 'unnamed_{}'.format(self.__class__.__name__)
-            self._from_shapes(shapes)
-        else:
-            if not (vertices and colors and uvs and normals and faces):
+            self._load_from_file(filepath, colors, kwargs.get('texture', None), resolver)
+        else:  # load from vertices, uvs, normals, faces
+            vertices = kwargs.get('vertices', None)
+            uvs = kwargs.get('uvs', None)
+            normals = kwargs.get('normals', None)
+            triangles = kwargs.get('triangles', None)
+            if not (vertices and colors and uvs and normals and triangles):
                 missing_attributes = [name for attrib, name in ((vertices, 'vertices'), (colors, 'colors'),
                                                                 (uvs, 'uvs'), (normals, 'normals'),
-                                                                (faces, 'triangles')) if attrib is None]
+                                                                (triangles, 'triangles')) if attrib is None]
                 raise ValueError(f"Mesh creation - missing vertex attributes: {missing_attributes}.")
 
             self._name = kwargs.get('name', 'unnamed_{}'.format(self.__class__.__name__))
@@ -243,7 +243,7 @@ class Mesh:
 
             # fill indices and triangulation
             self._triangle_count = 0
-            for f in faces:
+            for f in triangles:
                 vertex_count = len(f[0])
                 if vertex_count < 3:
                     continue
@@ -268,7 +268,7 @@ class Mesh:
             self._indices = np.asarray(self._triangles, dtype=np.uint32).ravel()
             self._index_count = len(self._indices)
 
-            self._faces = faces
+            self._faces = triangles
             self._tangents = self._compute_tangents()
             self._sub_mesh_count = 1
             sub_mesh = SubMesh(
@@ -345,8 +345,8 @@ class Mesh:
             mtl = self._materials[record.mtl_idx]
             topology = self._sub_meshes[sub_mesh_idx].topology.value
             diffuse_map = mtl.diffuse_map
-            if self._alternate_texture_enabled and self._alternate_texture is not None:
-                diffuse_map = self._alternate_texture
+            if self._texture_enabled and self._texture is not None:
+                diffuse_map = self._texture
             transform = self._transformation * self._initial_transformation
             if pipeline.uuid not in info:
                 info[pipeline.uuid] = []
@@ -427,9 +427,9 @@ class Mesh:
 
     def load(self):
         if os.path.exists(self._name):
-            self._read_from_file(self._name, self._tmp_colors)
+            self._load_from_file(self._name, self._tmp_colors)
 
-    def _read_from_file(self, filepath, color, texture=None, resolver=default_resolver):
+    def _load_from_file(self, filepath, color, texture=None, resolver=default_resolver):
         reader = WavefrontReader(filepath, resolver)
         mesh_data = reader.read()
 
@@ -459,6 +459,7 @@ class Mesh:
         self._tangents = self._compute_tangents()
 
         for name, mat in mesh_data['materials'].items():
+            mtl_name = f'{self._name}_{name}'
             self._materials.append(
                 default_asset_mgr.get_or_create_material(
                     name,
@@ -479,7 +480,7 @@ class Mesh:
             for mtl in sub_obj['materials']:
                 mtl_name = mtl['name']
                 f_start, f_end = tuple(mtl['f_range'])
-                mtl_idx = self._materials.index([x for x in self._materials if x.name == mtl_name][0])
+                mtl_idx = self._materials.index([x for x in self._materials if x.name.endswith(mtl_name)][0])
                 if mtl_idx != -1 and mtl_idx < len(self._materials):
                     sub_obj_materials.append((mtl_idx, f_start, f_end))
 
@@ -983,8 +984,8 @@ class Mesh:
 
                     diffuse_map = mtl.diffuse_map
 
-                    if self._alternate_texture_enabled and self._alternate_texture is not None:
-                        diffuse_map = self._alternate_texture
+                    if self._texture_enabled and self._texture is not None:
+                        diffuse_map = self._texture
 
                     pipeline['mtl.diffuse_map'] = 0
                     pipeline['mtl.bump_map'] = 1

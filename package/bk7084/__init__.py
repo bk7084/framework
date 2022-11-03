@@ -7,9 +7,4 @@ from .app.window import *
 from .app import ui
 from . import math
 
-from .app import App
-from .rs import KeyCode
-
 __version__ = (0, 2, 0)
-
-__all__ = [App]

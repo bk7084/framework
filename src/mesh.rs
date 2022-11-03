@@ -2,9 +2,11 @@ use std::any::Any;
 use std::collections::HashMap;
 use std::fmt::{Debug, Formatter};
 use std::sync::Arc;
-use glam::{Vec2, Vec3, Vec4};
 use pyo3::{pyclass, pymethods};
-use wgpu::VertexAttribute;
+
+type Vec2 = [f32; 2];
+type Vec3 = [f32; 3];
+type Vec4 = [f32; 4];
 
 pub trait AttribContainer {
     fn as_any(&self) -> &dyn std::any::Any;
