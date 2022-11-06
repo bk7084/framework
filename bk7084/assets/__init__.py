@@ -9,6 +9,6 @@ __all__ = [
 ]
 
 from .image import Image
-from .manager import AssetManager, default_asset_mgr
 from .resolver import PathResolver, default_resolver
+from .manager import AssetManager, default_asset_mgr
 

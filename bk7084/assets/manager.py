@@ -22,6 +22,19 @@ class AssetKind(enum.Enum):
 PipelineRecord = namedtuple('PipelineRecord', ['pipeline', 'vs', 'ps'])
 
 
+class NameManager:
+    def __init__(self):
+        self._name_map = {}
+
+    def get_name(self, name):
+        if name not in self._name_map:
+            self._name_map[name] = 0
+        else:
+            self._name_map[name] += 1
+
+        return f'{name}_{self._name_map[name]:03}'
+
+
 class AssetManager:
     def __init__(self, resolver=default_resolver):
         self._resolver = resolver
@@ -31,6 +44,7 @@ class AssetManager:
         self._shaders = {}
         self._pipelines = {}
         self._meshes = {}
+        self._models = {}
 
     def get_or_create_image(self, image_path):
         """
@@ -65,7 +79,7 @@ class AssetManager:
         return self._textures[texture_name]
 
     def get_or_create_material(self, name, ambient=(0.8, 0.8, 0.8), diffuse=(0.8, 0.8, 0.8), specular=(1.0, 1.0, 1.0),
-                               shininess=1.0, ior=1.0, dissolve=1.0, illum=2, **kwargs):
+                               shininess=1.0, ior=1.0, dissolve=1.0, illum=2, **kwargs) -> Material:
         """
 
         Args:
@@ -137,7 +151,7 @@ class AssetManager:
 
         return key, self._shaders[key]
 
-    def get_or_create_pipeline(self, name: str, vertex_shader: str = None, pixel_shader: str = None):
+    def get_or_create_pipeline(self, name: str, vertex_shader: str = None, pixel_shader: str = None) -> PipelineRecord:
         """
 
         Args:
@@ -199,5 +213,27 @@ class AssetManager:
 
         return self._meshes[name]
 
+    def get_or_load_wavefront_obj(self, filepath: str, resolver=None):
+        """
+        Load a model from a file path if it is not loaded yet.
+
+        Args:
+            resolver: Path resolver.
+            filepath (str): Path string of a model file.
+
+        Returns:
+            Model
+        """
+        resolver = resolver if resolver is not None else self._resolver
+        path = resolver.resolve(filepath)
+        logging.info(f'-- Getting model <{path}>')
+        if path not in self._models:
+            logging.info(f'  -- Loading... <{path}>')
+            from ..scene.loader.obj import WavefrontReader
+            reader = WavefrontReader(path)
+            self._models[path] = reader.read()
+        return self._models[path]
+
 
 default_asset_mgr: AssetManager = AssetManager()
+default_name_mgr: NameManager = NameManager()

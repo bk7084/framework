@@ -2,20 +2,19 @@ import tkinter.filedialog
 
 import imgui
 
-from bk7084 import Window, app, Camera
-from bk7084.app import ui
-from bk7084.app.input import KeyCode
-from bk7084.graphics import draw
-from bk7084.math import Vec3, Mat4
+from framework.bk7084 import Window, app, Camera
+from framework.bk7084.app import ui
+from framework.bk7084.app.input import KeyCode
+from framework.bk7084.graphics import draw
+from framework.bk7084.math import Vec3, Mat4
 
 # Setup window and add camera
-from bk7084.scene import Mesh, Scene
+from framework.bk7084.scene import Mesh, Scene
 
 window = Window("BK7084: Simple Scene", width=600, height=600)
 
 scene = Scene(window, draw_light=True)
-model = scene.load_mesh_entity("./models/cottage.obj")
-# model.meshes[0][0].texture_enabled = True
+model = scene.load_mesh_entity("./models/cube.obj")
 
 scene.create_camera(Vec3(2, 1.0, 2.0), Vec3(0, 0, 0), Vec3.unit_y(), 60.0, zoom_enabled=True, safe_rotations=False)
 scene.create_camera(Vec3(-2, 1.0, 2.0), Vec3(0, 0, 0), Vec3.unit_y(), 60.0, zoom_enabled=True, safe_rotations=False)

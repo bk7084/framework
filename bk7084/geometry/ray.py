@@ -37,6 +37,7 @@ class Ray(Shape):
     @origin.setter
     def origin(self, value: Vec3):
         self._o = value
+        self._is_dirty = True
 
     @property
     def direction(self):
@@ -45,6 +46,7 @@ class Ray(Shape):
     @direction.setter
     def direction(self, value: Vec3):
         self._d = value
+        self._is_dirty = True
 
     @property
     def indices(self):

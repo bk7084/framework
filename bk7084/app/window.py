@@ -193,7 +193,7 @@ class Window(event.EventDispatcher):
         self._default_shader = None
 
         if self.current_context_version >= (3, 3):
-            from bk7084.assets import default_asset_mgr
+            from ..assets.manager import default_asset_mgr
             self._default_shader = default_asset_mgr.get_or_create_pipeline('default_pipeline')
             logging.info("Default shader created.")
 

@@ -112,7 +112,8 @@ class ShaderProgram(GpuObject, BindSemanticObject):
     def is_active(self):
         return self._is_active
 
-    def _create_and_link(self, shaders: Sequence[Shader]):
+    @staticmethod
+    def _create_and_link(shaders: Sequence[Shader]):
         program_id = gl.glCreateProgram()
         for shader in shaders:
             gl.glAttachShader(program_id, shader.handle)
@@ -126,7 +127,7 @@ class ShaderProgram(GpuObject, BindSemanticObject):
         if platform.system() != 'Darwin':
             if not check_validity(program_id):
                 msg = f'Shader program validation failure : {gl.glGetProgramInfoLog(program_id)}'
-                raise RuntimeError()
+                raise RuntimeError(msg)
 
         for shader in shaders:
             gl.glDetachShader(program_id, shader.handle)
@@ -139,6 +140,3 @@ class ShaderProgram(GpuObject, BindSemanticObject):
     def unuse(self):
         gl.glUseProgram(0)
         self._is_active = False
-
-    def draw(self, primitive_type: DrawingMode):
-        pass

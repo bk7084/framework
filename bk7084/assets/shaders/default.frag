@@ -73,7 +73,7 @@ vec3 blinnPhongBRDF(vec3 light_dir, vec3 view_dir, vec3 normal, vec3 diffuse_col
 }
 
 vec4 shading(vec3 ambient_color, vec3 light_dir, vec3 view_dir, vec3 light_color, vec3 n, vec3 diffuse_color, vec3 specular_color, float shininess, float shadow) {
-    vec3 luminance = ambient_color.rgb * 0.1 + diffuse_color * 0.3;
+    vec3 luminance = ambient_color.rgb * 0.2 + diffuse_color * 0.3;
 
     float illuminance = dot(light_dir, n);
 

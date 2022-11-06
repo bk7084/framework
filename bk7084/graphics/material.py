@@ -2,28 +2,33 @@ import os.path
 
 import numpy as np
 
-from bk7084.graphics.texture import Texture
+from .texture import Texture
 
 
 class Material:
     """
+    Note: case-insensitive when parsing.
+
     Kd: diffuse color coefficient
     Ka: Ambient color coefficient
     Ks: Specular color coefficient
     d: Dissolve factor
     Ni: Refraction index
+    Ns: Specular exponent, also known as glossiness, defines the focus of specular highlights in the material.
+        Ns values normally range from 0 to 1000, with a high value resulting in a tight, concentrated highlight.
     illum:
         0 - disable lighting
         1 - ambient & diffuse (set specular color to black),
         2 - full lighting
     map_Kd: Diffuse color texture map
     map_Ks: Specular color texture map
-    map_ka: Ambient color texture map
+    map_Ka: Ambient color texture map
     map_Ns: Shininess texture map
-    map_Bump: Bump texture map
+    map_Bump/map_bump/bump: Bump map
+    map_Norm/map_norm/norm: Normal map
+    map_Disp/map_disp/disp: Displacement map
     map_d: Opacity texture map
-    map_Disp: Displacement map
-    refl: reflection type
+    refl: reflection map
     """
     def __init__(self, name,
                  diffuse_map: Texture = None, bump_map: Texture = None, normal_map: Texture = None,
