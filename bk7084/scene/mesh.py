@@ -909,18 +909,6 @@ class Mesh:
             if key not in excluded:
                 pipeline[key] = value
 
-    def is_occluded(self, pipeline):
-        cube = default_asset_mgr.get_or_create_mesh('cube', 'models/cube.obj')
-        query = Query(QueryTarget.SamplesPassed)
-        query.begin()
-        record = cube.sub_meshes[0]
-        pipeline['model_mat'] = self.bounds_transform
-        with cube._vertex_array_objects[record.vao_idx]:
-            gl.glDrawArrays(gl.GL_TRIANGLES, 0, record.vertex_count)
-        query.end()
-        samples_passed = query.results()[0]
-        return samples_passed > 0
-
     def draw(self, matrix=Mat4.identity(), shader=None, **kwargs):
         if self._sub_mesh_count > 0:
             for idx, record in self._render_records.items():
@@ -995,15 +983,3 @@ class Mesh:
                                     with vao:
                                         gl.glDrawArrays(sub_mesh.topology.value, 0, record.vertex_count)
 
-
-@njit(parallel=True, fastmath=True)
-def calc_bounds(vertices):
-    min = [np.float32(10000.0), np.float32(10000.0), np.float32(10000.0)]
-    max = [np.float32(-10000.0), np.float32(-10000.0), np.float32(-10000.0)]
-    for i in prange(vertices.shape[0]):
-        for j in range(vertices.shape[1]):
-            if vertices[i][j] <= min[j]:
-                min[j] = vertices[i][j]
-            if vertices[i][j] >= max[j]:
-                max[j] = vertices[i][j]
-    return min, max
