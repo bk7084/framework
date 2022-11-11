@@ -294,10 +294,8 @@ class WavefrontReader:
                 elif key in OBJ_MTL_TEXTURES:
                     # textures
                     index = OBJ_MTL_TEXTURES.index(key)
-                    key_name = key if index < 7 else ('norm' if index <= 14 else ('disp' if index <= 18 else 'bump'))
-                    content = WavefrontReader._parse_texture(components[1:], resolver)
-                    print(content)
-                    materials[current_material_name][key_name] = content
+                    key_name = key if index < 7 else ('map_norm' if index <= 14 else ('map_disp' if index <= 18 else 'map_bump'))
+                    materials[current_material_name][key_name] = WavefrontReader._parse_texture(components[1:], resolver)
                 else:
                     # other properties: Kd, Ka, Ks, d, illum, Ns, Ni
                     value = [float(x) for x in components[1:]]
