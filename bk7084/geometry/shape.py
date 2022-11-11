@@ -15,6 +15,7 @@ class Shape(metaclass=abc.ABCMeta):
                hasattr(subclass, 'index_count') and hasattr(subclass, 'drawing_mode')
 
     def __init__(self, vertex_count, colors: Sequence[Color]):
+        self._is_dirty = False
         self._vertex_count = vertex_count
 
         colors_count = len(colors)
@@ -42,8 +43,10 @@ class Shape(metaclass=abc.ABCMeta):
                 raise ValueError(
                     f'Triangle has three vertices, but only {len(new_color)} points are specified with new color.')
             self._colors = new_color[:3]
+            self._is_dirty = True
         elif isinstance(new_color, Color):
             self._colors = [new_color]
+            self._is_dirty = True
 
     @property
     def colors(self):
@@ -79,4 +82,27 @@ class Shape(metaclass=abc.ABCMeta):
     @abc.abstractmethod
     def drawing_mode(self) -> DrawingMode:
         raise NotImplementedError
+
+    @property
+    def interleaved_vertices(self) -> np.ndarray:
+        """
+        Returns interleaved data(position and color) for vertices.
+        :return:
+        """
+        vertices_data = np.zeros(7 * self.vertex_count, dtype=np.float32)
+
+        for i in range(0, self.vertex_count):
+            index = i * 7
+            vertices_data.put(list(range(index, index + 3)), self.vertices[i * 3: i * 3 + 3])
+            vertices_data.put(list(range(index + 3, index + 7)), self.colors[i * 4: i * 4 + 4])
+
+        return vertices_data
+
+    @property
+    def is_dirty(self):
+        return self._is_dirty
+
+    @is_dirty.setter
+    def is_dirty(self, value):
+        self._is_dirty = value
 

@@ -2,8 +2,6 @@ from typing import Sequence
 
 import numpy as np
 
-from dataclasses import dataclass
-
 from .shape import Shape
 from ..graphics.util import DrawingMode
 from ..math import Vec3

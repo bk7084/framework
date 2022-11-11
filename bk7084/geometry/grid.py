@@ -19,12 +19,14 @@ class AxisAlignment(enum.Enum):
 
 
 class Grid(Shape):
-    def __init__(self, origin=Vec3(0.0),
-                 axis_alignment=AxisAlignment.XZ,
+    def __init__(self,
                  width=20.0,
                  height=20.0,
-                 axis_marker=False,
-                 spacing_width=1.0, spacing_height=1.0):
+                 spacing_width=1.0,
+                 spacing_height=1.0,
+                 origin=Vec3(0.0),
+                 axis_alignment=AxisAlignment.XZ,
+                 axis_marker=False):
         points, colors = self._generate_lines(origin, width, height, spacing_width, spacing_height, axis_alignment, axis_marker)
         super().__init__(len(points), colors)
         self._origin = origin

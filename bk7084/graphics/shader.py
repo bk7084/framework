@@ -125,7 +125,8 @@ class Shader(GpuObject):
     def _delete(self):
         gl.glDeleteShader(self._id)
 
-    def _parse_error(self, error):
+    @staticmethod
+    def _parse_error(error):
         """
         Parses a single GLSL error and extracts the line number and error description.
 

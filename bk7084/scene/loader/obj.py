@@ -3,6 +3,11 @@ import re
 
 from ...assets import default_resolver
 
+OBJ_MTL_TEXTURES = ['map_Kd', 'map_Ka', 'map_Ks', 'map_Ns', 'map_d', 'decal', 'refl',
+                    'norm', 'map_norm', 'normal', 'map_normal', 'map_Norm', 'map_Normal', 'Norm', 'Normal',
+                    'disp', 'map_disp', 'map_Disp', 'Disp',
+                    'bump', 'map_bump', 'map_Bump', 'Bump']
+
 
 def remove_comments(comment_symbol, text):
     return re.sub(f'{comment_symbol}.*', '', text).strip()
@@ -233,7 +238,7 @@ class WavefrontReader:
         objects[c_obj_idx]['vertex_format'] = vertex_format
 
         return {
-            'vertices': positions,
+            'positions': positions,
             'texcoords': texcoords,
             'normals': normals,
             'indices': indices,
@@ -261,11 +266,15 @@ class WavefrontReader:
                     'Ns': ...,
                     'Ka': ...,
                     ...
+                    'map_Kd': {
+                        'params': {
+                            ... (optional)  # non default parameters
+                        },
+                        'path': 'path/to/file'
+                    }
                 }
             }
         """
-        mtl_props = ['Kd', 'Ka', 'Ks', 'Ns', 'Ni', 'Illum', 'd', ]
-
         materials = {}
         
         with open(path) as file:
@@ -282,17 +291,58 @@ class WavefrontReader:
                     # new material
                     current_material_name = '_'.join(components[1:])
                     materials[current_material_name] = {}
-                elif key in ('map_Kd', 'map_Bump', 'map_Normal'):
-                    path = ''.join(components[1:])
-                    materials[current_material_name][key] = path if resolver is None else resolver.resolve(path)
+                elif key in OBJ_MTL_TEXTURES:
+                    # textures
+                    index = OBJ_MTL_TEXTURES.index(key)
+                    key_name = key if index < 7 else ('norm' if index <= 14 else ('disp' if index <= 18 else 'bump'))
+                    content = WavefrontReader._parse_texture(components[1:], resolver)
+                    print(content)
+                    materials[current_material_name][key_name] = content
                 else:
-                    # other properties
+                    # other properties: Kd, Ka, Ks, d, illum, Ns, Ni
                     value = [float(x) for x in components[1:]]
                     if len(value) == 1:
                         value = value[0]
                     materials[current_material_name][key] = value
 
             return materials
+
+    @staticmethod
+    def _parse_texture(line, resolver: PathResolver = None) -> dict:
+        """
+        Parse texture along with its parameters.
+
+        Args:
+            line: Line of texture parameters and path (already split).
+
+        Returns:
+            dict of texture parameters indexed by its name:
+            {
+                ... (optional)  # non default parameters
+            },
+            See `ObjTextureParams` for more details.
+        """
+        # parse texture path
+        params_str, path_str = line[:-1], line[-1]
+        texture_path = path_str if resolver is None else resolver.resolve(path_str)
+        # parse texture parameters
+        params_pos = [i for i, x in enumerate(params_str) if x.startswith('-')]
+        params = {}
+        for i, pos in enumerate(params_pos):
+            param_name = params_str[pos][1:]
+            # last parameter
+            if i == len(params_pos) - 1:
+                param_value = params_str[pos + 1:]
+            else:
+                param_value = params_str[pos + 1: params_pos[i + 1]]
+            params[param_name] = param_value
+
+        return {
+            'path': texture_path,
+            'params': params,
+        }
+
+
 
 
 

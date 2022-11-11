@@ -213,8 +213,8 @@ class Building(Entity):
                         sub_mesh, texture = sub_mesh_texture
                         triangle_idx = []
                         for f_i in sub_mesh.triangles:
-                            start = mesh._triangulated_face_index[f_i]
-                            end = n_triangles if f_i >= len(mesh._triangulated_face_index) - 1 else mesh._triangulated_face_index[f_i + 1]
+                            start = mesh._faces_triangulation[f_i]
+                            end = n_triangles if f_i >= len(mesh._faces_triangulation) - 1 else mesh._faces_triangulation[f_i + 1]
                             triangle_idx += list(range(start + tri_offset, end + tri_offset))
                         sub_mesh.triangles = triangle_idx
                         if texture in sub_mesh_dict:
@@ -247,12 +247,12 @@ class Building(Entity):
         textures_sub_meshes = list(sub_mesh_dict.items())
         if len(textures_sub_meshes) > 0:
             texture, sub_meshes = textures_sub_meshes[0]
-            sub_mesh = SubMesh.from_submeshes(sub_meshes, name=texture)
+            sub_mesh = SubMesh.from_sub_meshes(sub_meshes, name=texture)
             mesh.update_sub_mesh(0, sub_mesh, texture=texture)
         if len(textures_sub_meshes) > 1:
             for i in range(1, len(textures_sub_meshes)):
                 texture, sub_meshes = textures_sub_meshes[i]
-                sub_mesh = SubMesh.from_submeshes(sub_meshes, name=texture)
+                sub_mesh = SubMesh.from_sub_meshes(sub_meshes, name=texture)
                 mesh.append_sub_mesh(sub_mesh, texture=texture)
         return mesh
 

@@ -32,6 +32,6 @@ setuptools.setup(
         'pypng',
         'imgui[glfw]',
         'Pillow',
-        'numba>=0.55.0rc1'
+        'numba'
     ],
 )

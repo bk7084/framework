@@ -433,8 +433,8 @@ class Mesh:
         reader = WavefrontReader(filepath, resolver)
         mesh_data = reader.read()
 
-        self._vertex_count = len(mesh_data['vertices'])
-        self._vertices = np.asarray(mesh_data['vertices'], dtype=np.float32).reshape((-1, 3))
+        self._vertex_count = len(mesh_data['positions'])
+        self._vertices = np.asarray(mesh_data['positions'], dtype=np.float32).reshape((-1, 3))
         self._bounds = calc_bounds(self._vertices)
 
         self._normal_count = len(mesh_data['normals'])
@@ -947,7 +947,7 @@ class Mesh:
                 pipeline = self._pipelines[record.pipeline_idx] if shader is None else shader
 
                 camera_enabled = kwargs.get('camera_enabled', True)
-                from bk7084 import app
+                from .. import app
                 camera = kwargs.get('camera', app.current_window().camera)
 
                 with pipeline:
