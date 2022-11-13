@@ -108,7 +108,7 @@ def on_key_press(key, mods):
 @window.event
 def on_update(dt):
     if animate:
-        cube.apply_transformation(Mat4.from_axis_angle(Vec3.unit_y(), 45 * dt, True))
+        cube.apply_transform(Mat4.from_axis_angle(Vec3.unit_y(), 45 * dt, True))
         global model_mat
         model_mat = Mat4.from_rotation_z(45 * dt, True) * model_mat
 

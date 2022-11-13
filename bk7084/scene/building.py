@@ -189,13 +189,13 @@ class Building(Entity):
                         normal_idx += 1
 
                 uvs_indices = []
-                for i in range(mesh.uvs.shape[0]):
-                    uv = mesh.uvs[i].tostring()
+                for i in range(mesh.texcoords.shape[0]):
+                    uv = mesh.texcoords[i].tostring()
                     if uv in uvs_dict:
                         uvs_indices.append(uvs_dict[uv][0])
                     else:
                         uvs_indices.append(uvs_idx)
-                        uvs_dict[uv] = (uvs_idx, mesh.uvs[i])
+                        uvs_dict[uv] = (uvs_idx, mesh.texcoords[i])
                         uvs_idx += 1
 
                 # Increment triangle indices with index offset, use correct vertex idx for reused vertices

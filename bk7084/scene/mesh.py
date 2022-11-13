@@ -1,25 +1,59 @@
 import collections.abc
-import hashlib
-from dataclasses import dataclass
 import enum
+import hashlib
 import os
+from dataclasses import dataclass
+from typing import List
 
 import numpy as np
-from numba import njit, prange
 
 from .loader.obj import WavefrontReader
 from .. import gl
-from ..assets.resolver import default_resolver
 from ..assets.manager import default_asset_mgr, default_name_mgr
+from ..assets.resolver import default_resolver
 from ..graphics.array import VertexArrayObject
 from ..graphics.buffer import VertexBuffer, IndexBuffer
-from ..graphics.query import Query, QueryTarget
 from ..graphics.vertex_layout import VertexLayout, VertexAttrib, VertexAttribDescriptor, VertexAttribFormat
 from ..math import Mat4, Vec3
 from ..misc import PaletteDefault, Color
 
 
 # todo: face normals
+# todo: sub-meshes and render records
+
+
+@dataclass(frozen=True)
+class Face:
+    __slots__ = ('vs', 'vts', 'vns')
+    vs: [int]  # vertex indices
+    vts: [int]  # vertex texture indices
+    vns: [int]  # vertex normal indices
+
+    @property
+    def is_triangle(self):
+        return len(self.vs) == 3
+
+    @property
+    def vertex_count(self):
+        return len(self.vs)
+
+
+@dataclass(frozen=False)
+class VertexAttribData:
+    """
+    Stores the data of a vertex attribute.
+    """
+    __slots__ = ('count', 'data')
+    count: int
+    data: np.ndarray
+
+    @property
+    def is_empty(self):
+        return self.count == 0
+
+    def __getitem__(self, i):
+        return self.data[i]
+
 
 class MeshTopology(enum.Enum):
     Triangles = gl.GL_TRIANGLES
@@ -62,7 +96,7 @@ class SubMesh:
         self.topology: MeshTopology = topology
         self.vertex_layout: VertexLayout = vertex_layout
         self.normal_map_enabled: bool = normal_map_enabled
-    
+
     @staticmethod
     def from_submeshes(sub_meshes, name=''):
         triangles = []
@@ -85,10 +119,6 @@ class Mesh:
     attributes.
 
     The mesh face data (triangles) is made of three vertex indices for each triangle.
-
-    todo:
-      1. calculate normals
-      3. calculate bitangent
     """
 
     DEFAULT_COLOR = PaletteDefault.BrownB.as_color()
@@ -167,29 +197,30 @@ class Mesh:
                     use framework's default shader (declared inside of Window).
         """
         self._vertex_layout = VertexLayout.default()
-
-        self._vertex_count = 0
         self._index_count = 0
-        self._triangle_count = 0
-        self._normal_count = 0
-        self._uv_count = 0
-
         self._verts = {
-            'position': np.array([], dtype=np.float32),
-            'color': np.array([], dtype=np.float32),
-            'normal': np.array([], dtype=np.float32),
-            'texcoord': np.array([], dtype=np.float32),
+            'position': VertexAttribData(0, np.array([], dtype=np.float32)),
+            'color': VertexAttribData(0, np.array([], dtype=np.float32)),
+            'normal': VertexAttribData(0, np.array([], dtype=np.float32)),
+            'texcoord': VertexAttribData(0, np.array([], dtype=np.float32)),
             'tangent': np.array([], dtype=np.float32),
-            'topology': [[]],  # list of triangle indices to which the vertex belongs
+            # stores the indices of triangles that each vertex belongs to; used for calculating tangent and bi-tangent.
+            'topology': [[0]],
         }
         self._indices = np.array([], dtype=np.uint32)  # indices for draw whole mesh
         # Face data consists of vertex indices, texture indices, and normal indices.
         # [[(vertices indices), (vertex uvs indices), (vertex normals indices)], ...]
         # Used only when the mesh is created by providing vertices and its attributes.
-        self._faces = []
-        self._triangulated_face_index = []  # stores the index of triangles of a face
+        self._faces: List[Face] = []
+
+        # List keeping track of triangulated faces in case the mesh is created by providing vertices and their
+        # attributes. Stores the first index of triangles of a face after the triangulation in the self._triangles
+        # array. Take example of a list of two faces, first face is a quad and second face is a triangle. This list
+        # will be [0, 3] after triangulation, where 0 is the index of the first triangle of triangulation of the
+        # first face, and 3 is the index of the first triangle of triangulation of the second face.
+        self._faces_triangulation = []
+        self._triangle_count = 0
         self._triangles = []
-        self._vertex_triangles = []  # the triangle indices that correspond to each vertex
 
         self._materials = [default_asset_mgr.get_or_create_material('default_material')]
         _texture_path = kwargs.get('texture', None)
@@ -216,9 +247,9 @@ class Mesh:
             self._use_customised_pipeline = True
 
         # initial transformation applied to the mesh
-        self._initial_transformation: Mat4 = kwargs.get('initial_transformation', Mat4.identity())
+        self._init_transform: Mat4 = kwargs.get('initial_transformation', Mat4.identity())
         # transformation applied to the mesh
-        self._transformation: Mat4 = Mat4.identity()
+        self._transform: Mat4 = Mat4.identity()
 
         self._shading_enabled = kwargs.get('shading_enabled', True)
         self._material_enabled = kwargs.get('material_enabled', True)  # by default, use material if available
@@ -238,14 +269,20 @@ class Mesh:
             self._name = default_name_mgr.get_name(hashlib.md5(filepath.encode('utf-8')).hexdigest())
             self._load_from_file(filepath, colors, kwargs.get('texture', None), resolver)
         else:  # load from vertices, uvs, normals, faces
-            self._name = kwargs.get('name', f'unnamed_{self.__class__.__name__}_{default_name_mgr.get_name(self.__class__.__name__)}')
-            self._verts['position'] = np.asarray(kwargs['vertices'], dtype=np.float32).reshape((-1, 3)) if 'vertices' in kwargs else None
-            self._vertex_count = len(self._verts['position'])
-            self._verts['texcoord'] = np.asarray(kwargs['uvs'], dtype=np.float32).reshape((-1, 2)) if 'uvs' in kwargs else None
-            self._uv_count = len(self._verts['texcoord'])
-            self._verts['normal'] = np.asarray(kwargs['normals'], dtype=np.float32).reshape((-1, 3)) if 'normals' in kwargs else None
-            self._normal_count = len(self._verts['normal'])
-            self._faces = kwargs.get('faces', None)
+            self._name = kwargs.get('name',
+                                    f'unnamed_{self.__class__.__name__}_{default_name_mgr.get_name(self.__class__.__name__)}')
+            self._verts['position'].data = np.asarray(kwargs['vertices'], dtype=np.float32).reshape(
+                (-1, 3)) if 'vertices' in kwargs else None
+            self._verts['position'].count = len(self._verts['position'].data)
+            self._verts['texcoord'].data = np.asarray(kwargs['uvs'], dtype=np.float32).reshape(
+                (-1, 2)) if 'uvs' in kwargs else None
+            self._verts['texcoord'].count = len(self._verts['texcoord'].data)
+            self._verts['normal'].data = np.asarray(kwargs['normals'], dtype=np.float32).reshape(
+                (-1, 3)) if 'normals' in kwargs else None
+            self._verts['normal'].count = len(self._verts['normal'].data)
+            _faces = kwargs.get('faces', None)
+
+            # Check if the necessary data is provided for creating the mesh.
             if not (self._verts['position'] is not None
                     and colors
                     and self._verts['texcoord'] is not None
@@ -255,37 +292,59 @@ class Mesh:
                                                                 (colors, 'colors'),
                                                                 (self._verts['texcoord'], 'uvs'),
                                                                 (self._verts['normal'], 'normals'),
-                                                                (self._faces, 'faces')) if attrib is None]
+                                                                (_faces, 'faces')) if attrib is None]
                 raise ValueError(f"Mesh creation - missing vertex attributes: {missing_attributes}.")
-            self._vertex_triangles = [[] for i in range(self._vertex_count)]
-            self._verts['color'] = Mesh._process_color(self._vertex_count, colors)
-            # fill indices and triangulation
+
+            # Check if the input faces are valid.
+            for face in _faces:
+                if len(face) != 3:
+                    raise ValueError(f"Mesh creation - a face must have vertices indices, "
+                                     f"texture coordinates indices, and normal indices: {face}.")
+                if len(face[0]) < 3:
+                    raise ValueError(f"Mesh creation - a face must have at least 3 vertices: {face}.")
+                self._faces.append(Face(face[0], face[1], face[2]))
+            self._verts['color'] = Mesh._process_color(self._verts['position'].count, colors)
+            self._verts['topology'] = [[] for _ in range(self._verts['position'].count)]
+
+            # Triangulate faces into triangles and store the indices of triangles of each face.
+            self._triangles = []
             self._triangle_count = 0
             for f in self._faces:
-                vertex_count = len(f[0])
-                if vertex_count < 3:
-                    continue
-                elif vertex_count == 3:
-                    self._triangulated_face_index.append(len(self._triangles))
-                    self._triangles.append(f)
+                if f.is_triangle:
+                    self._faces_triangulation.append(len(self._triangles))
+                    self._triangles.append(
+                        (
+                            (f.vs[0], f.vs[1], f.vs[2]),
+                            (f.vts[0], f.vts[1], f.vts[2]),
+                            (f.vns[0], f.vns[1], f.vns[2]),
+                        )
+                    )
                     self._triangle_count += 1
-                    for p in f[0]:
-                        self._vertex_triangles[p].append(self._triangle_count - 1)
+                    for p in f.vs:
+                        self._verts['topology'][p].append(self._triangle_count - 1)
                 else:
-                    self._triangulated_face_index.append(len(self._triangles))
+                    self._faces_triangulation.append(len(self._triangles))
                     triangulated = []
-                    for i in range(0, vertex_count - 2):
-                        triangulated.append(((f[0][0], *f[0][i + 1: i + 3]),
-                                             (f[1][0], *f[1][i + 1: i + 3]),
-                                             (f[2][0], *f[2][i + 1: i + 3])))
+                    for i in range(0, f.vertex_count - 2):
+                        triangulated.append(
+                            (
+                                (f.vs[0], *f.vs[i + 1: i + 3]),  # vertices
+                                (f.vts[0], *f.vts[i + 1: i + 3]),  # texture coordinates
+                                (f.vns[0], *f.vns[i + 1: i + 3])  # normals
+                            )
+                        )
                         self._triangle_count += 1
                         for p in triangulated[-1][0]:
-                            self._vertex_triangles[p].append(self._triangle_count - 1)
+                            self._verts['topology'][p].append(self._triangle_count - 1)
                     self._triangles.extend(triangulated)
-
+            # self._triangles = np.asarray(_triangles, dtype=np.int32).reshape((-1, 3, 3))
             self._indices = np.asarray(self._triangles, dtype=np.uint32).ravel()
             self._index_count = len(self._indices)
-            self._verts['tangents'] = self._compute_tangents()
+            if not self._verts['texcoord'].is_empty:
+                self._verts['tangents'] = compute_tangent(self._verts['position'], self._verts['texcoord'],
+                                                          self._triangles, self._verts['topology'])
+            else:
+                self._verts['tangents'] = np.zeros((self._verts['position'].count, 3), dtype=np.float32)
             self._sub_mesh_count = 1
             sub_mesh = SubMesh(
                 name=f"{self._name}-{self._materials[0].name}",
@@ -326,7 +385,8 @@ class Mesh:
             self._sub_meshes = [sub_mesh]
             pipeline = 1 if self._use_customised_pipeline else 0
             self._render_records = {
-                0: MtlRenderRecord(0, len(self._vertex_array_objects), len(self._vertex_buffers), len(v_positions), pipeline)
+                0: MtlRenderRecord(0, len(self._vertex_array_objects), len(self._vertex_buffers), len(v_positions),
+                                   pipeline)
             }
 
             self._vertex_array_objects.append(vao)
@@ -347,7 +407,7 @@ class Mesh:
                 num = count - colors_count
                 output_colors = np.asarray(
                     [c.rgba for color in [colors, [Mesh.DEFAULT_COLOR] * num] for c in color]).reshape((count, 4))
-        return output_colors
+        return VertexAttribData(count, output_colors)
 
     @property
     def rendering_info(self):
@@ -361,7 +421,7 @@ class Mesh:
             diffuse_map = mtl.diffuse_map
             if self._texture_enabled and self._texture is not None:
                 diffuse_map = self._texture
-            transform = self._transformation * self._initial_transformation
+            transform = self._transform * self._init_transform
             if pipeline.uuid not in info:
                 info[pipeline.uuid] = []
             info[pipeline.uuid].append((vao, topology, vertex_count, mtl,
@@ -447,24 +507,24 @@ class Mesh:
         reader = WavefrontReader(filepath, resolver)
         mesh_data = reader.read()
 
-        self._vertex_count = len(mesh_data['positions'])
-        self._verts['position'] = np.asarray(mesh_data['positions'], dtype=np.float32).reshape((-1, 3))
-        self._normal_count = len(mesh_data['normals'])
-        self._verts['normal'] = np.asarray(mesh_data['normals'], dtype=np.float32).reshape((-1, 3))
+        self._verts['position'].data = np.asarray(mesh_data['positions'], dtype=np.float32).reshape((-1, 3))
+        self._verts['position'].count = len(mesh_data['positions'])
+        self._verts['normal'].data = np.asarray(mesh_data['normals'], dtype=np.float32).reshape((-1, 3))
+        self._verts['normal'].count = len(mesh_data['normals'])
         self._faces = mesh_data['faces']
         self._triangles = [tuple(f) for f in self._faces]
         self._triangle_count = len(self._triangles)
-        self._vertex_triangles = [[] for i in range(0, self._vertex_count)]
+        self._verts['topology'] = [[] for _ in range(0, self._verts['position'].count)]
         for i, tri in enumerate(self._triangles):
             for p in tri[0]:
-                self._vertex_triangles[p].append(i)
+                self._verts['topology'][p].append(i)
 
         self._index_count = self._triangle_count * 3
         self._indices = np.asarray([f[0] for f in mesh_data['faces']], dtype=np.uint32).reshape((-1, 3))
-        self._uv_count = len(mesh_data['texcoords'])
-        self._verts['texcoord'] = np.asarray(mesh_data['texcoords'], dtype=np.float32).reshape((-1, 2))
-        self._verts['color'] = Mesh._process_color(self._vertex_count, color)
-        self._verts['tangents'] = self._compute_tangents()
+        self._verts['texcoord'].count = len(mesh_data['texcoords'])
+        self._verts['texcoord'].data = np.asarray(mesh_data['texcoords'], dtype=np.float32).reshape((-1, 2))
+        self._verts['color'] = Mesh._process_color(self._verts['position'].count, color)
+        self._verts['tangents'] = compute_tangent(self._verts['position'], self._verts['texcoord'], self._triangles, self._verts['topology'])
 
         for name, mat in mesh_data['materials'].items():
             mtl_name = f'{self._name}_{name}'
@@ -542,7 +602,8 @@ class Mesh:
                 if sub_mesh.vertex_layout.has(VertexAttrib.TexCoord0) and sub_mesh.vertex_layout.has(
                         VertexAttrib.Normal):
                     vertices = np.array(
-                        [z for x in zip(v_positions, v_colors, v_texcoords, v_normals, v_tangents) for y in x for z in y],
+                        [z for x in zip(v_positions, v_colors, v_texcoords, v_normals, v_tangents) for y in x for z in
+                         y],
                         dtype=np.float32).ravel()
                 elif sub_mesh.vertex_layout.has(VertexAttrib.TexCoord0) and not sub_mesh.vertex_layout.has(
                         VertexAttrib.Normal):
@@ -582,76 +643,6 @@ class Mesh:
                                                                        pipeline)
 
         self._sub_mesh_count = len(self._sub_meshes)
-        # self._texture_enabled = True
-
-    def _from_shapes(self, *shapes):
-        """Construct a mesh from a collection of geometry objects."""
-        # todo: improve performance by merge buffers of objects with same draw type or of the same type
-        # todo: bounds
-        if len(shapes) == 0:
-            raise ValueError('Geometry objects are empty when trying to construct a mesh.')
-
-        for shape in shapes:
-            # todo
-            pass
-
-    def _compute_tangents(self):
-        """Computes tangent for each vertex over whole mesh."""
-        tangents = []
-        for i in range(0, self._vertex_count):
-            tangents.append(self._compute_tangent_of_vertex(i, self._vertex_triangles))
-        return np.asarray(tangents, dtype=np.float32).reshape((-1, 3))
-
-    def _compute_tangent_of_vertex(self, vertex_id, vertex_triangles):
-        """
-        Compute tangent from Tangent space for given vertex (over whole mesh).
-        Note that only tangent is needed, bi-tangent can be computed in shader by cross product: N*T
-
-        e = edge in triangle space
-        s = edge in texture space
-
-        we want to find the transformation from texture space to triangle space
-
-        [T_x B_x]   [s1_x s2_x]   [e1_x e2_x]
-        [T_y B_y] * [s1_y s2_y] = [e1_y e2_y]
-        [T_z B_z]                 [e1_z e2_z]
-
-        by inverting the 2x2 matrix
-
-        [T_x B_x]   [e1_x e2_x]   [ s2_y -s2_x]
-        [T_y B_y] = [e1_y e2_y] * [-s1_y  s1_x] * 1/det
-        [T_z B_z]   [e1_z e2_z]
-
-        where:
-        det = s1_x*s2_y - s1_y*s2_x
-
-        now we can solve for T:
-
-        T_x = e1_x * s2_y - e2_x * s1_y
-        T_y = e1_y * s2_y - e2_y * s1_y
-        T_z = e1_z * s2_y - e2_z * s1_y
-
-        or, in short:
-
-        T = e1 * s2_y - e2 * s1_y
-        """
-        tangent = np.array([0.0, 0.0, 0.0], dtype=np.float32)
-
-        if len(self._verts['texcoord']) == 0:
-            return np.array([0.0, 0.0, 0.0], dtype=np.float32)
-        for tri_idx in vertex_triangles[vertex_id]:
-            vertices = [self._verts['position'][i] for i in self._triangles[tri_idx][0]]
-            uvs = [self._verts['texcoord'][i] for i in self._triangles[tri_idx][1]]
-            # edges (delta vertex positions)
-            delta_pos = [vertices[i] - vertices[0] for i in (1, 2)]
-            # delta uvs
-            delta_uv = [uvs[i] - uvs[0] for i in (1, 2)]
-            det = delta_uv[0][0] * delta_uv[1][1] - delta_uv[0][1] * delta_uv[1][0]
-            if det != 0.0:
-                tangent += (delta_pos[0] * delta_uv[1][1] - delta_pos[1] * delta_uv[0][1]) / det
-            # bitangent += (delta_pos[1] * delta_uv[0][0] - delta_pos[0] * delta_uv[1][0]) * det
-
-        return tangent / np.sqrt(np.sum(tangent ** 2))
 
     @property
     def vertex_layout(self) -> VertexLayout:
@@ -679,18 +670,20 @@ class Mesh:
 
     @vertices.setter
     def vertices(self, positions):
-        self._verts['positions'] = np.asarray(positions, dtype=np.float32).ravel()
-        self._vertex_count = len(self._verts['positions']) / 3
+        self._verts['position'].data = np.asarray(positions, dtype=np.float32).ravel()
+        self._verts['position'].count = len(self._verts['position'].data) / 3
+        print("Vertices: ", self._verts['position'].data)
+        print("Vertices count: ", self._verts['position'].count)
 
     @property
-    def uvs(self):
+    def texcoords(self):
         """Returns the vertex uvs."""
-        return self._verts['texcoord']
+        return self._verts['texcoord'].data
 
     @property
     def vertex_count(self):
         """Vertex count of the mesh."""
-        return self._vertex_count
+        return self._verts['position'].count
 
     @property
     def colors(self):
@@ -756,9 +749,9 @@ class Mesh:
         tri_list = []
         vertex_triangles = {}
         for f_i in sub_mesh.triangles:
-            start = self._triangulated_face_index[f_i]
-            end = len(self._triangles) if f_i >= len(self._triangulated_face_index) - 1 else \
-            self._triangulated_face_index[f_i + 1]
+            start = self._faces_triangulation[f_i]
+            end = len(self._triangles) if f_i >= len(self._faces_triangulation) - 1 else \
+                self._faces_triangulation[f_i + 1]
             tri_list.extend(self._triangles[start: end])
             for i, tri in enumerate(self._triangles[start: end]):
                 for v_i in tri[0]:
@@ -851,44 +844,46 @@ class Mesh:
                                                       vbo_idx,
                                                       sub_mesh.vertex_count, pipeline)
 
-    def append_sub_mesh(self, sub_mesh: SubMesh, texture: str = '', normal_map: str = None, vertex_shader: str = None, pixel_shader: str = None):
+    def append_sub_mesh(self, sub_mesh: SubMesh, texture: str = '', normal_map: str = None, vertex_shader: str = None,
+                        pixel_shader: str = None):
         self._sub_meshes_raw.append((sub_mesh, texture))
         self._sub_meshes.append(SubMesh())
-        self.update_sub_mesh(len(self._sub_meshes) - 1, sub_mesh, texture, normal_map, vertex_shader, pixel_shader, create=True)
+        self.update_sub_mesh(len(self._sub_meshes) - 1, sub_mesh, texture, normal_map, vertex_shader, pixel_shader,
+                             create=True)
 
-    def apply_transformation(self, matrix: Mat4):
-        self._transformation = matrix * self._transformation
+    def apply_transform(self, matrix: Mat4):
+        self._transform = matrix * self._transform
         return self
 
     def then(self, matrix: Mat4):
-        self._transformation = matrix * self._transformation
+        self._transform = matrix * self._transform
         return self
 
-    def reset_transformation(self):
-        self._transformation = Mat4.identity()
+    def reset_transform(self):
+        self._transform = Mat4.identity()
 
     @property
     def transformation(self):
-        return self._transformation
+        return self._transform
 
     @transformation.setter
     def transformation(self, value: Mat4):
-        self._transformation = value
+        self._transform = value
 
     @property
     def initial_transformation(self):
-        return self._initial_transformation
+        return self._init_transform
 
     @initial_transformation.setter
     def initial_transformation(self, value: Mat4):
-        self._initial_transformation = value
+        self._init_transform = value
 
     @property
     def vertex_array_objects(self):
         return self._vertex_array_objects
 
     def compute_energy(self, shader, transform, light, viewport_size, depth_map):
-        model_mat = transform * self._transformation * self._initial_transformation
+        model_mat = transform * self._transform * self._init_transform
         if len(self._sub_meshes) > 0:
             with shader:
                 shader['model_mat'] = model_mat
@@ -915,8 +910,7 @@ class Mesh:
             for idx, record in self._render_records.items():
                 sub_mesh = self._sub_meshes[idx]
                 mtl = self._materials[record.mtl_idx]
-
-                mat = matrix * self._transformation * self._initial_transformation
+                mat = matrix * self._transform * self._init_transform
                 vao = self._vertex_array_objects[record.vao_idx]
                 pipeline = self._pipelines[record.pipeline_idx] if shader is None else shader
 
@@ -984,3 +978,67 @@ class Mesh:
                                     with vao:
                                         gl.glDrawArrays(sub_mesh.topology.value, 0, record.vertex_count)
 
+
+def compute_tangent(positions: VertexAttribData,
+                    texcoords: VertexAttribData,
+                    triangles: List[tuple[tuple[int, int, int], tuple[int, int, int], tuple[int, int, int]]],
+                    topology: List[List[int]]) -> np.ndarray:
+    """
+    Compute the tangent vector for all vertices in the mesh.
+    Compute tangent from Tangent space for given vertex (over whole mesh).
+        Note that only tangent is needed, bi-tangent can be computed in shader by cross product: N*T
+
+        e = edge in triangle space
+        s = edge in texture space
+
+        we want to find the transformation from texture space to triangle space
+
+        [T_x B_x]   [s1_x s2_x]   [e1_x e2_x]
+        [T_y B_y] * [s1_y s2_y] = [e1_y e2_y]
+        [T_z B_z]                 [e1_z e2_z]
+
+        by inverting the 2x2 matrix
+
+        [T_x B_x]   [e1_x e2_x]   [ s2_y -s2_x]
+        [T_y B_y] = [e1_y e2_y] * [-s1_y  s1_x] * 1/det
+        [T_z B_z]   [e1_z e2_z]
+
+        where:
+        det = s1_x*s2_y - s1_y*s2_x
+
+        now we can solve for T:
+
+        T_x = e1_x * s2_y - e2_x * s1_y
+        T_y = e1_y * s2_y - e2_y * s1_y
+        T_z = e1_z * s2_y - e2_z * s1_y
+
+        or, in short:
+
+        T = e1 * s2_y - e2 * s1_y
+
+    Args:
+        positions (np.ndarray): The positions of all vertices in the mesh.
+        texcoords (np.ndarray): The texture coordinates of all vertices in the mesh.
+        triangles (List[tuple[int, int, int]]): The triangles in the mesh.
+        topology (List[List[int]]): The topology information of the mesh. This is list containing indices of all triangles
+                  adjacent to a vertex.
+    Returns:
+        A list of tangent vectors for all vertices in the mesh.
+    """
+    count = positions.count
+    tangents = np.zeros((count, 3), dtype=np.float32)
+    for i in range(count):
+        tangent = np.array([0.0, 0.0, 0.0], dtype=np.float32)
+        for adj_tri in topology[i]:
+            triangle = triangles[adj_tri][0]
+            vs = [positions[triangle[0]], positions[triangle[1]], positions[triangle[2]]]
+            uvs = [texcoords[triangle[0]], texcoords[triangle[1]], texcoords[triangle[2]]]
+            delta_pos = [vs[1] - vs[0], vs[2] - vs[0]]
+            delta_uv = [uvs[1] - uvs[0], uvs[2] - uvs[0]]
+            det = delta_uv[0][0] * delta_uv[1][1] - delta_uv[0][1] * delta_uv[1][0]
+            if det != 0.0:
+                tangent += (delta_pos[0] * delta_uv[1][1] - delta_pos[1] * delta_uv[0][1]) / det
+        norm = np.sqrt(np.sum(tangent ** 2))
+        if norm != 0.0:
+            tangents[i] = tangent / norm
+    return tangents

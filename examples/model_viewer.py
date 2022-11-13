@@ -14,7 +14,7 @@ from bk7084.scene import Mesh, Scene
 window = Window("BK7084: Simple Scene", width=600, height=600)
 
 scene = Scene(window, draw_light=True)
-model = scene.load_mesh_entity("./models/cottage.obj")
+model = scene.load_mesh_entity("./models/cube_textured.obj")
 
 scene.create_camera(Vec3(2, 1.0, 2.0), Vec3(0, 0, 0), Vec3.unit_y(), 60.0, zoom_enabled=True, safe_rotations=False)
 scene.create_camera(Vec3(-2, 1.0, 2.0), Vec3(0, 0, 0), Vec3.unit_y(), 60.0, zoom_enabled=True, safe_rotations=False)
@@ -40,7 +40,7 @@ def on_key_press(key, mods):
 def on_update(dt):
     if animate:
         pass
-        model.apply_transformation(Mat4.from_axis_angle(Vec3.unit_y(), 45.0 * dt, True))
+        model.apply_transform(Mat4.from_axis_angle(Vec3.unit_y(), 45.0 * dt, True))
 
 
 @window.event

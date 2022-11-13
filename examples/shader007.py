@@ -271,7 +271,7 @@ model = Mesh("./models/spot_cow.obj",
              # vertex_shader=vertex_src, pixel_shader=fragment_src
              )
 model.cast_shadow = True
-model.apply_transformation(Mat4.from_translation(Vec3(2.0, 0.0, 2.0)))
+model.apply_transform(Mat4.from_translation(Vec3(2.0, 0.0, 2.0)))
 
 cube.transformation = model.bounds_transform
 
@@ -345,17 +345,17 @@ def on_key_press(key, mods):
         scene._depth_map_framebuffer.save_depth_attachment(scene.main_camera.near, scene.main_camera.far, False)
 
     if key == KeyCode.Up:
-        ground.apply_transformation(Mat4.from_translation(Vec3(0.0, 0.1, 0.0)))
+        ground.apply_transform(Mat4.from_translation(Vec3(0.0, 0.1, 0.0)))
 
     if key == KeyCode.Down:
-        ground.apply_transformation(Mat4.from_translation(Vec3(0.0, -0.1, 0.0)))
+        ground.apply_transform(Mat4.from_translation(Vec3(0.0, -0.1, 0.0)))
 
 
 @window.event
 def on_update(dt):
     if animate:
-        sphere.apply_transformation(Mat4.from_axis_angle(Vec3.unit_y(), 45 * dt, True))
-        model.apply_transformation(Mat4.from_axis_angle(Vec3.unit_y(), -45 * dt, True))
+        sphere.apply_transform(Mat4.from_axis_angle(Vec3.unit_y(), 45 * dt, True))
+        model.apply_transform(Mat4.from_axis_angle(Vec3.unit_y(), -45 * dt, True))
 
 
 app.init(window)

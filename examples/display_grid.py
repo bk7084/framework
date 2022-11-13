@@ -37,7 +37,7 @@ def on_key_press(key, mods):
 def on_update(dt):
     if animate:
         pass
-        model.apply_transformation(Mat4.from_axis_angle(Vec3.unit_y(), 45.0 * dt, True))
+        model.apply_transform(Mat4.from_axis_angle(Vec3.unit_y(), 45.0 * dt, True))
 
 
 @window.event
