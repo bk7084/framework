@@ -1,4 +1,5 @@
 import collections.abc
+import hashlib
 from dataclasses import dataclass
 import enum
 import os
@@ -9,7 +10,7 @@ from numba import njit, prange
 from .loader.obj import WavefrontReader
 from .. import gl
 from ..assets.resolver import default_resolver
-from ..assets.manager import default_asset_mgr
+from ..assets.manager import default_asset_mgr, default_name_mgr
 from ..graphics.array import VertexArrayObject
 from ..graphics.buffer import VertexBuffer, IndexBuffer
 from ..graphics.query import Query, QueryTarget
@@ -117,8 +118,19 @@ class Mesh:
                 normals: (array like):
                     Specifies the normal of vertices.
 
-                triangles: (array like):
-                    Specifies the indices to create triangles.
+                faces: (array like):
+                    Specifies the faces of the mesh. Each face is a list consisting of
+                    indices of vertices, texture coordinates, and normals. For example,
+                    a face can be [(v0, v1, v2), (vt0, vt1, vt2), (vn0, vn1, vn2)], where
+                    v0, v1, v2 are indices of vertices, vt0, vt1, vt2 are indices of texture
+                    coordinates, and vn0, vn1, vn2 are indices of normals.
+                    A list of faces is represented as
+                    [
+                        [(v0, v1, v2), (vt0, vt1, vt2), (vn0, vn1, vn2)],
+                        [(v3, v4, v5, v6), (vt3, vt4, vt5, vt6), (vn3, vn4, vn5, vt6)],
+                    ]
+                    Faces don't have to be triangles, they can be quads or other polygons,
+                    but they have to be convex. Behind the scene, the faces will be triangulated.
 
                 uvs: (array like):
                     Specifies the uv coordinates of the vertices.
@@ -162,17 +174,19 @@ class Mesh:
         self._normal_count = 0
         self._uv_count = 0
 
-        self._vertices = {
+        self._verts = {
             'position': np.array([], dtype=np.float32),
             'color': np.array([], dtype=np.float32),
             'normal': np.array([], dtype=np.float32),
             'texcoord': np.array([], dtype=np.float32),
             'tangent': np.array([], dtype=np.float32),
+            'topology': [[]],  # list of triangle indices to which the vertex belongs
         }
         self._indices = np.array([], dtype=np.uint32)  # indices for draw whole mesh
-
-        # todo: clarify the input faces and triangles
-        self._faces = []  # [(vertices indices), (vertex uvs indices), ( vertex normals indices)]
+        # Face data consists of vertex indices, texture indices, and normal indices.
+        # [[(vertices indices), (vertex uvs indices), (vertex normals indices)], ...]
+        # Used only when the mesh is created by providing vertices and its attributes.
+        self._faces = []
         self._triangulated_face_index = []  # stores the index of triangles of a face
         self._triangles = []
         self._vertex_triangles = []  # the triangle indices that correspond to each vertex
@@ -221,39 +235,33 @@ class Mesh:
 
         colors = kwargs.get('colors', [Mesh.DEFAULT_COLOR])
         if filepath:  # load from file
-            self._name = str(filepath)
+            self._name = default_name_mgr.get_name(hashlib.md5(filepath.encode('utf-8')).hexdigest())
             self._load_from_file(filepath, colors, kwargs.get('texture', None), resolver)
         else:  # load from vertices, uvs, normals, faces
-            vertices = kwargs.get('vertices', None)
-            uvs = kwargs.get('uvs', None)
-            normals = kwargs.get('normals', None)
-            triangles = kwargs.get('triangles', None)
-            if not (vertices and colors and uvs and normals and triangles):
-                missing_attributes = [name for attrib, name in ((vertices, 'vertices'), (colors, 'colors'),
-                                                                (uvs, 'uvs'), (normals, 'normals'),
-                                                                (triangles, 'triangles')) if attrib is None]
+            self._name = kwargs.get('name', f'unnamed_{self.__class__.__name__}_{default_name_mgr.get_name(self.__class__.__name__)}')
+            self._verts['position'] = np.asarray(kwargs['vertices'], dtype=np.float32).reshape((-1, 3)) if 'vertices' in kwargs else None
+            self._vertex_count = len(self._verts['position'])
+            self._verts['texcoord'] = np.asarray(kwargs['uvs'], dtype=np.float32).reshape((-1, 2)) if 'uvs' in kwargs else None
+            self._uv_count = len(self._verts['texcoord'])
+            self._verts['normal'] = np.asarray(kwargs['normals'], dtype=np.float32).reshape((-1, 3)) if 'normals' in kwargs else None
+            self._normal_count = len(self._verts['normal'])
+            self._faces = kwargs.get('faces', None)
+            if not (self._verts['position'] is not None
+                    and colors
+                    and self._verts['texcoord'] is not None
+                    and self._verts['normal'] is not None
+                    and self._faces is not None):
+                missing_attributes = [name for attrib, name in ((self._verts['position'], 'vertices'),
+                                                                (colors, 'colors'),
+                                                                (self._verts['texcoord'], 'uvs'),
+                                                                (self._verts['normal'], 'normals'),
+                                                                (self._faces, 'faces')) if attrib is None]
                 raise ValueError(f"Mesh creation - missing vertex attributes: {missing_attributes}.")
-
-            self._name = kwargs.get('name', 'unnamed_{}'.format(self.__class__.__name__))
-            # fill vertices
-            self._vertices['position'] = np.asarray(vertices, dtype=np.float32).reshape((-1, 3))
-            self._vertex_count = len(self._vertices['position'])
             self._vertex_triangles = [[] for i in range(self._vertex_count)]
-
-            # fill colors
-            self._vertices['color'] = Mesh._process_color(self._vertex_count, colors)
-
-            # fill uvs
-            self._vertices['texcoord'] = np.asarray(uvs, dtype=np.float32).reshape((-1, 2))
-            self._uv_count = len(self._vertices['texcoord'])
-
-            # fill normals
-            self._vertices['normal'] = np.asarray(normals, dtype=np.float32).reshape((-1, 3))
-            self._normal_count = len(self._vertices['normal'])
-
+            self._verts['color'] = Mesh._process_color(self._vertex_count, colors)
             # fill indices and triangulation
             self._triangle_count = 0
-            for f in triangles:
+            for f in self._faces:
                 vertex_count = len(f[0])
                 if vertex_count < 3:
                     continue
@@ -277,9 +285,7 @@ class Mesh:
 
             self._indices = np.asarray(self._triangles, dtype=np.uint32).ravel()
             self._index_count = len(self._indices)
-
-            self._faces = triangles
-            self._vertices['tangents'] = self._compute_tangents()
+            self._verts['tangents'] = self._compute_tangents()
             self._sub_mesh_count = 1
             sub_mesh = SubMesh(
                 name=f"{self._name}-{self._materials[0].name}",
@@ -298,15 +304,15 @@ class Mesh:
                 for i, content in enumerate(tri):
                     if i == 0:
                         for v_i in content:
-                            v_positions.append(self._vertices['position'][v_i])
-                            v_colors.append(self._vertices['color'][v_i])
-                            v_tangents.append(self._vertices['tangents'][v_i])
+                            v_positions.append(self._verts['position'][v_i])
+                            v_colors.append(self._verts['color'][v_i])
+                            v_tangents.append(self._verts['tangents'][v_i])
                     if i == 1:
                         for vt_i in content:
-                            v_uvs.append(self._vertices['texcoord'][vt_i])
+                            v_uvs.append(self._verts['texcoord'][vt_i])
                     if i == 2:
                         for vn_i in content:
-                            v_normals.append(self._vertices['normal'][vn_i])
+                            v_normals.append(self._verts['normal'][vn_i])
 
             v_vertices = np.array(
                 [z for x in zip(v_positions, v_colors, v_uvs, v_normals, v_tangents) for y in x for z in y],
@@ -442,11 +448,9 @@ class Mesh:
         mesh_data = reader.read()
 
         self._vertex_count = len(mesh_data['positions'])
-        self._vertices['position'] = np.asarray(mesh_data['positions'], dtype=np.float32).reshape((-1, 3))
-
+        self._verts['position'] = np.asarray(mesh_data['positions'], dtype=np.float32).reshape((-1, 3))
         self._normal_count = len(mesh_data['normals'])
-        self._vertices['normal'] = np.asarray(mesh_data['normals'], dtype=np.float32).reshape((-1, 3))
-
+        self._verts['normal'] = np.asarray(mesh_data['normals'], dtype=np.float32).reshape((-1, 3))
         self._faces = mesh_data['faces']
         self._triangles = [tuple(f) for f in self._faces]
         self._triangle_count = len(self._triangles)
@@ -457,13 +461,10 @@ class Mesh:
 
         self._index_count = self._triangle_count * 3
         self._indices = np.asarray([f[0] for f in mesh_data['faces']], dtype=np.uint32).reshape((-1, 3))
-
         self._uv_count = len(mesh_data['texcoords'])
-        self._vertices['texcoord'] = np.asarray(mesh_data['texcoords'], dtype=np.float32).reshape((-1, 2))
-
-        self._vertices['color'] = Mesh._process_color(self._vertex_count, color)
-
-        self._vertices['tangents'] = self._compute_tangents()
+        self._verts['texcoord'] = np.asarray(mesh_data['texcoords'], dtype=np.float32).reshape((-1, 2))
+        self._verts['color'] = Mesh._process_color(self._vertex_count, color)
+        self._verts['tangents'] = self._compute_tangents()
 
         for name, mat in mesh_data['materials'].items():
             mtl_name = f'{self._name}_{name}'
@@ -493,7 +494,7 @@ class Mesh:
                     sub_obj_materials.append((mtl_idx, f_start, f_end))
 
             # will populate a default color
-            color = self._vertices['color'][0]
+            color = self._verts['color'][0]
             vertex_attribs = [VertexAttribDescriptor(VertexAttrib.Position, VertexAttribFormat.Float32, 3),
                               VertexAttribDescriptor(VertexAttrib.Color0, VertexAttribFormat.Float32, 4)]
 
@@ -523,16 +524,16 @@ class Mesh:
                 for face in self._faces[f_start: f_end]:
                     i = 0
                     for v_i in face[i]:
-                        v_positions.append(self._vertices['position'][v_i])
-                        v_tangents.append(self._vertices['tangents'][v_i])
+                        v_positions.append(self._verts['position'][v_i])
+                        v_tangents.append(self._verts['tangents'][v_i])
                     i += 1
                     if sub_mesh.vertex_layout.has(VertexAttrib.TexCoord0):
                         for vt_i in face[i]:
-                            v_texcoords.append(self._vertices['texcoord'][vt_i])
+                            v_texcoords.append(self._verts['texcoord'][vt_i])
                         i += 1
                     if sub_mesh.vertex_layout.has(VertexAttrib.Normal):
                         for vn_i in face[i]:
-                            v_normals.append(self._vertices['normal'][vn_i])
+                            v_normals.append(self._verts['normal'][vn_i])
 
                 # create one interleaved buffer
                 vertex_count = len(v_positions)
@@ -636,11 +637,11 @@ class Mesh:
         """
         tangent = np.array([0.0, 0.0, 0.0], dtype=np.float32)
 
-        if len(self._vertices['texcoord']) == 0:
+        if len(self._verts['texcoord']) == 0:
             return np.array([0.0, 0.0, 0.0], dtype=np.float32)
         for tri_idx in vertex_triangles[vertex_id]:
-            vertices = [self._vertices['position'][i] for i in self._triangles[tri_idx][0]]
-            uvs = [self._vertices['texcoord'][i] for i in self._triangles[tri_idx][1]]
+            vertices = [self._verts['position'][i] for i in self._triangles[tri_idx][0]]
+            uvs = [self._verts['texcoord'][i] for i in self._triangles[tri_idx][1]]
             # edges (delta vertex positions)
             delta_pos = [vertices[i] - vertices[0] for i in (1, 2)]
             # delta uvs
@@ -674,17 +675,17 @@ class Mesh:
     @property
     def vertices(self):
         """Returns the vertex positions."""
-        return self._vertices['position']
+        return self._verts['position']
 
     @vertices.setter
     def vertices(self, positions):
-        self._vertices['positions'] = np.asarray(positions, dtype=np.float32).ravel()
-        self._vertex_count = len(self._vertices['positions']) / 3
+        self._verts['positions'] = np.asarray(positions, dtype=np.float32).ravel()
+        self._vertex_count = len(self._verts['positions']) / 3
 
     @property
     def uvs(self):
         """Returns the vertex uvs."""
-        return self._vertices['texcoord']
+        return self._verts['texcoord']
 
     @property
     def vertex_count(self):
@@ -694,22 +695,22 @@ class Mesh:
     @property
     def colors(self):
         """Vertex colors of the mesh."""
-        return self._vertices['color']
+        return self._verts['color']
 
     @colors.setter
     def colors(self, colors):
         """Vertex colors of the mesh."""
-        self._vertices['color'] = np.asarray(colors, dtype=np.float32).ravel()
+        self._verts['color'] = np.asarray(colors, dtype=np.float32).ravel()
 
     @property
     def vertex_normals(self):
         """Vertex normals of the mesh."""
-        return self._vertices['normal']
+        return self._verts['normal']
 
     @vertex_normals.setter
     def vertex_normals(self, normals):
         """Vertex normals of the mesh."""
-        self._vertices['normal'] = normals
+        self._verts['normal'] = normals
 
     @property
     def triangles(self):
@@ -779,15 +780,15 @@ class Mesh:
             for i in range(0, 3):
                 if i == 0:
                     for v_i in tri[i]:  # positions
-                        v_positions.append(self._vertices['position'][v_i])
-                        v_colors.append(self._vertices['color'][v_i])
+                        v_positions.append(self._verts['position'][v_i])
+                        v_colors.append(self._verts['color'][v_i])
                         v_tangents.append(tangents[v_i])
                 if i == 1:
                     for vt_i in tri[i]:  # uvs
-                        v_uvs.append(self._vertices['texcoord'][vt_i])
+                        v_uvs.append(self._verts['texcoord'][vt_i])
                 if i == 2:
                     for vn_i in tri[i]:  # normals
-                        v_normals.append(self._vertices['normal'][vn_i])
+                        v_normals.append(self._verts['normal'][vn_i])
 
         sub_mesh.vertex_count = len(v_positions)
 
