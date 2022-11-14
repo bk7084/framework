@@ -13,7 +13,8 @@ from ..math import Vec3, Vec4, Mat4
 
 
 class Camera:
-    def __init__(self, pos, look_at, up, aspect_ratio, fov_v=45.0, near=0.1, far=1000., degrees=True, zoom_enabled=False, safe_rotations=True):
+    def __init__(self, pos, look_at, up, aspect_ratio, fov_v=45.0, near=0.1, far=1000., degrees=True,
+                 zoom_enabled=False, safe_rotations=True, zoom_speed=0.25):
         self._pos = Vec3(pos)
         self._look_at = Vec3(look_at)
         self._up = Vec3(up)
@@ -27,6 +28,7 @@ class Camera:
         self._d_angle_y = 0.
         self._zoom_enabled = zoom_enabled
         self._safe_rotations = safe_rotations
+        self._zoom_speed = zoom_speed
 
     @property
     def position(self):
@@ -160,6 +162,6 @@ class Camera:
     def on_mouse_scroll(self, x, y, x_offset, y_offset, min_dist=1e-5):
         if self._zoom_enabled:
             look_dir = (self.look_at - self.position).normalise()
-            pos = self.position + look_dir * y_offset * 0.25
+            pos = self.position + look_dir * y_offset * self._zoom_speed
             if pos.norm > min_dist:
                 self.update_view(pos, self.look_at, self.up)

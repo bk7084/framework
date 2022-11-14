@@ -472,9 +472,9 @@ class Window(event.EventDispatcher):
         return glfw.get_cursor_pos(self._native_window)
 
     def create_camera(self, pos, look_at, up, fov_v=45.0, near=0.1, far=1000., degrees=True, zoom_enabled=False,
-                      safe_rotations=True):
+                      safe_rotations=True, zoom_speed=0.25):
         self._camera = Camera(pos, look_at, up, self._width / self._height, fov_v, near, far, degrees, zoom_enabled,
-                              safe_rotations)
+                              safe_rotations, zoom_speed)
         self.attach_listeners(self._camera)
 
     @property

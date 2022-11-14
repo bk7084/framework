@@ -222,7 +222,7 @@ class Building(Entity):
                         else:
                             sub_mesh_dict[texture] = [sub_mesh]
                 else:
-                    sub_mesh = SubMesh(triangles=(np.arange(n_triangles) + tri_offset).tolist())
+                    sub_mesh = SubMesh(faces=(np.arange(n_triangles) + tri_offset).tolist())
                     texture = mesh._texture_path
                     if texture in sub_mesh_dict:
                         sub_mesh_dict[texture].append(sub_mesh)

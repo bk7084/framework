@@ -1,11 +1,18 @@
 import os.path
+from dataclasses import dataclass
 
 import numpy as np
 
 from .texture import Texture
 
 
-class Material:
+# TODO: implement texture properties
+
+
+@dataclass(frozen=False)
+class MaterialData:
+    __slots__ = ('name', 'ambient', 'diffuse', 'specular', 'diffuse_map', 'bump_map', 'normal_map',
+                 'shininess', 'refractive_index', 'dissolve', 'illumination_model')
     """
     Note: case-insensitive when parsing.
 
@@ -30,10 +37,11 @@ class Material:
     map_d: Opacity texture map
     refl: reflection map
     """
+
     def __init__(self, name,
                  diffuse_map: Texture = None, bump_map: Texture = None, normal_map: Texture = None,
-                 ambient=(0.8, 0.8, 0.8), diffuse=(0.8, 0.8, 0.8), specular=(1.0, 1.0, 1.0), shininess=1.0, ior=1.0,
-                 dissolve=1.0, illum=2):
+                 ambient=(0.8, 0.8, 0.8), diffuse=(0.8, 0.8, 0.8), specular=(1.0, 1.0, 1.0),
+                 shininess=1.0, ior=1.0, dissolve=1.0, illum=2):
         self.name = name  # material name
         self.ambient = np.asarray(ambient, dtype=np.float32)  # Ka
         self.diffuse = np.asarray(diffuse, dtype=np.float32)  # Kd
@@ -68,3 +76,27 @@ class Material:
                                            self.shininess,
                                            self.refractive_index,
                                            self.dissolve)
+
+
+class Material:
+    __slots__ = ('_data',)
+
+    def __init__(self, name, ka=(0.6, 0.6, 0.6), kd=(0.8, 0.8, 0.8), ks=(0.8, 0.8, 0.8), shininess=1.0,
+                 diffuse_map_path: str = None, normal_map_path: str = None, bump_map_path: str = None, **kwargs):
+        from ..assets import default_asset_mgr as mgr
+        self._data: MaterialData = mgr.get_or_create_material(name=name, ambient=ka, diffuse=kd, specular=ks,
+                                                              shininess=shininess,
+                                                              diffuse_map_path=diffuse_map_path,
+                                                              normal_map_path=normal_map_path,
+                                                              bump_map_path=bump_map_path, **kwargs)
+
+    @property
+    def inner(self):
+        return self._data
+
+    def __getattr__(self, item):
+        return getattr(self._data, item)
+
+    @property
+    def name(self):
+        return self._data.name

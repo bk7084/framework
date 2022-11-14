@@ -380,7 +380,7 @@ class Scene:
             gl.glPolygonMode(gl.GL_FRONT_AND_BACK, old_polygon_mode)
 
         if self._draw_light:
-            self._light_sphere.transformation = Mat4.from_translation(self._lights[self._current_light].position)
+            self._light_sphere.transform = Mat4.from_translation(self._lights[self._current_light].position)
             self._light_sphere.draw(camera=self._cameras[self._main_camera])
 
     def _bind_light(self, pipeline, light):
@@ -495,7 +495,7 @@ class Scene:
             gl.glPolygonMode(gl.GL_FRONT_AND_BACK, current_polygon_mode)
 
         if self._draw_light:
-            self._light_sphere.transformation = Mat4.from_translation(self._lights[self._current_light].position)
+            self._light_sphere.transform = Mat4.from_translation(self._lights[self._current_light].position)
             self._light_sphere.draw(camera=self._cameras[self._main_camera])
 
 

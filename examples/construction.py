@@ -28,9 +28,9 @@ class Wall(Component):
             vertex_shader='shaders/example.vert',
             pixel_shader='shaders/example.frag')
 
-        self._mesh.update_sub_mesh(0, SubMesh(name='body', triangles=[0, 1, 2, 3], normal_map_enabled=True),
+        self._mesh.update_sub_mesh(0, SubMesh(name='body', faces=[0, 1, 2, 3], enable_normal_map=True),
                                    texture='models/brick.jpg', normal_map='models/brick_normal_map.png')
-        self._mesh.append_sub_mesh(SubMesh(name='window', triangles=[4]), texture='models/window.jpg')
+        self._mesh.append_sub_mesh(SubMesh(name='window', faces=[4]), texture='models/window.jpg')
                                    # pixel_shader='shaders/example2.frag')
         self._mesh.texture_enabled = True
         # self._mesh.apply_transformation(Mat4.from_rotation_y(45, True))

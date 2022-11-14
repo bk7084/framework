@@ -265,6 +265,7 @@ sphere = Mesh("./models/uv_sphere.obj",
 # cube.texture_enabled = False
 # print(sphere.alternate_texture_enabled)
 cube = default_asset_mgr.get_or_create_mesh('cube', 'models/cube.obj')
+cube.texture_enabled = True
 
 model = Mesh("./models/spot_cow.obj",
              texture='./textures/checker.png',
@@ -272,8 +273,9 @@ model = Mesh("./models/spot_cow.obj",
              )
 model.cast_shadow = True
 model.apply_transform(Mat4.from_translation(Vec3(2.0, 0.0, 2.0)))
+model.texture_enabled = True
 
-cube.transformation = model.bounds_transform
+cube.transformation = model.transformation
 
 ground = Mesh(
     vertices=[[-10.0, 0.0, -10.0],
@@ -283,11 +285,12 @@ ground = Mesh(
     colors=[PaletteDefault.GreenB.as_color()],
     normals=[[0, 1, 0]],
     uvs=[[0.0, 0.0], [1.0, 0.0], [1.0, 1.0], [0.0, 1.0]],
-    triangles=[[(0, 1, 2, 3), (0, 1, 2, 3), (0, 0, 0, 0)]],
+    faces=[[(0, 1, 2, 3), (0, 1, 2, 3), (0, 0, 0, 0)]],
     texture='./textures/checker.png',
     # vertex_shader=vertex_src,
     # pixel_shader=fragment_src,
 )
+ground.texture_enabled = True
 
 # scene = Scene(window, [cube, ground], light=DirectionalLight(), draw_light=False)
 scene = Scene(window, [sphere, ground, model, cube], draw_light=True)
@@ -356,6 +359,7 @@ def on_update(dt):
     if animate:
         sphere.apply_transform(Mat4.from_axis_angle(Vec3.unit_y(), 45 * dt, True))
         model.apply_transform(Mat4.from_axis_angle(Vec3.unit_y(), -45 * dt, True))
+        cube.apply_transform(Mat4.from_axis_angle(Vec3.unit_y(), -15 * dt, True))
 
 
 app.init(window)

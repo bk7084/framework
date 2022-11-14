@@ -8,7 +8,7 @@ from .image import Image
 from .. import gl
 from ..graphics.program import ShaderProgram
 from ..graphics.shader import Shader, ShaderType
-from ..graphics.material import Material
+from ..graphics.material import MaterialData
 from ..graphics.texture import TextureWrapMode, FilterMode, TextureKind, Texture
 from ..scene import mesh
 
@@ -79,9 +79,8 @@ class AssetManager:
         return self._textures[texture_name]
 
     def get_or_create_material(self, name, ambient=(0.8, 0.8, 0.8), diffuse=(0.8, 0.8, 0.8), specular=(1.0, 1.0, 1.0),
-                               shininess=1.0, ior=1.0, dissolve=1.0, illum=2, **kwargs) -> Material:
+                               shininess=1.0, ior=1.0, dissolve=1.0, illum=2, **kwargs) -> MaterialData:
         """
-
         Args:
             name (str): name of the material
             ambient (array of 3 elements): ambient color
@@ -124,8 +123,8 @@ class AssetManager:
             diffuse_map = self.get_or_create_texture(diffuse_map_path)
             bump_map = self.get_or_create_texture(bump_map_path, TextureKind.BumpMap)
             normal_map = self.get_or_create_texture(normal_map_path, TextureKind.NormalMap)
-            material = Material(name, diffuse_map, bump_map, normal_map, ambient, diffuse, specular, shininess, ior,
-                                dissolve, illum)
+            material = MaterialData(name, diffuse_map, bump_map, normal_map, ambient, diffuse, specular, shininess, ior,
+                                    dissolve, illum)
             self._materials[name] = material
 
         logging.info(f'Load material <{name}>')
@@ -213,7 +212,7 @@ class AssetManager:
 
         return self._meshes[name]
 
-    def get_or_load_wavefront_obj(self, filepath: str, resolver=None):
+    def get_or_load_wavefront_obj(self, filepath: str, resolver=None) -> dict:
         """
         Load a model from a file path if it is not loaded yet.
 

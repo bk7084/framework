@@ -106,7 +106,7 @@ class WavefrontReader:
 
         materials = {}
 
-        for matched in re.finditer('mtllib\s(?P<mtl>.*)', content):
+        for matched in re.finditer(r'mtllib\s(?P<mtl>.*)', content):
             if resolver:
                 mtl_path = resolver.resolve(matched.group('mtl'))
             else:
@@ -125,7 +125,6 @@ class WavefrontReader:
         for line in content.splitlines():
             # split by whitespace
             line = line.split()
-
             # skip blank line
             if len(line) == 0:
                 continue
@@ -142,7 +141,7 @@ class WavefrontReader:
                 obj_name = obj_name if len(obj_name) > 0 else default_object.format(c_obj_idx)
                 # initialise a new object
                 objects.append({
-                    'name': obj_name,
+                    'name': f'{key}_{obj_name}',
                     'vertex_range': [len(positions), -1],
                     'index_range': [len(indices) * 3, -1],
                     'texcoord_range': [len(texcoords), -1],
@@ -237,6 +236,37 @@ class WavefrontReader:
 
         objects[c_obj_idx]['vertex_format'] = vertex_format
 
+        # Deal with the case `group` is used after `object` right before the usemtl statement
+        # instead of using the usemtl statement directly after the object statement.
+        # o object_name
+        # v ...
+        # vt ...
+        # vn ...
+        # g group_name
+        # usemtl material_name
+        # f ...
+        tobe_removed = []
+        if len(objects) > 1:
+            for i in range(0, len(objects), 2):
+                first = objects[i]
+                if i + 1 < len(objects):
+                    second = objects[i + 1]
+                    if second['vertex_range'][0] == second['vertex_range'][1] and \
+                            second['index_range'][0] == second['index_range'][1] and \
+                            second['texcoord_range'][0] == second['texcoord_range'][1] and \
+                            second['normal_range'][0] == second['normal_range'][1] and \
+                            first['vertex_range'][1] == second['vertex_range'][0] and \
+                            first['index_range'][1] == second['index_range'][0] and \
+                            first['texcoord_range'][1] == second['texcoord_range'][0] and \
+                            first['normal_range'][1] == second['normal_range'][0]:
+                        second['vertex_range'][0] = first['vertex_range'][0]
+                        second['index_range'][0] = first['index_range'][0]
+                        second['texcoord_range'][0] = first['texcoord_range'][0]
+                        second['normal_range'][0] = first['normal_range'][0]
+                        tobe_removed.append(i)
+                    for j in tobe_removed:
+                        objects.pop(j)
+
         return {
             'positions': positions,
             'texcoords': texcoords,
@@ -276,7 +306,7 @@ class WavefrontReader:
             }
         """
         materials = {}
-        
+
         with open(path) as file:
             lines = remove_comments('#', file.read()).strip().splitlines()
 
@@ -294,8 +324,10 @@ class WavefrontReader:
                 elif key in OBJ_MTL_TEXTURES:
                     # textures
                     index = OBJ_MTL_TEXTURES.index(key)
-                    key_name = key if index < 7 else ('map_norm' if index <= 14 else ('map_disp' if index <= 18 else 'map_bump'))
-                    materials[current_material_name][key_name] = WavefrontReader._parse_texture(components[1:], resolver)
+                    key_name = key if index < 7 else (
+                        'map_norm' if index <= 14 else ('map_disp' if index <= 18 else 'map_bump'))
+                    materials[current_material_name][key_name] = WavefrontReader._parse_texture(components[1:],
+                                                                                                resolver)
                 else:
                     # other properties: Kd, Ka, Ks, d, illum, Ns, Ni
                     value = [float(x) for x in components[1:]]
@@ -339,8 +371,3 @@ class WavefrontReader:
             'path': texture_path,
             'params': params,
         }
-
-
-
-
-

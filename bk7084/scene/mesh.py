@@ -7,12 +7,12 @@ from typing import List
 
 import numpy as np
 
-from .loader.obj import WavefrontReader
 from .. import gl
 from ..assets.manager import default_asset_mgr, default_name_mgr
 from ..assets.resolver import default_resolver
 from ..graphics.array import VertexArrayObject
 from ..graphics.buffer import VertexBuffer, IndexBuffer
+from ..graphics.material import Material
 from ..graphics.vertex_layout import VertexLayout, VertexAttrib, VertexAttribDescriptor, VertexAttribFormat
 from ..math import Mat4, Vec3
 from ..misc import PaletteDefault, Color
@@ -20,6 +20,7 @@ from ..misc import PaletteDefault, Color
 
 # todo: face normals
 # todo: sub-meshes and render records
+# todo: use sub-meshes textures
 
 
 @dataclass(frozen=True)
@@ -81,28 +82,35 @@ class SubMesh:
     which refer to a set of vertices(referenced by index). Vertices can be shared between
     multiple sub-meshes.
 
-    Structure maintained inside `Mesh` class.
+    Note: this is a structure maintained inside `Mesh` class, and should not be used directly.
     """
 
+    __slots__ = ['name', 'faces', 'vertex_count', 'topology', 'vertex_layout',
+                 'normal_map_enabled', 'bump_map_enabled', 'parallax_map_enabled']
+
     def __init__(self,
-                 triangles=None,
+                 faces=None,
                  name='',
                  topology=MeshTopology.Triangles,
                  vertex_layout=VertexLayout.default(),
-                 normal_map_enabled=False):
+                 enable_normal_map=False,
+                 enable_bump_map=False,
+                 enable_parallax_map=False):
         self.name: str = name
-        self.triangles: [] = [] if triangles is None else triangles  # index of faces
-        self.vertex_count: int = len(triangles) * 3 if triangles is not None else 0
+        self.faces: [] = [] if faces is None else faces  # index of faces
+        self.vertex_count: int = len(faces) * 3 if faces is not None else 0
         self.topology: MeshTopology = topology
         self.vertex_layout: VertexLayout = vertex_layout
-        self.normal_map_enabled: bool = normal_map_enabled
+        self.normal_map_enabled: bool = enable_normal_map
+        self.bump_map_enabled: bool = enable_bump_map
+        self.parallax_map_enabled: bool = enable_parallax_map
 
     @staticmethod
     def from_submeshes(sub_meshes, name=''):
         triangles = []
         for sub_mesh in sub_meshes:
-            triangles += sub_mesh.triangles
-        return SubMesh(triangles=triangles, name=name)
+            triangles += sub_mesh.faces
+        return SubMesh(faces=triangles, name=name)
 
 
 class Mesh:
@@ -120,7 +128,13 @@ class Mesh:
 
     The mesh face data (triangles) is made of three vertex indices for each triangle.
     """
-
+    __slots__ = ['_vertex_layout', '_index_count', '_verts', '_indices', '_faces',
+                 '_faces_triangulation', '_triangle_count', '_triangles', '_materials',
+                 '_render_records', '_name', '_sub_meshes_raw', '_sub_meshes', '_sub_mesh_count',
+                 '_pipelines', '_init_transform', '_transform', '_shading_enabled',
+                 '_normal_map_enabled', '_bump_map_enabled', '_parallax_map_enabled', '_vertex_buffers',
+                 '_index_buffers', '_vertex_array_objects', '_cast_shadow', '_material_enabled', '_texture_enabled'
+                 ]
     DEFAULT_COLOR = PaletteDefault.BrownB.as_color()
 
     def __init__(self, filepath=None, resolver=default_resolver, **kwargs):
@@ -128,8 +142,9 @@ class Mesh:
         Creation and initialisation of a Mesh. A mesh can be created by:
 
         1. reading a OBJ file
-        2. compositing geometry shapes
-        3. providing vertices and its attributes
+        2. providing vertices and its attributes
+
+        Materials(including textures) are specified by specifying the sub-meshes.
 
         Note:
             If `filepath` is specified, this function will skip arguments inside `kwargs`.
@@ -164,9 +179,6 @@ class Mesh:
 
                 uvs: (array like):
                     Specifies the uv coordinates of the vertices.
-
-                texture: (str):
-                    Specifies the texture image file.
 
                 initial_transform (Mat4):
                     Specifies the initial transform of the mesh. Can also be specified after the mesh is created.
@@ -222,10 +234,7 @@ class Mesh:
         self._triangle_count = 0
         self._triangles = []
 
-        self._materials = [default_asset_mgr.get_or_create_material('default_material')]
-        _texture_path = kwargs.get('texture', None)
-        self._texture = default_asset_mgr.get_or_create_texture(_texture_path) if _texture_path is not None else None
-
+        self._materials = [Material("bk7084_default_material")]
         self._render_records = {}  # records the rendering information, (sub_mesh_index: mtl_render_record)
         self._sub_meshes = []
         self._sub_meshes_raw = []  # stores the unprocessed submesh inputs, for easy merging of meshes
@@ -235,17 +244,6 @@ class Mesh:
                                                      vertex_shader='shaders/default.vert',
                                                      pixel_shader='shaders/default.frag')
         ]
-        self._use_customised_pipeline = False
-
-        vertex_shader = kwargs.get('vertex_shader', None)
-        pixel_shader = kwargs.get('pixel_shader', None)
-
-        if vertex_shader is not None or pixel_shader is not None:
-            self._pipelines.append(default_asset_mgr.get_or_create_pipeline(f'{id(self)}_default_pipeline',
-                                                                            vertex_shader,
-                                                                            pixel_shader))
-            self._use_customised_pipeline = True
-
         # initial transformation applied to the mesh
         self._init_transform: Mat4 = kwargs.get('initial_transformation', Mat4.identity())
         # transformation applied to the mesh
@@ -267,10 +265,10 @@ class Mesh:
         colors = kwargs.get('colors', [Mesh.DEFAULT_COLOR])
         if filepath:  # load from file
             self._name = default_name_mgr.get_name(hashlib.md5(filepath.encode('utf-8')).hexdigest())
-            self._load_from_file(filepath, colors, kwargs.get('texture', None), resolver)
+            self._load_from_file(filepath, colors, resolver)
         else:  # load from vertices, uvs, normals, faces
             self._name = kwargs.get('name',
-                                    f'unnamed_{self.__class__.__name__}_{default_name_mgr.get_name(self.__class__.__name__)}')
+                                    f'{default_name_mgr.get_name("unnamed_mesh")}')
             self._verts['position'].data = np.asarray(kwargs['vertices'], dtype=np.float32).reshape(
                 (-1, 3)) if 'vertices' in kwargs else None
             self._verts['position'].count = len(self._verts['position'].data)
@@ -302,17 +300,17 @@ class Mesh:
                                      f"texture coordinates indices, and normal indices: {face}.")
                 if len(face[0]) < 3:
                     raise ValueError(f"Mesh creation - a face must have at least 3 vertices: {face}.")
-                self._faces.append(Face(face[0], face[1], face[2]))
+                self._faces.append(Face(*face))
             self._verts['color'] = Mesh._process_color(self._verts['position'].count, colors)
             self._verts['topology'] = [[] for _ in range(self._verts['position'].count)]
 
             # Triangulate faces into triangles and store the indices of triangles of each face.
-            self._triangles = []
+            _triangles = []
             self._triangle_count = 0
             for f in self._faces:
                 if f.is_triangle:
-                    self._faces_triangulation.append(len(self._triangles))
-                    self._triangles.append(
+                    self._faces_triangulation.append(len(_triangles))
+                    _triangles.append(
                         (
                             (f.vs[0], f.vs[1], f.vs[2]),
                             (f.vts[0], f.vts[1], f.vts[2]),
@@ -323,7 +321,7 @@ class Mesh:
                     for p in f.vs:
                         self._verts['topology'][p].append(self._triangle_count - 1)
                 else:
-                    self._faces_triangulation.append(len(self._triangles))
+                    self._faces_triangulation.append(len(_triangles))
                     triangulated = []
                     for i in range(0, f.vertex_count - 2):
                         triangulated.append(
@@ -336,21 +334,21 @@ class Mesh:
                         self._triangle_count += 1
                         for p in triangulated[-1][0]:
                             self._verts['topology'][p].append(self._triangle_count - 1)
-                    self._triangles.extend(triangulated)
-            # self._triangles = np.asarray(_triangles, dtype=np.int32).reshape((-1, 3, 3))
+                    _triangles.extend(triangulated)
+            self._triangles = np.asarray(_triangles, dtype=np.uint32).reshape((-1, 3, 3))
             self._indices = np.asarray(self._triangles, dtype=np.uint32).ravel()
             self._index_count = len(self._indices)
             if not self._verts['texcoord'].is_empty:
-                self._verts['tangents'] = compute_tangent(self._verts['position'], self._verts['texcoord'],
-                                                          self._triangles, self._verts['topology'])
+                self._verts['tangents'] = compute_all_tangents(self._verts['position'], self._verts['texcoord'],
+                                                               self._triangles, self._verts['topology'])
             else:
                 self._verts['tangents'] = np.zeros((self._verts['position'].count, 3), dtype=np.float32)
             self._sub_mesh_count = 1
             sub_mesh = SubMesh(
-                name=f"{self._name}-{self._materials[0].name}",
+                name=f"{self._name}_sub_{self._materials[0].name}",
                 topology=MeshTopology.Triangles,
                 vertex_layout=self._vertex_layout,
-                triangles=self._faces
+                faces=self._faces
             )
             # create rendering record
             v_positions = []
@@ -383,10 +381,9 @@ class Mesh:
             vao.bind_vertex_buffer(vbo, [0, 1, 2, 3, 4])
 
             self._sub_meshes = [sub_mesh]
-            pipeline = 1 if self._use_customised_pipeline else 0
+            # TODO: store sub-meshes pipelines
             self._render_records = {
-                0: MtlRenderRecord(0, len(self._vertex_array_objects), len(self._vertex_buffers), len(v_positions),
-                                   pipeline)
+                0: MtlRenderRecord(0, len(self._vertex_array_objects), len(self._vertex_buffers), len(v_positions), 0)
             }
 
             self._vertex_array_objects.append(vao)
@@ -419,8 +416,6 @@ class Mesh:
             mtl = self._materials[record.mtl_idx]
             topology = self._sub_meshes[sub_mesh_idx].topology.value
             diffuse_map = mtl.diffuse_map
-            if self._texture_enabled and self._texture is not None:
-                diffuse_map = self._texture
             transform = self._transform * self._init_transform
             if pipeline.uuid not in info:
                 info[pipeline.uuid] = []
@@ -484,14 +479,6 @@ class Mesh:
         self._material_enabled = value
 
     @property
-    def alternate_texture_enabled(self):
-        return self._alternate_texture_enabled
-
-    @alternate_texture_enabled.setter
-    def alternate_texture_enabled(self, value):
-        self._alternate_texture_enabled = value
-
-    @property
     def cast_shadow(self):
         return self._cast_shadow
 
@@ -499,20 +486,14 @@ class Mesh:
     def cast_shadow(self, value):
         self._cast_shadow = value
 
-    def load(self):
-        if os.path.exists(self._name):
-            self._load_from_file(self._name, self._tmp_colors)
-
-    def _load_from_file(self, filepath, color, texture=None, resolver=default_resolver):
-        reader = WavefrontReader(filepath, resolver)
-        mesh_data = reader.read()
-
+    def _load_from_file(self, filepath, color, resolver=default_resolver):
+        mesh_data = default_asset_mgr.get_or_load_wavefront_obj(filepath, resolver)
         self._verts['position'].data = np.asarray(mesh_data['positions'], dtype=np.float32).reshape((-1, 3))
         self._verts['position'].count = len(mesh_data['positions'])
         self._verts['normal'].data = np.asarray(mesh_data['normals'], dtype=np.float32).reshape((-1, 3))
         self._verts['normal'].count = len(mesh_data['normals'])
         self._faces = mesh_data['faces']
-        self._triangles = [tuple(f) for f in self._faces]
+        self._triangles = np.array(self._faces).reshape((-1, 3, 3))
         self._triangle_count = len(self._triangles)
         self._verts['topology'] = [[] for _ in range(0, self._verts['position'].count)]
         for i, tri in enumerate(self._triangles):
@@ -524,16 +505,22 @@ class Mesh:
         self._verts['texcoord'].count = len(mesh_data['texcoords'])
         self._verts['texcoord'].data = np.asarray(mesh_data['texcoords'], dtype=np.float32).reshape((-1, 2))
         self._verts['color'] = Mesh._process_color(self._verts['position'].count, color)
-        self._verts['tangents'] = compute_tangent(self._verts['position'], self._verts['texcoord'], self._triangles, self._verts['topology'])
+        if not self._verts['texcoord'].is_empty:
+            self._verts['tangent'] = compute_all_tangents(self._verts['position'], self._verts['texcoord'],
+                                                          self._triangles, self._verts['topology'])
+        else:
+            self._verts['tangent'] = np.zeros((self._verts['position'].count, 3), dtype=np.float32)
 
+        # Loaded model has a name like "{hash(filepath)}_000", to avoid creating multiple times the same materials,
+        # we remove the _000 suffix from the name, so that the material is shared between all meshes with the same name.
         for name, mat in mesh_data['materials'].items():
-            mtl_name = f'{self._name}_{name}'
+            mtl_name = f"{'_'.join(self._name.split('_')[:-1])}_{name}"
             self._materials.append(
-                default_asset_mgr.get_or_create_material(
-                    name,
-                    ambient=mat.get('Ka', [0.8, 0.8, 0.8]),
-                    diffuse=mat.get('Kd', [0.8, 0.8, 0.8]),
-                    specular=mat.get('Ks', [1.0, 1.0, 1.0]),
+                Material(
+                    mtl_name,
+                    ka=mat.get('Ka', [0.8, 0.8, 0.8]),
+                    kd=mat.get('Kd', [0.8, 0.8, 0.8]),
+                    ks=mat.get('Ks', [1.0, 1.0, 1.0]),
                     shininess=mat.get('Ns', 1.0),
                     ior=mat.get('Ni', 1.0),
                     dissolve=mat.get('d', 1.0),
@@ -547,9 +534,9 @@ class Mesh:
         for sub_obj in mesh_data['objects']:
             sub_obj_materials = []
             for mtl in sub_obj['materials']:
-                mtl_name = mtl['name']
+                mtl_name = f"{'_'.join(self._name.split('_')[:-1])}_{mtl['name']}"
                 f_start, f_end = tuple(mtl['f_range'])
-                mtl_idx = self._materials.index([x for x in self._materials if x.name.endswith(mtl_name)][0])
+                mtl_idx = self._materials.index([x for x in self._materials if x.name == mtl_name][0])
                 if mtl_idx != -1 and mtl_idx < len(self._materials):
                     sub_obj_materials.append((mtl_idx, f_start, f_end))
 
@@ -569,14 +556,11 @@ class Mesh:
             # pack the data together for rendering
             for mtl in sub_obj_materials:
                 mtl_idx, f_start, f_end = mtl
-
                 sub_mesh = SubMesh(
                     name=f"{sub_obj['name']}-{self._materials[mtl[0]].name}",
-                    triangles=list(range(f_start, f_end))
+                    faces=list(range(f_start, f_end))
                 )
-
                 sub_mesh.vertex_layout = VertexLayout(*vertex_attribs)
-
                 v_positions = []
                 v_normals = []
                 v_texcoords = []
@@ -585,7 +569,7 @@ class Mesh:
                     i = 0
                     for v_i in face[i]:
                         v_positions.append(self._verts['position'][v_i])
-                        v_tangents.append(self._verts['tangents'][v_i])
+                        v_tangents.append(self._verts['tangent'][v_i])
                     i += 1
                     if sub_mesh.vertex_layout.has(VertexAttrib.TexCoord0):
                         for vt_i in face[i]:
@@ -638,10 +622,8 @@ class Mesh:
 
                 sub_mesh_index = len(self._sub_meshes) - 1
 
-                pipeline = len(self._pipelines) - 1 if self._use_customised_pipeline else 0
                 self._render_records[sub_mesh_index] = MtlRenderRecord(mtl_idx, vao_idx, vbo_idx, vertex_count,
-                                                                       pipeline)
-
+                                                                       0)
         self._sub_mesh_count = len(self._sub_meshes)
 
     @property
@@ -742,13 +724,13 @@ class Mesh:
         sub_mesh = self._sub_meshes[index]
         sub_mesh.name = new.name
         sub_mesh.vertex_count = new.vertex_count
-        sub_mesh.triangles = new.triangles
+        sub_mesh.faces = new.faces
         sub_mesh.topology = new.topology
         sub_mesh.normal_map_enabled = new.normal_map_enabled
 
         tri_list = []
         vertex_triangles = {}
-        for f_i in sub_mesh.triangles:
+        for f_i in sub_mesh.faces:
             start = self._faces_triangulation[f_i]
             end = len(self._triangles) if f_i >= len(self._faces_triangulation) - 1 else \
                 self._faces_triangulation[f_i + 1]
@@ -819,11 +801,13 @@ class Mesh:
 
         if texture is not None or normal_map is not None:
             mtl_idx = len(self._materials)
-            self._materials.append(default_asset_mgr.get_or_create_material(
-                f'material_[{texture}]',
-                diffuse_map_path=texture,
-                normal_map_path=normal_map
-            ))
+            self._materials.append(
+                Material(
+                    f'sub_mesh_material_{hashlib.md5(texture.encode("utf-8")).hexdigest()}',
+                    diffuse_map_path=texture,
+                    normal_map_path=normal_map,
+                )
+            )
             self._texture_enabled = True
 
         pipeline = 0
@@ -835,9 +819,6 @@ class Mesh:
                 )
             )
             pipeline = len(self._pipelines) - 1
-        else:
-            if self._use_customised_pipeline:
-                pipeline = 1
 
         self._render_records[index] = MtlRenderRecord(mtl_idx,
                                                       vao_idx,
@@ -851,6 +832,26 @@ class Mesh:
         self.update_sub_mesh(len(self._sub_meshes) - 1, sub_mesh, texture, normal_map, vertex_shader, pixel_shader,
                              create=True)
 
+    def _compute_tangent_of_vertex(self, vertex_id, vertex_triangles):
+        """
+        Compute tangent from Tangent space for given vertex (over whole mesh).
+        """
+        tangent = np.array([0.0, 0.0, 0.0], dtype=np.float32)
+
+        if self._verts['texcoord'].is_empty:
+            return np.array([0.0, 0.0, 0.0], dtype=np.float32)
+        for tri_idx in vertex_triangles[vertex_id]:
+            vertices = [self._verts['position'][i] for i in self._triangles[tri_idx][0]]
+            uvs = [self._verts['texcoord'][i] for i in self._triangles[tri_idx][1]]
+            # edges (delta vertex positions)
+            delta_pos = [vertices[i] - vertices[0] for i in (1, 2)]
+            # delta uvs
+            delta_uv = [uvs[i] - uvs[0] for i in (1, 2)]
+            det = delta_uv[0][0] * delta_uv[1][1] - delta_uv[0][1] * delta_uv[1][0]
+            if det != 0.0:
+                tangent += (delta_pos[0] * delta_uv[1][1] - delta_pos[1] * delta_uv[0][1]) / det
+        return tangent / np.sqrt(np.sum(tangent ** 2))
+
     def apply_transform(self, matrix: Mat4):
         self._transform = matrix * self._transform
         return self
@@ -863,19 +864,19 @@ class Mesh:
         self._transform = Mat4.identity()
 
     @property
-    def transformation(self):
+    def transform(self):
         return self._transform
 
-    @transformation.setter
-    def transformation(self, value: Mat4):
+    @transform.setter
+    def transform(self, value: Mat4):
         self._transform = value
 
     @property
-    def initial_transformation(self):
+    def init_transform(self):
         return self._init_transform
 
-    @initial_transformation.setter
-    def initial_transformation(self, value: Mat4):
+    @init_transform.setter
+    def init_transform(self, value: Mat4):
         self._init_transform = value
 
     @property
@@ -949,12 +950,6 @@ class Mesh:
 
                     pipeline['mtl.use_bump_map'] = self._bump_map_enabled
                     pipeline['mtl.use_parallax_map'] = self._parallax_map_enabled
-
-                    diffuse_map = mtl.diffuse_map
-
-                    if self._texture_enabled and self._texture is not None:
-                        diffuse_map = self._texture
-
                     pipeline['mtl.diffuse_map'] = 0
                     pipeline['mtl.bump_map'] = 1
                     pipeline['mtl.normal_map'] = 2
@@ -963,7 +958,7 @@ class Mesh:
                     depth_map = kwargs.get('shadow_map', None)
 
                     pipeline.active_texture_unit(0)
-                    with diffuse_map:
+                    with mtl.diffuse_map:
                         pipeline.active_texture_unit(1)
                         with mtl.bump_map:
                             pipeline.active_texture_unit(2)
@@ -979,14 +974,13 @@ class Mesh:
                                         gl.glDrawArrays(sub_mesh.topology.value, 0, record.vertex_count)
 
 
-def compute_tangent(positions: VertexAttribData,
-                    texcoords: VertexAttribData,
-                    triangles: List[tuple[tuple[int, int, int], tuple[int, int, int], tuple[int, int, int]]],
-                    topology: List[List[int]]) -> np.ndarray:
+def compute_all_tangents(positions: VertexAttribData,
+                         texcoords: VertexAttribData,
+                         triangles: np.ndarray,
+                         topology: List[List[int]]) -> np.ndarray:
     """
     Compute the tangent vector for all vertices in the mesh.
-    Compute tangent from Tangent space for given vertex (over whole mesh).
-        Note that only tangent is needed, bi-tangent can be computed in shader by cross product: N*T
+    Note that only tangent is needed, bi-tangent can be computed in shader by cross product: N*T
 
         e = edge in triangle space
         s = edge in texture space
@@ -1019,9 +1013,13 @@ def compute_tangent(positions: VertexAttribData,
     Args:
         positions (np.ndarray): The positions of all vertices in the mesh.
         texcoords (np.ndarray): The texture coordinates of all vertices in the mesh.
-        triangles (List[tuple[int, int, int]]): The triangles in the mesh.
-        topology (List[List[int]]): The topology information of the mesh. This is list containing indices of all triangles
-                  adjacent to a vertex.
+        triangles (np.ndarray): The triangles in the mesh, it is a 3D array with shape (n, 3, 3). First dimension is the
+                                triangle index, second dimension is the attributes of the vertex in the triangle,
+                                third dimension is the attribute values. For example, triangles[0, 0] is the vertices
+                                of the first triangle, triangles[0, 1] is the texture coordinates of the first triangle
+                                and triangles[0, 2] is the normals of the first triangle.
+        topology (List[List[int]]): The topology information of the mesh. This is list containing indices of all
+                                    triangles adjacent to a vertex.
     Returns:
         A list of tangent vectors for all vertices in the mesh.
     """
