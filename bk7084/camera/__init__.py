@@ -1,7 +1,7 @@
 # from __future__ import annotations
 
-import logging
 import math
+
 import OpenGL.GL as gl
 
 from .. import app
@@ -156,7 +156,7 @@ class Camera:
             pos = rot_y * (pos - pivot) + pivot
 
             new_cos_angle = Vec3(pos).normalise().dot(self.up)
-            if not(self.safe_rotations and abs(new_cos_angle) > 0.9):
+            if not (self.safe_rotations and abs(new_cos_angle) > 0.9):
                 self.update_view(pos, self.look_at, self.up)
 
     def on_mouse_scroll(self, x, y, x_offset, y_offset, min_dist=1e-5):

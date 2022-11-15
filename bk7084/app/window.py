@@ -16,7 +16,6 @@ from . import event
 from .input import KeyCode, MouseButton, KeyModifier
 from .. import misc, gl
 from ..camera import Camera
-from ..graphics import VertexShader, PixelShader, ShaderProgram
 from ..math import Vec2
 
 # temporary work around to have access of OpenGL context before the app is initialised
@@ -112,6 +111,7 @@ class Window(event.EventDispatcher):
         self._y = 0
         self._clear_color = kwargs.get('clear_color', misc.PaletteDefault.Background)
         self._camera = None
+        self._frame_rate = 0
 
         atexit.register(self._delete)
 
@@ -358,7 +358,6 @@ class Window(event.EventDispatcher):
         self._current_time = time.time()
         elapsed = self._current_time - self._previous_time
         self._previous_time = self._current_time
-
         return elapsed
 
     @property
@@ -374,19 +373,26 @@ class Window(event.EventDispatcher):
         while not glfw.window_should_close(self._native_window):
             # update time
             dt = self.delta_time
+            self._frame_rate = int(1.0 / dt)
 
             # process inputs
             glfw.poll_events()
 
             if self._gui:
+                self._gui.process_inputs()
+                imgui.new_frame()
+                imgui.set_next_window_position(self._width - 150, 30)
+                imgui.set_next_window_size(120, 20)
+                imgui.begin('Frame Rate', False,
+                            imgui.WINDOW_NO_TITLE_BAR | imgui.WINDOW_NO_RESIZE | imgui.WINDOW_NO_MOVE)
+                imgui.text(f'framerate: {self._frame_rate}')
+                imgui.end()
                 if 'on_gui' in self._event_listeners and len(self._event_listeners['on_gui']) > 0:
-                    self._gui.process_inputs()
-                    imgui.new_frame()
                     imgui.begin('Controls')
                     self.dispatch('on_gui', reversed_exec_order=True)
                     imgui.end()
-                    imgui.end_frame()
-                    imgui.render()
+                imgui.end_frame()
+                imgui.render()
 
             # update
             self.dispatch('on_update', dt)

@@ -9,12 +9,11 @@ from .buffer import VertexBuffer, IndexBuffer
 from .vertex_layout import VertexLayout, VertexAttrib, VertexAttribFormat
 from .. import gl
 from .. import app
-from ..geometry import Shape
 from ..math import Mat4
 from ..scene import Mesh
 
 
-def draw(*objs: Union[Shape, Mesh], **kwargs):
+def draw(*objs, **kwargs):
     """Draws a shape object."""
     # record shape and its associated vbo. avoid to create multiple vertex buffer object
     # for the same object each time the function is called.
@@ -23,6 +22,9 @@ def draw(*objs: Union[Shape, Mesh], **kwargs):
 
     if not hasattr(draw, 'shapes_created_gpu_objects'):
         draw.shapes_created_gpu_objects = {}
+
+    from ..geometry.shape import Shape
+    from ..scene.mesh import Mesh
 
     for obj in objs:
         if isinstance(obj, Shape):

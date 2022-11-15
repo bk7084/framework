@@ -113,6 +113,12 @@ class SubMesh:
         return SubMesh(faces=triangles, name=name)
 
 
+def _load_pipeline_uniforms(pipeline, excluded=('camera', 'shadow_map'), **kwargs):
+    for key, value in kwargs.items():
+        if key not in excluded:
+            pipeline[key] = value
+
+
 class Mesh:
     """
     Representation of a generic geometry including vertex positions, face indices, normals, colors, uvs,
@@ -900,11 +906,6 @@ class Mesh:
                     with depth_map:
                         with vao:
                             gl.glDrawArrays(sub_mesh.topology.value, 0, record.vertex_count)
-
-    def _load_pipeline_uniforms(self, pipeline, excluded=('camera', 'shadow_map'), **kwargs):
-        for key, value in kwargs.items():
-            if key not in excluded:
-                pipeline[key] = value
 
     def draw(self, matrix=Mat4.identity(), shader=None, **kwargs):
         if self._sub_mesh_count > 0:

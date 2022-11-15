@@ -1,8 +1,10 @@
-from ..geometry import Triangle, Ray
 from .. import gl
 
 
 def draw(obj):
+    from ..geometry.triangle import Triangle
+    from ..geometry.ray import Ray
+
     if isinstance(obj, Triangle):
         gl.glColor4f(*obj.color)
         gl.glEnableClientState(gl.GL_VERTEX_ARRAY)

@@ -3,8 +3,7 @@ import tkinter.filedialog
 import imgui
 
 from bk7084 import Window, app, Camera
-from bk7084.app import ui
-from bk7084.app.input import KeyCode
+from bk7084 import ui, KeyCode
 from bk7084.graphics import draw
 from bk7084.math import Vec3, Mat4
 

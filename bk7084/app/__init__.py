@@ -8,7 +8,7 @@ __all__ = [
     'current_window',
     'gl_context_version',
     'init',
-    'run'
+    'run',
 ]
 
 logging.basicConfig(level=os.environ.get('LOGLEVEL', 'ERROR'))

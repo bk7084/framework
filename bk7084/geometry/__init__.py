@@ -1,8 +1,6 @@
-from typing import Union
-
+from .shape import Shape
 from .ray import Ray
 from .triangle import Triangle
-from .shape import Shape
 from .line import Line
 from .box import Box
 from .grid import Grid, AxisAlignment
