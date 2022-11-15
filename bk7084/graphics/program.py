@@ -26,6 +26,8 @@ def check_link_status(program_id) -> bool:
 
 
 class ShaderProgram(GpuObject, BindSemanticObject):
+    __slots__ = ('_id', '_shaders', '_uniforms', '_attributes', '_is_active', '_current_activated_textured_unit')
+
     def __init__(self, *shaders: Shader):
         """Creates an OpenGL ShaderProgram from multiple shaders.
 
@@ -75,8 +77,8 @@ class ShaderProgram(GpuObject, BindSemanticObject):
                 gl_set_uniform[typ](loc, 1, transpose, value)
             else:
                 gl_set_uniform[typ](loc, 1, value)
-        else:
-            logging.warning(f'Uniform {name} not existed.')
+        # else:
+        #     logging.warning(f'Uniform {name} not existed.')
 
     def get_uniform(self, name):
         if name in self._uniforms:
