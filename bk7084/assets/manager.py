@@ -43,7 +43,6 @@ class AssetManager:
         self._images = {}
         self._shaders = {}
         self._pipelines = {}
-        self._meshes = {}
         self._models = {}
 
     def get_or_create_image(self, image_path):
@@ -203,14 +202,6 @@ class AssetManager:
                 if record.pipeline.uuid == uuid:
                     return record.pipeline
         return None
-
-    def get_or_create_mesh(self, name: str, filepath: str):
-        if name not in self._meshes:
-            path = self._resolver.resolve(filepath)
-            logging.info(f'-- Create mesh <{name}@{path}>')
-            self._meshes[name] = mesh.Mesh(path)
-
-        return self._meshes[name]
 
     def get_or_load_wavefront_obj(self, filepath: str, resolver=None) -> dict:
         """

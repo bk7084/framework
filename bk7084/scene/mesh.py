@@ -1,12 +1,9 @@
+import numpy as np
 import collections.abc
 import enum
 import hashlib
-import os
 from dataclasses import dataclass
 from typing import List
-
-import numpy as np
-
 from .. import gl
 from ..assets.manager import default_asset_mgr, default_name_mgr
 from ..assets.resolver import default_resolver
@@ -20,7 +17,6 @@ from ..misc import PaletteDefault, Color
 
 # todo: face normals
 # todo: sub-meshes and render records
-# todo: use sub-meshes textures
 
 
 @dataclass(frozen=True)
@@ -50,7 +46,7 @@ class VertexAttribData:
 
     @property
     def is_empty(self):
-        return self.count == 0
+        return self.count == 0 and (not self.data.any())
 
     def __getitem__(self, i):
         return self.data[i]
@@ -106,7 +102,7 @@ class SubMesh:
         self.parallax_map_enabled: bool = enable_parallax_map
 
     @staticmethod
-    def from_submeshes(sub_meshes, name=''):
+    def from_sub_meshes(sub_meshes, name=''):
         triangles = []
         for sub_mesh in sub_meshes:
             triangles += sub_mesh.faces
@@ -143,7 +139,7 @@ class Mesh:
                  ]
     DEFAULT_COLOR = PaletteDefault.BrownB.as_color()
 
-    def __init__(self, filepath=None, resolver=default_resolver, **kwargs):
+    def __init__(self, name, filepath=None, resolver=default_resolver, **kwargs):
         """
         Creation and initialisation of a Mesh. A mesh can be created by:
 
@@ -186,7 +182,7 @@ class Mesh:
                 uvs: (array like):
                     Specifies the uv coordinates of the vertices.
 
-                initial_transform (Mat4):
+                init_transform (Mat4):
                     Specifies the initial transform of the mesh. Can also be specified after the mesh is created.
 
                 transform (Mat4):
@@ -214,6 +210,7 @@ class Mesh:
                     Specifies the pixel shader going to be used for rendering. In case of non specified,
                     use framework's default shader (declared inside of Window).
         """
+        assert name is not None, 'Mesh name cannot be None'
         self._vertex_layout = VertexLayout.default()
         self._index_count = 0
         self._verts = {
@@ -251,7 +248,7 @@ class Mesh:
                                                      pixel_shader='shaders/default.frag')
         ]
         # initial transformation applied to the mesh
-        self._init_transform: Mat4 = kwargs.get('initial_transformation', Mat4.identity())
+        self._init_transform: Mat4 = kwargs.get('init_transform', Mat4.identity())
         # transformation applied to the mesh
         self._transform: Mat4 = Mat4.identity()
 
@@ -270,11 +267,10 @@ class Mesh:
 
         colors = kwargs.get('colors', [Mesh.DEFAULT_COLOR])
         if filepath:  # load from file
-            self._name = default_name_mgr.get_name(hashlib.md5(filepath.encode('utf-8')).hexdigest())
+            self._name = f"{name}@{default_name_mgr.get_name(hashlib.md5(filepath.encode('utf-8')).hexdigest())}"
             self._load_from_file(filepath, colors, resolver)
         else:  # load from vertices, uvs, normals, faces
-            self._name = kwargs.get('name',
-                                    f'{default_name_mgr.get_name("unnamed_mesh")}')
+            self._name = f"{name}@{default_name_mgr.get_name('customized')}"
             self._verts['position'].data = np.asarray(kwargs['vertices'], dtype=np.float32).reshape(
                 (-1, 3)) if 'vertices' in kwargs else None
             self._verts['position'].count = len(self._verts['position'].data)
@@ -654,7 +650,7 @@ class Mesh:
     @property
     def vertices(self):
         """Returns the vertex positions."""
-        return self._verts['position']
+        return self._verts['position'].data
 
     @vertices.setter
     def vertices(self, positions):
@@ -684,14 +680,9 @@ class Mesh:
         self._verts['color'] = np.asarray(colors, dtype=np.float32).ravel()
 
     @property
-    def vertex_normals(self):
+    def normals(self):
         """Vertex normals of the mesh."""
-        return self._verts['normal']
-
-    @vertex_normals.setter
-    def vertex_normals(self, normals):
-        """Vertex normals of the mesh."""
-        self._verts['normal'] = normals
+        return self._verts['normal'].data
 
     @property
     def triangles(self):
@@ -725,7 +716,7 @@ class Mesh:
     def update_sub_mesh(self, index, new: SubMesh, texture: str = None, normal_map: str = None,
                         vertex_shader: str = None, pixel_shader: str = None, create: bool = False):
         if len(self.sub_meshes_raw) == 0:
-            self._sub_meshes_raw.append((new, texture))
+            self._sub_meshes_raw.append((new, texture, normal_map))
 
         sub_mesh = self._sub_meshes[index]
         sub_mesh.name = new.name
@@ -833,7 +824,7 @@ class Mesh:
 
     def append_sub_mesh(self, sub_mesh: SubMesh, texture: str = '', normal_map: str = None, vertex_shader: str = None,
                         pixel_shader: str = None):
-        self._sub_meshes_raw.append((sub_mesh, texture))
+        self._sub_meshes_raw.append((sub_mesh, texture, normal_map))
         self._sub_meshes.append(SubMesh())
         self.update_sub_mesh(len(self._sub_meshes) - 1, sub_mesh, texture, normal_map, vertex_shader, pixel_shader,
                              create=True)
@@ -1029,9 +1020,10 @@ def compute_all_tangents(positions: VertexAttribData,
     for i in range(count):
         tangent = np.array([0.0, 0.0, 0.0], dtype=np.float32)
         for adj_tri in topology[i]:
-            triangle = triangles[adj_tri][0]
-            vs = [positions[triangle[0]], positions[triangle[1]], positions[triangle[2]]]
-            uvs = [texcoords[triangle[0]], texcoords[triangle[1]], texcoords[triangle[2]]]
+            verts_pos = triangles[adj_tri][0]
+            verts_tex = triangles[adj_tri][1]
+            vs = [positions[verts_pos[0]], positions[verts_pos[1]], positions[verts_pos[2]]]
+            uvs = [texcoords[verts_tex[0]], texcoords[verts_tex[1]], texcoords[verts_tex[2]]]
             delta_pos = [vs[1] - vs[0], vs[2] - vs[0]]
             delta_uv = [uvs[1] - uvs[0], uvs[2] - uvs[0]]
             det = delta_uv[0][0] * delta_uv[1][1] - delta_uv[0][1] * delta_uv[1][0]

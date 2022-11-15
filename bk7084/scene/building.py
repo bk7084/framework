@@ -149,6 +149,7 @@ class Building(Entity):
     def convert_to_mesh(self):
         """ Converts a building to a single mesh that can be rendered more quickly.
         """
+        print(f"Converting building to mesh...{self.name}")
         if len(self._components) == 0:
             return None
             
@@ -176,7 +177,7 @@ class Building(Entity):
                         vertex_idx += 1
 
                 # Correctly transform the normals with the inverse transpose
-                comp_normals = (np.linalg.inv(transform).T @ np.concatenate((mesh.vertex_normals, np.ones_like(mesh.vertex_normals[:, 0:1])), axis=1).T).T
+                comp_normals = (np.linalg.inv(transform).T @ np.concatenate((mesh.normals, np.ones_like(mesh.normals[:, 0:1])), axis=1).T).T
                 comp_normals = comp_normals[:, :3] / np.linalg.norm(comp_normals[:, :3], axis=1, keepdims=True).clip(1e-5)
                 normals_indices = []
                 for i in range(comp_normals.shape[0]):
@@ -210,38 +211,31 @@ class Building(Entity):
                 # Create submesh or take over submeshes for each component
                 if len(mesh.sub_meshes_raw) > 0:
                     for sub_mesh_texture in mesh.sub_meshes_raw:
-                        sub_mesh, texture = sub_mesh_texture
+                        sub_mesh, texture, normal_map = sub_mesh_texture
                         triangle_idx = []
-                        for f_i in sub_mesh.triangles:
+                        for f_i in sub_mesh.faces:
                             start = mesh._faces_triangulation[f_i]
                             end = n_triangles if f_i >= len(mesh._faces_triangulation) - 1 else mesh._faces_triangulation[f_i + 1]
                             triangle_idx += list(range(start + tri_offset, end + tri_offset))
-                        sub_mesh.triangles = triangle_idx
+                        sub_mesh.faces = triangle_idx
                         if texture in sub_mesh_dict:
                             sub_mesh_dict[texture].append(sub_mesh)
                         else:
                             sub_mesh_dict[texture] = [sub_mesh]
-                else:
-                    sub_mesh = SubMesh(faces=(np.arange(n_triangles) + tri_offset).tolist())
-                    texture = mesh._texture_path
-                    if texture in sub_mesh_dict:
-                        sub_mesh_dict[texture].append(sub_mesh)
-                    else:
-                        sub_mesh_dict[texture] = [sub_mesh]
 
                 # Offset for triangle references
                 tri_offset += n_triangles
-
         # Create mesh
         _, vertices = zip(*list(vertices_dict.values()))
         _, normals = zip(*list(normals_dict.values()))
         _, uvs = zip(*list(uvs_dict.values()))
         mesh = Mesh(
+            name=self.name,
             vertices=np.vstack(vertices).tolist(),
             colors=[Palette.GreenA.as_color()],
             normals=np.vstack(normals).tolist(),
             uvs=np.vstack(uvs).tolist(),
-            triangles=triangles
+            faces=triangles
         )
 
         textures_sub_meshes = list(sub_mesh_dict.items())

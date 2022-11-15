@@ -264,7 +264,7 @@ sphere = Mesh("./models/uv_sphere.obj",
 # cube.shading_enabled = False
 # cube.texture_enabled = False
 # print(sphere.alternate_texture_enabled)
-cube = default_asset_mgr.get_or_create_mesh('cube', 'models/cube.obj')
+cube = default_asset_mgr.get_or_create_mesh_data('cube', 'models/cube.obj')
 cube.texture_enabled = True
 
 model = Mesh("./models/spot_cow.obj",

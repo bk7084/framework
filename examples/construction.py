@@ -14,6 +14,7 @@ class Wall(Component):
     def __init__(self, w, h):
         super().__init__()
         self._mesh = Mesh(
+            name='wall',
             vertices=[[-w / 2.0, -h / 2.0, 0.0], [w / 2.0, -h / 2.0, 0.0], [w / 2.0, h / 2.0, 0.0], [-w / 2.0, h / 2.0, 0.0],
                       [-w, -h, 0.0], [w, -h, 0.0], [w, h, 0.0], [-w, h, 0.0]],
             colors=[Palette.BlueA.as_color()],
