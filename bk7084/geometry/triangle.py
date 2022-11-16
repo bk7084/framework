@@ -11,7 +11,7 @@ from ..misc import Color, PaletteDefault
 
 
 class Triangle(Shape):
-    def __init__(self, p0, p1, p2, colors: Sequence[Color] = (PaletteDefault.BrownB.as_color(),)):
+    def __init__(self, p0, p1, p2, colors: Sequence[Color] = (PaletteDefault.YellowB.as_color(),)):
         """Creates a triangle from three positions and colors.
 
         Args:
