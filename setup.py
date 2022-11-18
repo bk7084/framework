@@ -5,7 +5,7 @@ with open("README.md", "r", encoding="utf-8") as fh:
 
 setuptools.setup(
     name='bk7084',
-    version='0.2.1',
+    version='0.2.2',
     author='Yang Chen, Ruben Wiersma, Ricardo Marroquim',
     author_email="matthiasychen@gmail.com, rubenwiersma@gmail.com, R.Marroquim@tudelft.nl",
     description='Python framework for BK7084 Computational Simulations',
@@ -24,7 +24,7 @@ setuptools.setup(
     package_data={
         'bk7084': ['assets/models/*', 'assets/shaders/*', 'assets/textures/*']
     },
-    python_requires='>=3.9',
+    python_requires='>=3.9,<3.11',
     install_requires=[
         'numpy',
         'pyopengl',
