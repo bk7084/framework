@@ -369,11 +369,12 @@ class Window(event.EventDispatcher):
         Start the main loop of the window.
         """
         self._previous_time = time.time()
-
+        
         while not glfw.window_should_close(self._native_window):
             # update time
             dt = self.delta_time
-            self._frame_rate = int(1.0 / dt)
+            if dt != 0.0:
+                self._frame_rate = int(1.0 / dt)
 
             # process inputs
             glfw.poll_events()
