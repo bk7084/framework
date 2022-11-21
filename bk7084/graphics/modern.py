@@ -9,7 +9,7 @@ from .buffer import VertexBuffer, IndexBuffer
 from .vertex_layout import VertexLayout, VertexAttrib, VertexAttribFormat
 from .. import gl
 from .. import app
-from ..math import Mat4
+from ..math import Mat4, Vec3
 from ..scene import Mesh
 
 
@@ -52,7 +52,7 @@ def draw(*objs, **kwargs):
 
             with shader:
                 shader.model_mat = transform
-                shader.shading_enabled = True
+                shader.shading_enabled = False
                 shader['mtl.enabled'] = False
                 with vao:
                     with ibo:

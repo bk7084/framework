@@ -79,7 +79,6 @@ class Grid(Shape):
             else:
                 colors.append(PaletteDefault.BrownB.as_color())
                 colors.append(PaletteDefault.BrownB.as_color())
-
         color_axis_horizontal = PaletteDefault.Background
         for h_i in range(0, count_h + 1):
             a = w / 2
@@ -110,10 +109,9 @@ class Grid(Shape):
             elif alignment is AxisAlignment.ZY:
                 lines.extend([Vec3(0.0, b, -a) + o,
                               Vec3(0.0, b, a) + o])
+                color_axis_horizontal = PaletteDefault.BlueA.as_color()
             else:
                 pass
-
-            color_axis_horizontal = PaletteDefault.BlueA.as_color()
             if axis_marker and h_i == w // 2:
                 colors.append(color_axis_horizontal)
                 colors.append(color_axis_horizontal)
@@ -121,29 +119,24 @@ class Grid(Shape):
                 colors.append(PaletteDefault.BrownB.as_color())
                 colors.append(PaletteDefault.BrownB.as_color())
 
-            return np.asarray(lines, dtype=np.float32).reshape((-1, 3)), colors
+        return np.asarray(lines, dtype=np.float32).reshape((-1, 3)), colors
 
+    @property
+    def vertices(self) -> np.ndarray:
+        return self._points.ravel()
 
-@property
-def vertices(self) -> np.ndarray:
-    return self._points.ravel()
+    @property
+    def vertex_count(self) -> int:
+        return len(self._points)
 
+    @property
+    def indices(self):
+        return np.array(list(range(0, len(self._points))), dtype=np.uint32)
 
-@property
-def vertex_count(self) -> int:
-    return len(self._points)
+    @property
+    def index_count(self):
+        return len(self._points)
 
-
-@property
-def indices(self):
-    return np.array(list(range(0, len(self._points))), dtype=np.uint32)
-
-
-@property
-def index_count(self):
-    return len(self._points)
-
-
-@property
-def drawing_mode(self) -> DrawingMode:
-    return DrawingMode.Lines
+    @property
+    def drawing_mode(self) -> DrawingMode:
+        return DrawingMode.Lines
