@@ -17,7 +17,8 @@ def draw(*objs, **kwargs):
     """Draws a shape object."""
     # record shape and its associated vbo. avoid to create multiple vertex buffer object
     # for the same object each time the function is called.
-    shader = kwargs.get('shader', app.current_window().default_shader)
+    shader = kwargs.get('shader', None)
+    shader_params = kwargs.get('shader_params', None)
     transform = kwargs.get('transform', Mat4.identity())
 
     if not hasattr(draw, 'shapes_created_gpu_objects'):
@@ -50,6 +51,7 @@ def draw(*objs, **kwargs):
                 ibo.set_data(obj.indices.astype(np.uint32))
                 obj.is_dirty = False
 
+            shader = app.current_window().default_shader if shader is None else shader
             with shader:
                 shader.model_mat = transform
                 shader.shading_enabled = False
@@ -60,7 +62,7 @@ def draw(*objs, **kwargs):
                                           ctypes.c_void_p(0))
 
         elif isinstance(obj, Mesh):
-            obj.draw()
+            obj.draw(shader=shader, shader_params=shader_params)
 
         else:
             logging.info('Nothing to draw.')

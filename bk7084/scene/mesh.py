@@ -284,12 +284,10 @@ class Mesh:
 
             # Check if the necessary data is provided for creating the mesh.
             if not (self._verts['position'] is not None
-                    and colors
                     and self._verts['texcoord'] is not None
                     and self._verts['normal'] is not None
                     and self._faces is not None):
                 missing_attributes = [name for attrib, name in ((self._verts['position'], 'vertices'),
-                                                                (colors, 'colors'),
                                                                 (self._verts['texcoord'], 'uvs'),
                                                                 (self._verts['normal'], 'normals'),
                                                                 (_faces, 'faces')) if attrib is None]
@@ -488,7 +486,7 @@ class Mesh:
     def cast_shadow(self, value):
         self._cast_shadow = value
 
-    def _load_from_file(self, filepath, color, resolver=default_resolver):
+    def _load_from_file(self, filepath, colors, resolver=default_resolver):
         mesh_data = default_asset_mgr.get_or_load_wavefront_obj(filepath, resolver)
         self._verts['position'].data = np.asarray(mesh_data['positions'], dtype=np.float32).reshape((-1, 3))
         self._verts['position'].count = len(mesh_data['positions'])
@@ -506,7 +504,7 @@ class Mesh:
         self._indices = np.asarray([f[0] for f in mesh_data['faces']], dtype=np.uint32).reshape((-1, 3))
         self._verts['texcoord'].count = len(mesh_data['texcoords'])
         self._verts['texcoord'].data = np.asarray(mesh_data['texcoords'], dtype=np.float32).reshape((-1, 2))
-        self._verts['color'] = Mesh._process_color(self._verts['position'].count, color)
+        self._verts['color'] = Mesh._process_color(self._verts['position'].count, colors)
         if not self._verts['texcoord'].is_empty:
             self._verts['tangent'] = compute_all_tangents(self._verts['position'], self._verts['texcoord'],
                                                           self._triangles, self._verts['topology'])
@@ -898,7 +896,7 @@ class Mesh:
                         with vao:
                             gl.glDrawArrays(sub_mesh.topology.value, 0, record.vertex_count)
 
-    def draw(self, matrix=Mat4.identity(), shader=None, **kwargs):
+    def draw(self, matrix=Mat4.identity(), shader=None, shader_params=None, **kwargs):
         if self._sub_mesh_count > 0:
             for idx, record in self._render_records.items():
                 sub_mesh = self._sub_meshes[idx]
@@ -948,6 +946,10 @@ class Mesh:
 
                     shadow_map_enabled = kwargs.get('shadow_map_enabled', False)
                     depth_map = kwargs.get('shadow_map', None)
+
+                    if shader_params is not None and isinstance(shader_params, dict):
+                        for key, value in shader_params.items():
+                            pipeline[key] = value
 
                     pipeline.active_texture_unit(0)
                     with mtl.diffuse_map:

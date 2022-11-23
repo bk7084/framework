@@ -7,19 +7,6 @@ from .util import ShaderCodeParser, GpuObject
 from .. import gl
 from ..assets.resolver import PathResolver
 
-OPENGL_ERROR_REGEX = [
-    # Nvidia
-    # 0(7): error C1008: undefined variable "MV"
-    # 0(2) : error C0118: macros prefixed with '__' are reserved
-    re.compile(r'^\s*(\d+)\((?P<line_no>\d+)\)\s*:\s(?P<error_msg>.*)', re.MULTILINE),
-    # ATI / Intel
-    # ERROR: 0:131: '{' : syntax error parse error
-    re.compile(r'^\s*ERROR:\s(\d+):(?P<line_no>\d+):\s(?P<error_msg>.*)', re.MULTILINE),
-    # Nouveau
-    # 0:28(16): error: syntax error, unexpected ')', expecting '('
-    re.compile(r'^\s*(\d+):(?P<line_no>\d+)\((\d+)\):\s(?P<error_msg>.*)', re.MULTILINE)
-]
-
 
 class ShaderType(enum.Enum):
     Vertex = gl.GL_VERTEX_SHADER
@@ -118,50 +105,11 @@ class Shader(GpuObject):
         status = gl.glGetShaderiv(self._id, gl.GL_COMPILE_STATUS)
         if not status:
             error = str(gl.glGetShaderInfoLog(self._id))
-            for lineno, msg in self._parse_error(error):
-                self._print_error(msg, lineno - 1)
+            print('\033[93m' + error + '\033[0m', file=sys.stderr)
             raise RuntimeError("Shader compilation error.")
 
     def _delete(self):
         gl.glDeleteShader(self._id)
-
-    @staticmethod
-    def _parse_error(error):
-        """
-        Parses a single GLSL error and extracts the line number and error description.
-
-        Args:
-            error (str): An error string returned from shader compilation.
-
-        Returns:
-
-        """
-        print(error, file=sys.stderr)
-        for regex in OPENGL_ERROR_REGEX:
-            matches = list(regex.finditer(error))
-            if matches:
-                errors = [(int(m.group('line_no')), m.group('error_msg')) for m in matches]
-                return sorted(errors, key=lambda elem: elem[0])
-            else:
-                raise ValueError(f"Unknown GLSL error format: \n{error}\n")
-
-    def _print_error(self, error, lineno):
-        lines = self._code.split('\n')
-        start = max(0, lineno - 3)
-        end = min(len(lines), lineno + 3)
-
-        print(f'Error in {repr(self)} -> {error}\n')
-        if start > 0:
-            print(' ...')
-        for i, line in enumerate(lines[start:end]):
-            if (i + start) == lineno:
-                print(' {:03i+start} {line}')
-            else:
-                if len(line):
-                    print(' {:03i+start} {line}')
-        if end < len(lines):
-            print(' ...')
-        print()
 
 
 class VertexShader(Shader):
