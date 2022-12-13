@@ -13,7 +13,7 @@ from bk7084.scene import Mesh, Scene
 window = Window("BK7084: Simple Scene", width=600, height=600)
 
 scene = Scene(window, draw_light=True)
-model = scene.load_mesh_entity("cottage", "./models/cottage.obj")
+model = scene.load_mesh_entity("spot_cow", "./models/spot_cow.obj")
 
 scene.create_camera(Vec3(2, 1.0, 2.0), Vec3(0, 0, 0), Vec3.unit_y(), 60.0, zoom_enabled=True, safe_rotations=False)
 scene.create_camera(Vec3(-2, 1.0, 2.0), Vec3(0, 0, 0), Vec3.unit_y(), 60.0, zoom_enabled=True, safe_rotations=False)

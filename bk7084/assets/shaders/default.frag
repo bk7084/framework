@@ -168,8 +168,7 @@ void main() {
         }
 
         else if (mtl.use_bump_map) {
-            n = bumpMap(mtl.diffuse_map);
-            diffuse_color = vec4(mtl.diffuse, 1.0);
+            n = bumpMap(mtl.bump_map);
         }
         else if (mtl.use_parallax_map) {
             vec2 tex_displacement = parallaxMap(mtl.diffuse_map);
