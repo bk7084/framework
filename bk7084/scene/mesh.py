@@ -415,6 +415,7 @@ class Mesh:
             vertex_count = record.vertex_count
             mtl = self._materials[record.mtl_idx]
             topology = self._sub_meshes[sub_mesh_idx].topology.value
+            normal_map_enabled = self._sub_meshes[sub_mesh_idx].normal_map_enabled
             diffuse_map = mtl.diffuse_map
             transform = self._transform * self._init_transform
             if pipeline.uuid not in info:
@@ -424,7 +425,7 @@ class Mesh:
                                         self._shading_enabled,
                                         self._material_enabled,
                                         self._texture_enabled,
-                                        self._normal_map_enabled,
+                                        normal_map_enabled,
                                         self._bump_map_enabled,
                                         self._parallax_map_enabled,
                                         transform))
