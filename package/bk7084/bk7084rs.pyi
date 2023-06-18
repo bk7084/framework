@@ -1,4 +1,5 @@
 from typing import Callable, List
+<<<<<<< HEAD
 
 # from .bk7084rs import *
 
@@ -74,3 +75,5 @@ class AppState:
         Get the current cursor position in window coordinates.
         """
         ...
+=======
+>>>>>>> 1121af0867148ee088bd3e403de6227057898871

@@ -4,10 +4,8 @@ import os
 
 from .event import EventDispatcher
 from .window import Window
-from ..rs import AppState, run_main_loop, KeyCode, MouseButton
 
 __all__ = [
-    'App',
     'current_time',
     'current_window',
     'gl_context_version',
@@ -16,6 +14,7 @@ __all__ = [
 ]
 
 
+<<<<<<< HEAD
 class App:
     def __init__(self, title: str = "BK7084", width: int = 600, height: int = 600, resizable: bool = True,
                  fullscreen: bool = False):
@@ -105,6 +104,8 @@ class App:
             return decorator
 
 
+=======
+>>>>>>> 1121af0867148ee088bd3e403de6227057898871
 logging.basicConfig(level=os.environ.get('LOGLEVEL', 'ERROR'))
 
 __window__ = None

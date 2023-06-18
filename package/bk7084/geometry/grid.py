@@ -1,3 +1,4 @@
+import enum
 import math
 
 import numpy as np
@@ -8,10 +9,23 @@ from ..math import Vec3, Vec2
 from ..misc import PaletteDefault
 
 
+class AxisAlignment(enum.Enum):
+    XY = 0
+    XZ = 1
+    YX = 2
+    YZ = 3
+    ZX = 4
+    ZY = 5
+
+
 class Grid(Shape):
-    def __init__(self, origin=Vec3(0.0), width=20.0, height=20.0,
+    def __init__(self, origin=Vec3(0.0),
+                 axis_alignment=AxisAlignment.XZ,
+                 width=20.0,
+                 height=20.0,
+                 axis_marker=False,
                  spacing_width=1.0, spacing_height=1.0):
-        points, colors = self._generate_lines(origin, width, height, spacing_width, spacing_height)
+        points, colors = self._generate_lines(origin, width, height, spacing_width, spacing_height, axis_alignment, axis_marker)
         super().__init__(len(points), colors)
         self._origin = origin
         self._width = width
@@ -21,27 +35,79 @@ class Grid(Shape):
         self._colors = colors
 
     @staticmethod
-    def _generate_lines(o, w, h, dw, dh):
+    def _generate_lines(o, w, h, dw, dh, alignment, axis_marker):
         lines = []
         colors = []
         count_w = math.ceil(w / dw)
         count_h = math.ceil(h / dh)
+        color_axis_vertical = PaletteDefault.Background
         for w_i in range(0, count_w + 1):
-            lines.extend([Vec3(-w / 2 + w_i * dw, 0.0, -h / 2) + o,
-                          Vec3(-w / 2 + w_i * dw, 0.0, h / 2) + o])
-            if w_i == w // 2:
-                colors.append(PaletteDefault.RedA.as_color())
-                colors.append(PaletteDefault.RedA.as_color())
+            a = -w / 2 + w_i * dw
+            b = h / 2
+            match alignment:
+                case AxisAlignment.XZ:
+                    lines.extend([Vec3(a, 0.0, -b) + o,
+                                  Vec3(a, 0.0, b) + o])
+                    color_axis_vertical = PaletteDefault.BlueA.as_color()
+                case AxisAlignment.XY:
+                    lines.extend([Vec3(a, -b, 0.0) + o,
+                                  Vec3(a, b, 0.0) + o])
+                    color_axis_vertical = PaletteDefault.GreenA.as_color()
+                case AxisAlignment.YX:
+                    lines.extend([Vec3(-b, a, 0.0) + o,
+                                  Vec3(b, a, 0.0) + o])
+                    color_axis_vertical = PaletteDefault.RedA.as_color()
+                case AxisAlignment.YZ:
+                    lines.extend([Vec3(0.0, a, -b) + o,
+                                  Vec3(0.0, a, b) + o])
+                    color_axis_vertical = PaletteDefault.BlueA.as_color()
+                case AxisAlignment.ZX:
+                    lines.extend([Vec3(-b, 0.0, a) + o,
+                                  Vec3(b, 0.0, a) + o])
+                    color_axis_vertical = PaletteDefault.RedA.as_color()
+                case AxisAlignment.ZY:
+                    lines.extend([Vec3(0.0, -b, a) + o,
+                                  Vec3(0.0, b, a) + o])
+                    color_axis_vertical = PaletteDefault.GreenA.as_color()
+            if axis_marker and w_i == w // 2:
+                colors.append(color_axis_vertical)
+                colors.append(color_axis_vertical)
             else:
                 colors.append(PaletteDefault.BrownB.as_color())
                 colors.append(PaletteDefault.BrownB.as_color())
 
+        color_axis_horizontal = PaletteDefault.Background
         for h_i in range(0, count_h + 1):
-            lines.extend([Vec3(-w / 2, 0.0, -h / 2 + h_i * dh) + o,
-                          Vec3(w / 2, 0.0, -h / 2 + h_i * dh) + o])
-            if h_i == w // 2:
-                colors.append(PaletteDefault.BlueA.as_color())
-                colors.append(PaletteDefault.BlueA.as_color())
+            a = w / 2
+            b = -h / 2 + h_i * dh
+            match alignment:
+                case AxisAlignment.XZ:
+                    lines.extend([Vec3(-a, 0.0, b) + o,
+                                  Vec3(a, 0.0, b) + o])
+                    color_axis_horizontal = PaletteDefault.RedA.as_color()
+                case AxisAlignment.XY:
+                    lines.extend([Vec3(-a, b, 0.0) + o,
+                                  Vec3(a, b, 0.0) + o])
+                    color_axis_horizontal = PaletteDefault.RedA.as_color()
+                case AxisAlignment.YX:
+                    lines.extend([Vec3(b, -a, 0.0) + o,
+                                  Vec3(b, a, 0.0) + o])
+                    color_axis_horizontal = PaletteDefault.GreenA.as_color()
+                case AxisAlignment.YZ:
+                    lines.extend([Vec3(0.0, -a, b) + o,
+                                  Vec3(0.0, a, b) + o])
+                    color_axis_horizontal = PaletteDefault.GreenA.as_color()
+                case AxisAlignment.ZX:
+                    lines.extend([Vec3(b, 0.0, -a) + o,
+                                  Vec3(b, 0.0, a) + o])
+                    color_axis_horizontal = PaletteDefault.BlueA.as_color()
+                case AxisAlignment.ZY:
+                    lines.extend([Vec3(0.0, b, -a) + o,
+                                  Vec3(0.0, b, a) + o])
+                    color_axis_horizontal = PaletteDefault.BlueA.as_color()
+            if axis_marker and h_i == w // 2:
+                colors.append(color_axis_horizontal)
+                colors.append(color_axis_horizontal)
             else:
                 colors.append(PaletteDefault.BrownB.as_color())
                 colors.append(PaletteDefault.BrownB.as_color())
