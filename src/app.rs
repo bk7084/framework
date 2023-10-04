@@ -1,12 +1,12 @@
 use std::collections::HashMap;
 use std::sync::Arc;
+use legion::{Resources, Schedule, World};
 use pyo3::ffi::PyWeakReference;
 use winit::event_loop::{EventLoop, EventLoopBuilder, EventLoopProxy};
 use winit::window::{Fullscreen, Window, WindowBuilder};
 use pyo3::prelude::*;
 use pyo3::types::{PyDict, PyString, PyTuple};
 use winit::dpi::PhysicalSize;
-use crate::context::GpuContext;
 use winit::event::{Event, KeyboardInput, ModifiersState, WindowEvent};
 use crate::input::{InputState, KeyCode, MouseButton};
 
@@ -18,6 +18,7 @@ pub enum UserEvent {
 unsafe impl Send for UserEvent {}
 
 #[pyclass(subclass)]
+#[pyo3(name = "App")]
 #[derive(Clone)]
 pub struct AppState {
     pub title: String,
@@ -28,7 +29,11 @@ pub struct AppState {
     pub resizable: bool,
     pub fullscreen: bool,
 
-    pub gpu_ctx: Option<GpuContext>,
+    ecs: World,
+    resources: Resources,
+    systems: Schedule,
+
+    // pub gpu_ctx: Option<GpuContext>,
 
     input_state: Py<InputState>,
     event_loop: Option<Arc<EventLoopProxy<UserEvent>>>,
@@ -54,7 +59,7 @@ impl AppState {
                     height,
                     resizable,
                     fullscreen,
-                    gpu_ctx: None,
+//                    gpu_ctx: None,
                     input_state: Py::new(py, InputState::default())?,
                     event_loop: None,
                     event_listeners: Default::default(),
@@ -111,12 +116,12 @@ impl AppState {
     pub fn resize(&mut self, width: u32, height: u32) {
         if width > 0 && height > 0 {
             (self.width, self.height) = (width, height);
-            match &mut self.gpu_ctx {
-                Some(ctx) => {
-                    ctx.resize(width, height);
-                },
-                None => {}
-            }
+            // match &mut self.gpu_ctx {
+            //     Some(ctx) => {
+            //         ctx.resize(width, height);
+            //     },
+            //     None => {}
+            // }
         }
     }
 
@@ -198,7 +203,7 @@ impl AppState {
             .with_resizable(self.resizable)
             .build(&event_loop)
             .unwrap();
-        self.gpu_ctx = Some(pollster::block_on(GpuContext::new(&window)));
+        // self.gpu_ctx = Some(pollster::block_on(GpuContext::new(&window)));
         self.event_loop = Some(Arc::new(event_loop.create_proxy()));
         window
     }
@@ -271,53 +276,58 @@ impl AppState {
         });
     }
 
-    pub fn render(&mut self) -> Result<(), wgpu::SurfaceError> {
-        profiling::scope!("AppState::render");
-        match &mut self.gpu_ctx {
-            Some(ctx) => {
-                let output = ctx.surface.get_current_texture()?;
-                let view = output.texture.create_view(&wgpu::TextureViewDescriptor::default());
-
-                let mut encoder = ctx.device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                    label: Some("Render")
-                });
-
-                {
-                    let _render_pass = encoder.begin_render_pass(
-                        &wgpu::RenderPassDescriptor {
-                            label: Some("Main Render Pass"),
-                            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                                view: &view,
-                                resolve_target: None,
-                                ops: wgpu::Operations {
-                                    load: wgpu::LoadOp::Clear(wgpu::Color {
-                                        r: 0.1,
-                                        g: 0.2,
-                                        b: 0.3,
-                                        a: 1.0
-                                    }),
-                                    store: true
-                                }
-                            })],
-                            depth_stencil_attachment: None
-                        }
-                    );
-                }
-
-                ctx.queue.submit(std::iter::once(encoder.finish()));
-
-                output.present();
-
-                Ok(())
-            },
-            None => {
-                Ok(())
-            }
-        }
+    pub fn tick(&mut self) {
+        self.systems.execute(&mut self.ecs, &mut self.resources);
     }
+
+    // pub fn render(&mut self) -> Result<(), wgpu::SurfaceError> {
+    //     profiling::scope!("AppState::render");
+    //     match &mut self.gpu_ctx {
+    //         Some(ctx) => {
+    //             let output = ctx.surface.get_current_texture()?;
+    //             let view = output.texture.create_view(&wgpu::TextureViewDescriptor::default());
+    //
+    //             let mut encoder = ctx.device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+    //                 label: Some("Render")
+    //             });
+    //
+    //             {
+    //                 let _render_pass = encoder.begin_render_pass(
+    //                     &wgpu::RenderPassDescriptor {
+    //                         label: Some("Main Render Pass"),
+    //                         color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+    //                             view: &view,
+    //                             resolve_target: None,
+    //                             ops: wgpu::Operations {
+    //                                 load: wgpu::LoadOp::Clear(wgpu::Color {
+    //                                     r: 0.1,
+    //                                     g: 0.2,
+    //                                     b: 0.3,
+    //                                     a: 1.0
+    //                                 }),
+    //                                 store: true
+    //                             }
+    //                         })],
+    //                         depth_stencil_attachment: None
+    //                     }
+    //                 );
+    //             }
+    //
+    //             ctx.queue.submit(std::iter::once(encoder.finish()));
+    //
+    //             output.present();
+    //
+    //             Ok(())
+    //         },
+    //         None => {
+    //             Ok(())
+    //         }
+    //     }
+    // }
 }
 
 #[pyfunction]
+#[pyo3(name = "run")]
 pub fn run_main_loop(mut app: AppState) {
     let event_loop = EventLoopBuilder::<UserEvent>::with_user_event().build();
     let window = app.init(&event_loop);
@@ -332,7 +342,6 @@ pub fn run_main_loop(mut app: AppState) {
             Event::WindowEvent {
                 ref event, window_id
             } if window_id == win_id => if !app.process_input(event) {
-                println!("Handling the rest of the events");
                 match event {
                     WindowEvent::CloseRequested => {
                         *control_flow = winit::event_loop::ControlFlow::Exit
@@ -362,12 +371,12 @@ pub fn run_main_loop(mut app: AppState) {
                 }
             },
             Event::RedrawRequested(window_id) if window_id == win_id => {
-                match app.render() {
-                    Ok(_) => {},
-                    Err(wgpu::SurfaceError::Lost) => app.resize(app.width, app.height),
-                    Err(wgpu::SurfaceError::OutOfMemory) => *control_flow = winit::event_loop::ControlFlow::Exit,
-                    Err(e) => eprintln!("{:?}", e)
-                }
+                // match app.render() {
+                //     Ok(_) => {},
+                //     Err(wgpu::SurfaceError::Lost) => app.resize(app.width, app.height),
+                //     Err(wgpu::SurfaceError::OutOfMemory) => *control_flow = winit::event_loop::ControlFlow::Exit,
+                //     Err(e) => eprintln!("{:?}", e)
+                // }
             },
             Event::MainEventsCleared => {
                 window.request_redraw();
