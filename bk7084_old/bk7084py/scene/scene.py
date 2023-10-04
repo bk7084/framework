@@ -1,7 +1,7 @@
 import itertools
 
-from bk7084 import app
-from bk7084.math import Vec4
+from bk7084.bk7084py import app
+from bk7084.bk7084py.math import Vec4
 from numba import njit, prange
 
 from .building import Component, Building

@@ -5,7 +5,7 @@ import math
 import OpenGL.GL as gl
 
 from .. import app
-from bk7084.app.input import MouseButton
+from bk7084.bk7084py.app.input import MouseButton
 from ..math import Vec3, Vec4, Mat4
 
 

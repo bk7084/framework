@@ -2,7 +2,7 @@ import os.path
 
 import numpy as np
 
-from bk7084.graphics.texture import Texture
+from bk7084.bk7084py.graphics.texture import Texture
 
 
 class Material:
