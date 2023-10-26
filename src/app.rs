@@ -29,9 +29,9 @@ pub struct AppState {
     pub resizable: bool,
     pub fullscreen: bool,
 
-    ecs: World,
-    resources: Resources,
-    systems: Schedule,
+    // ecs: World,
+    // resources: Resources,
+    // systems: Schedule,
 
     // pub gpu_ctx: Option<GpuContext>,
 
@@ -276,9 +276,9 @@ impl AppState {
         });
     }
 
-    pub fn tick(&mut self) {
-        self.systems.execute(&mut self.ecs, &mut self.resources);
-    }
+    // pub fn tick(&mut self) {
+    //     self.systems.execute(&mut self.ecs, &mut self.resources);
+    // }
 
     // pub fn render(&mut self) -> Result<(), wgpu::SurfaceError> {
     //     profiling::scope!("AppState::render");

@@ -40,8 +40,10 @@ requires = ["maturin>=1,<2"]
 build-backend = "maturin"
 
 [tool.maturin]
-python-source = "bk7084"
+python-source = "pypkg"
 module-name = "bk7084.bk7084rs"
+features = ["pyo3/extension-module"]
+bindings = "pyo3"
 
 [options]
 zip_safe = true

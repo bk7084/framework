@@ -2,17 +2,21 @@
 name = "bk7084-rs"
 version = "0.1.0"
 edition = "2021"
+authors = ["Yang Chen <y.chen-14@tudelft.nl>"]
+description = "A Rust backend for BK7084."
+readme = "README.md"
 
 [lib]
 name = "bk7084rs"
 crate-type = ["cdylib"]
 
 [dependencies]
+bytemuck = "1"
 cfg-if = "1"
 env_logger = "0.10"
 legion = { git = "https://github.com/matthiascy/legion.git", branch = "master" }
 log = "0.4"
-pyo3 = { version = "0.19", features = ["extension-module"] }
+pyo3 = { version = "0.20", features = ["extension-module"] }
 profiling = "1.0"
 winit = "0.28"
 
