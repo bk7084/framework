@@ -3,7 +3,6 @@ use pyo3::prelude::*;
 mod input;
 mod app;
 mod mesh;
-mod renderer;
 
 #[pyfunction]
 fn sum_as_string(a: usize, b: usize) -> PyResult<String> {
@@ -21,9 +20,11 @@ fn bk7084rs(py: Python, module: &PyModule) -> PyResult<()> {
     module.add_function(wrap_pyfunction!(sum_as_string, module)?)?;
     module.add_function(wrap_pyfunction!(app::run_main_loop, module)?)?;
 
-    // register_child_module(py, module, "app", |m| {
-    //
-    // });
+    // register_child_module(py, module, "window", |m| {
+    //     m.add_class::<window::Window>()?;
+    //     // m.add_class::<window::EventLoop>()?;
+    //     Ok(())
+    // })?;
 
     Ok(())
 }

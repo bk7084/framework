@@ -1,8 +1,12 @@
-use std::collections::HashMap;
 use pyo3::prelude::*;
-use winit::dpi::PhysicalPosition;
-use winit::event::{ElementState, ModifiersState, MouseScrollDelta, VirtualKeyCode};
-use winit::event::MouseButton as WinitMouseButton;
+use std::collections::HashMap;
+use winit::{
+    dpi::PhysicalPosition,
+    event::{
+        ElementState, ModifiersState, MouseButton as WinitMouseButton, MouseScrollDelta,
+        VirtualKeyCode,
+    },
+};
 
 #[pyclass]
 #[repr(u32)]
@@ -428,12 +432,12 @@ impl InputState {
         !self.is_key_pressed(key_code)
     }
 
-    pub fn is_mouse_button_pressed(&self, button: MouseButton) -> bool {
+    pub fn is_mouse_pressed(&self, button: MouseButton) -> bool {
         *self.mouse_buttons.get(&button.into()).unwrap_or(&false)
     }
 
-    pub fn is_mouse_button_released(&self, button: MouseButton) -> bool {
-        !self.is_mouse_button_pressed(button)
+    pub fn is_mouse_released(&self, button: MouseButton) -> bool {
+        !self.is_mouse_pressed(button)
     }
 
     pub fn is_shift_pressed(&self) -> bool {
@@ -467,26 +471,31 @@ impl InputState {
 
 impl InputState {
     pub fn update_key_states(&mut self, key_code: VirtualKeyCode, state: ElementState) {
+        log::trace!("update_key_states: {:?} {:?}", key_code, state);
         *self.keys.entry(key_code).or_insert(false) = state == ElementState::Pressed;
     }
 
     pub fn update_mouse_button_states(&mut self, button: WinitMouseButton, state: ElementState) {
+        log::trace!("update_mouse_button_states: {:?} {:?}", button, state);
         *self.mouse_buttons.entry(button).or_insert(false) = state == ElementState::Pressed;
     }
 
     pub fn update_modifier_states(&mut self, modifier_state: ModifiersState) {
+        log::trace!("update_modifier_states: {:?}", modifier_state);
         self.modifiers = modifier_state;
     }
 
     pub fn update_cursor_delta(&mut self, new_pos: PhysicalPosition<f64>) {
+        log::trace!("update_cursor_delta: {:?}", new_pos);
         self.cursor_delta = [
             new_pos.x as f32 - self.cursor_pos[0],
-            new_pos.y as f32- self.cursor_pos[1],
+            new_pos.y as f32 - self.cursor_pos[1],
         ];
         self.cursor_pos = new_pos.into();
     }
 
     pub fn update_scroll_delta(&mut self, delta: MouseScrollDelta) {
+        log::trace!("update_scroll_delta: {:?}", delta);
         self.scroll_delta = match delta {
             MouseScrollDelta::LineDelta(_, y) => {
                 -y * 100.0 // assuming a line is about 100 pixels
