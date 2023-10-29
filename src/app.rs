@@ -62,7 +62,7 @@ impl AppState {
             height,
             resizable,
             fullscreen,
-            //                    gpu_ctx: None,
+            // gpu_ctx: None,
             input: InputState::default(),
             event_loop: None,
             event_listeners: Default::default(),
@@ -197,10 +197,11 @@ impl AppState {
 
     pub fn update(&mut self, dt: f32) {
         Python::with_gil(|py| {
+            let input = self.input.take();
             self.dispatch_event(
                 py,
                 "on_update",
-                PyTuple::new(py, &[dt.into_py(py), self.input.clone().into_py(py)]),
+                PyTuple::new(py, &[dt.into_py(py), input.into_py(py)]),
                 None,
             )
             .unwrap();
