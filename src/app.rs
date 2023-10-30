@@ -208,10 +208,6 @@ impl AppState {
         });
     }
 
-    // pub fn tick(&mut self) {
-    //     self.systems.execute(&mut self.ecs, &mut self.resources);
-    // }
-
     // pub fn render(&mut self) -> Result<(), wgpu::SurfaceError> {
     //     profiling::scope!("AppState::render");
     //     match &mut self.gpu_ctx {
@@ -316,12 +312,13 @@ pub fn run_main_loop(mut app: AppState) {
                 //     Err(e) => eprintln!("{:?}", e)
                 // }
             }
+            /// The main event loop has been cleared and will not be processed
+            /// again until the next event needs to be handled.
             Event::MainEventsCleared => {
                 window.request_redraw();
             }
+            // Otherwise, just let the event pass through.
             _ => {}
         }
-
-        app.update(dt);
     });
 }

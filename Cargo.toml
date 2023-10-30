@@ -11,6 +11,7 @@ name = "bk7084rs"
 crate-type = ["cdylib"]
 
 [dependencies]
+arrayvec = "0.7"
 bytemuck = "1"
 cfg-if = "1"
 env_logger = "0.10"
@@ -18,8 +19,11 @@ legion = { git = "https://github.com/matthiascy/legion.git", branch = "master" }
 log = "0.4"
 pyo3 = { version = "0.20", features = ["extension-module"] }
 profiling = "1.0"
+rustc-hash = "1"
 static_assertions = "1"
-winit = "~0.28"
+smartstring = "1"
+winit = "0.28"
+wgpu = "0.18"
 
 [target.'cfg(target_os = "macos")']
 rustflags = ["-C", "link-arg=-undefined", "-C", "link-arg=dynamic_lookup"]
