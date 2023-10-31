@@ -1,17 +1,26 @@
-use crate::input::{InputState, KeyCode, MouseButton};
+use crate::{
+    input::{InputState, KeyCode},
+    renderer::{context::GPUContext, surface::Surface},
+};
 use legion::{Resources, Schedule, World};
 use pyo3::{
-    ffi::PyWeakReference,
     prelude::*,
-    types::{PyDict, PyString, PyTuple},
+    types::{PyDict, PyTuple},
 };
-use std::{collections::HashMap, sync::Arc};
+use std::collections::HashMap;
 use winit::{
     dpi::PhysicalSize,
-    event::{Event, KeyboardInput, ModifiersState, WindowEvent},
+    event::{Event, KeyboardInput, WindowEvent},
     event_loop::{EventLoop, EventLoopBuilder, EventLoopProxy},
     window::{Fullscreen, Window, WindowBuilder},
 };
+
+pub trait App {
+    /// Create a new window together with the event loop.
+    fn create_window(&mut self, builder: WindowBuilder) -> Window {
+        todo!()
+    }
+}
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
 pub enum UserEvent {
@@ -62,7 +71,6 @@ impl AppState {
             height,
             resizable,
             fullscreen,
-            // gpu_ctx: None,
             input: InputState::default(),
             event_loop: None,
             event_listeners: Default::default(),
@@ -154,9 +162,9 @@ impl AppState {
             .with_title(self.title.clone())
             .with_inner_size(PhysicalSize::new(self.width, self.height))
             .with_resizable(self.resizable)
+            .with_visible(false)
             .build(&event_loop)
             .unwrap();
-        // self.gpu_ctx = Some(pollster::block_on(GpuContext::new(&window)));
         self.event_loop = Some(event_loop.create_proxy());
         window
     }
@@ -210,37 +218,35 @@ impl AppState {
 
     // pub fn render(&mut self) -> Result<(), wgpu::SurfaceError> {
     //     profiling::scope!("AppState::render");
-    //     match &mut self.gpu_ctx {
-    //         Some(ctx) => {
-    //             let output = ctx.surface.get_current_texture()?;
-    //             let view =
-    // output.texture.create_view(&wgpu::TextureViewDescriptor::default());
+    //     let output = self.context.surface.get_current_texture()?;
+    //             let view = output
+    //                 .texture
+    //                 .create_view(&wgpu::TextureViewDescriptor::default());
     //
     //             let mut encoder =
-    // ctx.device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
-    //                 label: Some("Render")
-    //             });
+    //                 ctx.device
+    //                     .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+    //                         label: Some("Render"),
+    //                     });
     //
     //             {
-    //                 let _render_pass = encoder.begin_render_pass(
-    //                     &wgpu::RenderPassDescriptor {
-    //                         label: Some("Main Render Pass"),
-    //                         color_attachments:
-    // &[Some(wgpu::RenderPassColorAttachment {
-    // view: &view,                             resolve_target: None,
-    //                             ops: wgpu::Operations {
-    //                                 load: wgpu::LoadOp::Clear(wgpu::Color {
-    //                                     r: 0.1,
-    //                                     g: 0.2,
-    //                                     b: 0.3,
-    //                                     a: 1.0
-    //                                 }),
-    //                                 store: true
-    //                             }
-    //                         })],
-    //                         depth_stencil_attachment: None
-    //                     }
-    //                 );
+    //                 let _render_pass =
+    // encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+    // label: Some("Main Render Pass"),                     color_attachments:
+    // &[Some(wgpu::RenderPassColorAttachment {                         view:
+    // &view,                         resolve_target: None,
+    //                         ops: wgpu::Operations {
+    //                             load: wgpu::LoadOp::Clear(wgpu::Color {
+    //                                 r: 0.1,
+    //                                 g: 0.2,
+    //                                 b: 0.3,
+    //                                 a: 1.0,
+    //                             }),
+    //                             store: true,
+    //                         },
+    //                     })],
+    //                     depth_stencil_attachment: None,
+    //                 });
     //             }
     //
     //             ctx.queue.submit(std::iter::once(encoder.finish()));
@@ -248,10 +254,6 @@ impl AppState {
     //             output.present();
     //
     //             Ok(())
-    //         },
-    //         None => {
-    //             Ok(())
-    //         }
     //     }
     // }
 }
@@ -259,8 +261,15 @@ impl AppState {
 #[pyfunction]
 pub fn run_main_loop(mut app: AppState) {
     let event_loop = EventLoopBuilder::<UserEvent>::with_user_event().build();
-    let window = app.init(&event_loop);
+    let mut window = app.init(&event_loop);
     let win_id = window.id();
+
+    // Create the GPU context and surface.
+    let context = pollster::block_on(GPUContext::new(None));
+    let mut surface = Surface::new(&context, &window);
+
+    // Ready to present the window.
+    window.set_visible(true);
 
     event_loop.run(move |event, _, control_flow| {
         app.curr_time = std::time::Instant::now();

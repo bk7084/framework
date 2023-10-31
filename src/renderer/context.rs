@@ -1,5 +1,4 @@
 use crate::typedefs::ArrVec;
-use rustc_hash::FxHashMap;
 use std::sync::Arc;
 use wgpu::DeviceType;
 
@@ -16,67 +15,19 @@ pub struct GPUContext {
     pub queue: Arc<wgpu::Queue>,
 }
 
-#[derive(Clone)]
-pub struct PotentialAdapter {
-    pub adapter: wgpu::Adapter,
-    pub info: wgpu::AdapterInfo,
-    pub limits: wgpu::Limits,
-    pub features: wgpu::Features,
-}
-
-/// Configuration for the GPU together with the graphics API.
-pub struct GPUConfig {
-    /// Physical device requirements.
-    pub device_descriptor: wgpu::DeviceDescriptor<'static>,
-    /// The power preference of the GPU.
-    pub power_preference: wgpu::PowerPreference,
-    /// Graphics API backend to use.
-    pub backend: wgpu::Backends,
-    /// Presentation mode to use.
-    pub present_mode: wgpu::PresentMode,
-    /// Surface format for the swap chain.
-    pub format: wgpu::TextureFormat,
-    /// Depth format for the swap chain.
-    pub depth_format: wgpu::TextureFormat,
-}
-
-impl GPUConfig {
-    /// Creates a new configuration trying to use the best available options.
-    pub fn new(limits: &wgpu::Limits) -> Self {
-        GPUConfig {
-            device_descriptor: wgpu::DeviceDescriptor {
-                label: Some("BK7084RS Device"),
-                features: wgpu::Features::default(),
-                limits: limits.clone(),
-            },
-            power_preference: wgpu::PowerPreference::HighPerformance,
-            backend: wgpu::Backends::PRIMARY,
-            present_mode: wgpu::PresentMode::AutoNoVsync,
-            format: TextureF,
-            depth_format: TextureFormat::R8Unorm,
-        }
-    }
-
-    pub const fn preferred_surface_format(formats: &[wgpu::TextureFormat]) -> wgpu::TextureFormat {
-        for format in &formats {
-            if format == &wgpu::TextureFormat::Bgra8UnormSrgb
-                || format == &wgpu::TextureFormat::Rgba8UnormSrgb
-            {
-                return *format;
-            }
-        }
-        formats[0]
-    }
+/// Potential adapter to use.
+struct PotentialAdapter {
+    adapter: wgpu::Adapter,
+    info: wgpu::AdapterInfo,
+    limits: wgpu::Limits,
+    features: wgpu::Features,
 }
 
 impl GPUContext {
     /// Creates a new GPU context.
-    pub async fn new(
-        desired_backend: Option<wgpu::Backend>,
-        desired_features: Option<wgpu::Features>,
-    ) -> Self {
+    pub async fn new(desired_features: Option<wgpu::Features>) -> Self {
         profiling::scope!("GPUContext::new");
-        let backend = wgpu::Backends::VULKAN | wgpu::Backends::METAL | wgpu::Backends::DX12;
+        let backends = wgpu::Backends::VULKAN | wgpu::Backends::METAL | wgpu::Backends::DX12;
 
         let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
             backends,
@@ -86,11 +37,11 @@ impl GPUContext {
         });
 
         let mut adapters = ArrVec::<PotentialAdapter, 4>::new();
-        for adapter in instance.enumerate_adapters(backend) {
+        for adapter in instance.enumerate_adapters(backends) {
             let limits = adapter.limits();
             let features = adapter.features();
             let info = adapter.get_info();
-            log::info!("{:?} Adapter: {:#?}", backend, info);
+            log::info!("{:?} Adapter: {:#?}", backends, info);
             adapters.push(PotentialAdapter {
                 adapter,
                 info,
@@ -106,7 +57,7 @@ impl GPUContext {
             DeviceType::Other => 4,
         });
 
-        let adapter = adapters.get(0).expect("No adapters found");
+        let adapter = adapters.remove(0);
 
         // Create the GPU device and queue.
         let (device, queue) = adapter
@@ -114,8 +65,10 @@ impl GPUContext {
             .request_device(
                 &wgpu::DeviceDescriptor {
                     label: Some("BK7084RS GPU Logical Device"),
-                    features: desired_features.unwrap_or(adapter.features),
-                    limits: adapter.limits.clone(),
+                    features: adapter
+                        .features
+                        .union(desired_features.unwrap_or_else(wgpu::Features::empty)),
+                    limits: adapter.limits,
                 },
                 None,
             )

@@ -14,9 +14,11 @@ crate-type = ["cdylib"]
 arrayvec = "0.7"
 bytemuck = "1"
 cfg-if = "1"
+dolly = { git = "https://github.com/matthiascy/dolly.git", branch = "main" }
 env_logger = "0.10"
 legion = { git = "https://github.com/matthiascy/legion.git", branch = "master" }
 log = "0.4"
+pollster = "0.3"
 pyo3 = { version = "0.20", features = ["extension-module"] }
 profiling = "1.0"
 rustc-hash = "1"
