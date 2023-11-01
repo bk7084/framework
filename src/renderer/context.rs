@@ -1,6 +1,6 @@
 use crate::typedefs::ArrVec;
 use std::sync::Arc;
-use wgpu::DeviceType;
+use wgpu::{DeviceType, Limits};
 
 /// Aggregates all the objects needed to use the GPU.
 #[derive(Clone)]
@@ -13,6 +13,11 @@ pub struct GPUContext {
     pub device: Arc<wgpu::Device>,
     /// Command queue used to send commands to the GPU.
     pub queue: Arc<wgpu::Queue>,
+
+    /// Features supported by the device.
+    pub features: wgpu::Features,
+    /// Limits of the device.
+    pub limits: wgpu::Limits,
 }
 
 /// Potential adapter to use.
@@ -59,16 +64,19 @@ impl GPUContext {
 
         let adapter = adapters.remove(0);
 
+        let features = adapter
+            .features
+            .union(desired_features.unwrap_or_else(wgpu::Features::empty));
+        let limits = adapter.limits;
+
         // Create the GPU device and queue.
         let (device, queue) = adapter
             .adapter
             .request_device(
                 &wgpu::DeviceDescriptor {
                     label: Some("BK7084RS GPU Logical Device"),
-                    features: adapter
-                        .features
-                        .union(desired_features.unwrap_or_else(wgpu::Features::empty)),
-                    limits: adapter.limits,
+                    features,
+                    limits: limits.clone(),
                 },
                 None,
             )
@@ -80,6 +88,8 @@ impl GPUContext {
             adapter: Arc::new(adapter.adapter),
             device: Arc::new(device),
             queue: Arc::new(queue),
+            features,
+            limits,
         }
     }
 }

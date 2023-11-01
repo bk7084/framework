@@ -1,14 +1,15 @@
-__all__ = ['App']
+__all__ = ['App', 'Window']
 
 import inspect
+from bk7084.bk7084rs import Window
 from bk7084.bk7084rs import AppState
 from bk7084.bk7084rs import run_main_loop
 
 
 class App(AppState):
     """The main application class."""
-    def __new__(cls, name, width, height, resizable, fullscreen):
-        return super().__new__(cls, name, width, height, resizable, fullscreen)
+    def __new__(cls):
+        return super().__new__(cls)
 
     def event(self, *args):
         """Decorator for attaching event handlers to the window."""
@@ -26,6 +27,6 @@ class App(AppState):
                 self.attach_event_handler(args[0], fn)
             return decorator
 
-    def run(self):
+    def run(self, window: Window):
         """Starts the main loop."""
-        run_main_loop(self)
+        run_main_loop(self, window)

@@ -1,7 +1,9 @@
 use crate::{
     input::{InputState, KeyCode},
-    renderer::{context::GPUContext, surface::Surface},
+    renderer::{context::GPUContext, surface::Surface, Renderer},
+    scene::Scene,
 };
+use dolly::rig::CameraRig;
 use legion::{Resources, Schedule, World};
 use pyo3::{
     prelude::*,
@@ -12,43 +14,109 @@ use winit::{
     dpi::PhysicalSize,
     event::{Event, KeyboardInput, WindowEvent},
     event_loop::{EventLoop, EventLoopBuilder, EventLoopProxy},
-    window::{Fullscreen, Window, WindowBuilder},
+    window::{Fullscreen, Window},
 };
-
-pub trait App {
-    /// Create a new window together with the event loop.
-    fn create_window(&mut self, builder: WindowBuilder) -> Window {
-        todo!()
-    }
-}
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
 pub enum UserEvent {
-    ToggleFullscreen,
+    Todo,
+}
+unsafe impl Send for UserEvent {}
+
+#[pyclass]
+#[pyo3(name = "Window")]
+#[derive(Debug, Clone)]
+pub struct WindowBuilder {
+    pub size: Option<[u32; 2]>,
+    pub position: Option<[u32; 2]>,
+    pub resizable: bool,
+    pub title: String,
+    pub fullscreen: Option<Fullscreen>,
+    pub maximized: bool,
+    pub transparent: bool,
+    pub decorations: bool,
 }
 
-unsafe impl Send for UserEvent {}
+impl Default for WindowBuilder {
+    #[inline]
+    fn default() -> Self {
+        Self {
+            size: None,
+            position: None,
+            resizable: true,
+            title: "BK7084".to_owned(),
+            maximized: false,
+            fullscreen: None,
+            transparent: false,
+            decorations: true,
+        }
+    }
+}
+
+#[pymethods]
+impl WindowBuilder {
+    #[new]
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Set the size of the window.
+    #[pyo3(signature = (width=800, height=600))]
+    pub fn set_size(&mut self, width: u32, height: u32) {
+        self.size = Some([width, height]);
+    }
+
+    /// Set the position of the window.
+    #[pyo3(signature = (x=200, y=200))]
+    pub fn set_position(&mut self, x: u32, y: u32) {
+        self.position = Some([x, y]);
+    }
+
+    /// Set whether the window is resizable.
+    pub fn set_resizable(&mut self, resizable: bool) {
+        self.resizable = resizable;
+    }
+
+    /// Set the title of the window.
+    pub fn set_title(&mut self, title: String) {
+        self.title = title;
+    }
+
+    /// Set whether the window is fullscreen.
+    pub fn set_fullscreen(&mut self, fullscreen: bool) {
+        self.fullscreen = if fullscreen {
+            Some(Fullscreen::Borderless(None))
+        } else {
+            None
+        };
+    }
+
+    /// Set whether the window is maximized.
+    pub fn set_maximized(&mut self, maximized: bool) {
+        self.maximized = maximized;
+    }
+
+    /// Set whether the window is transparent.
+    pub fn set_transparent(&mut self, transparent: bool) {
+        self.transparent = transparent;
+    }
+
+    /// Set whether the window has decorations.
+    pub fn set_decorations(&mut self, decorations: bool) {
+        self.decorations = decorations;
+    }
+}
 
 #[pyclass(subclass)]
 #[derive(Clone)]
 pub struct AppState {
-    pub title: String,
-    #[pyo3(get)]
-    pub width: u32,
-    #[pyo3(get)]
-    pub height: u32,
-    pub resizable: bool,
-    pub fullscreen: bool,
     pub input: InputState,
     event_loop: Option<EventLoopProxy<UserEvent>>,
     event_listeners: HashMap<String, Vec<PyObject>>,
     start_time: std::time::Instant,
     prev_time: std::time::Instant,
     curr_time: std::time::Instant,
-    // ecs: World,
-    // resources: Resources,
-    // systems: Schedule,
-    // pub gpu_ctx: Option<GpuContext>,
+    scene: Scene,
 }
 
 unsafe impl Send for AppState {}
@@ -57,26 +125,16 @@ unsafe impl Send for AppState {}
 #[pymethods]
 impl AppState {
     #[new]
-    pub fn new(
-        title: String,
-        width: u32,
-        height: u32,
-        resizable: bool,
-        fullscreen: bool,
-    ) -> PyResult<Self> {
+    pub fn new() -> PyResult<Self> {
         let now = std::time::Instant::now();
         Ok(Self {
-            title,
-            width,
-            height,
-            resizable,
-            fullscreen,
             input: InputState::default(),
             event_loop: None,
             event_listeners: Default::default(),
             start_time: now,
             prev_time: now,
             curr_time: now,
+            scene: Scene::new(),
         })
     }
 
@@ -131,37 +189,30 @@ impl AppState {
     pub fn delta_time(&self) -> f32 {
         self.curr_time.duration_since(self.prev_time).as_secs_f32()
     }
-
-    fn resize(&mut self, width: u32, height: u32) {
-        if width > 0 && height > 0 {
-            (self.width, self.height) = (width, height);
-            // match &mut self.gpu_ctx {
-            //     Some(ctx) => {
-            //         ctx.resize(width, height);
-            //     },
-            //     None => {}
-            // }
-        }
-    }
-
-    pub fn toggle_fullscreen(&mut self) {
-        self.fullscreen = !self.fullscreen;
-        self.event_loop
-            .as_ref()
-            .unwrap()
-            .send_event(UserEvent::ToggleFullscreen)
-            .unwrap();
-    }
 }
 
 /// Implementation of the methods only available to Rust.
 impl AppState {
-    pub fn init(&mut self, event_loop: &EventLoop<UserEvent>) -> Window {
+    pub fn create_window(
+        &mut self,
+        event_loop: &EventLoop<UserEvent>,
+        builder: WindowBuilder,
+    ) -> Window {
         env_logger::init();
-        let window = WindowBuilder::new()
-            .with_title(self.title.clone())
-            .with_inner_size(PhysicalSize::new(self.width, self.height))
-            .with_resizable(self.resizable)
+        let inner_size = builder.size.unwrap_or([800, 600]);
+        let position = builder.position.unwrap_or([200, 200]);
+        let window = winit::window::WindowBuilder::new()
+            .with_title(builder.title)
+            .with_inner_size(PhysicalSize::new(inner_size[0], inner_size[1]))
+            .with_resizable(builder.resizable)
+            .with_position(winit::dpi::PhysicalPosition::new(
+                position[0] as i32,
+                position[1] as i32,
+            ))
+            .with_maximized(builder.maximized)
+            .with_fullscreen(builder.fullscreen)
+            .with_transparent(builder.transparent)
+            .with_decorations(builder.decorations)
             .with_visible(false)
             .build(&event_loop)
             .unwrap();
@@ -215,66 +266,32 @@ impl AppState {
             .unwrap();
         });
     }
-
-    // pub fn render(&mut self) -> Result<(), wgpu::SurfaceError> {
-    //     profiling::scope!("AppState::render");
-    //     let output = self.context.surface.get_current_texture()?;
-    //             let view = output
-    //                 .texture
-    //                 .create_view(&wgpu::TextureViewDescriptor::default());
-    //
-    //             let mut encoder =
-    //                 ctx.device
-    //                     .create_command_encoder(&wgpu::CommandEncoderDescriptor {
-    //                         label: Some("Render"),
-    //                     });
-    //
-    //             {
-    //                 let _render_pass =
-    // encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-    // label: Some("Main Render Pass"),                     color_attachments:
-    // &[Some(wgpu::RenderPassColorAttachment {                         view:
-    // &view,                         resolve_target: None,
-    //                         ops: wgpu::Operations {
-    //                             load: wgpu::LoadOp::Clear(wgpu::Color {
-    //                                 r: 0.1,
-    //                                 g: 0.2,
-    //                                 b: 0.3,
-    //                                 a: 1.0,
-    //                             }),
-    //                             store: true,
-    //                         },
-    //                     })],
-    //                     depth_stencil_attachment: None,
-    //                 });
-    //             }
-    //
-    //             ctx.queue.submit(std::iter::once(encoder.finish()));
-    //
-    //             output.present();
-    //
-    //             Ok(())
-    //     }
-    // }
 }
 
 #[pyfunction]
-pub fn run_main_loop(mut app: AppState) {
+pub fn run_main_loop(mut app: AppState, builder: WindowBuilder) {
     let event_loop = EventLoopBuilder::<UserEvent>::with_user_event().build();
-    let mut window = app.init(&event_loop);
+
+    let mut window = app.create_window(&event_loop, builder);
     let win_id = window.id();
 
     // Create the GPU context and surface.
     let context = pollster::block_on(GPUContext::new(None));
     let mut surface = Surface::new(&context, &window);
+    let mut renderer = Renderer::new(&context, surface.aspect_ratio());
 
     // Ready to present the window.
     window.set_visible(true);
 
     event_loop.run(move |event, _, control_flow| {
+        // ControlFlow::Poll continuously runs the event loop, even if the OS hasn't
+        // dispatched any events.
+        control_flow.set_poll();
+
         app.curr_time = std::time::Instant::now();
         let dt = app.delta_time();
         app.prev_time = app.curr_time;
+        print!("frame time: {} secs\r", dt);
 
         match event {
             Event::WindowEvent {
@@ -284,46 +301,50 @@ pub fn run_main_loop(mut app: AppState) {
                 if !app.process_input(event) {
                     match event {
                         WindowEvent::CloseRequested => {
-                            *control_flow = winit::event_loop::ControlFlow::Exit
+                            control_flow.set_exit();
                         }
                         WindowEvent::Resized(sz) => {
-                            app.resize(sz.width, sz.height);
+                            surface.resize(&context.device, sz.width, sz.height);
+                            // TODO: update camera aspect ratio
                         }
                         WindowEvent::ScaleFactorChanged { new_inner_size, .. } => {
-                            app.resize(new_inner_size.width, new_inner_size.height);
+                            surface.resize(
+                                &context.device,
+                                new_inner_size.width,
+                                new_inner_size.height,
+                            );
+                            // TODO: update camera aspect ratio
                         }
                         _ => {}
                     }
-                    if app.input.is_key_pressed(KeyCode::F11) {
-                        app.toggle_fullscreen();
-                    }
                     if app.input.is_key_pressed(KeyCode::Escape) {
-                        *control_flow = winit::event_loop::ControlFlow::Exit;
+                        control_flow.set_exit();
                     }
                 }
             }
-            Event::UserEvent(event) => match event {
-                UserEvent::ToggleFullscreen => {
-                    window.set_fullscreen(if app.fullscreen {
-                        Some(Fullscreen::Borderless(None))
-                    } else {
-                        None
-                    });
-                }
-            },
             Event::RedrawRequested(window_id) if window_id == win_id => {
-                // match app.render() {
-                //     Ok(_) => {},
-                //     Err(wgpu::SurfaceError::Lost) => app.resize(app.width,
-                // app.height),
-                //     Err(wgpu::SurfaceError::OutOfMemory) => *control_flow =
-                // winit::event_loop::ControlFlow::Exit,
-                //     Err(e) => eprintln!("{:?}", e)
-                // }
+                // Grab a frame from the surface.
+                let frame = surface
+                    .get_current_texture()
+                    .expect("Failed to get a frame from the surface");
+
+                match renderer.render(&frame) {
+                    Ok(_) => {}
+                    Err(wgpu::SurfaceError::Lost) => {
+                        surface.resize(&context.device, surface.width(), surface.height())
+                    }
+                    Err(wgpu::SurfaceError::OutOfMemory) => {
+                        *control_flow = winit::event_loop::ControlFlow::Exit
+                    }
+                    Err(e) => eprintln!("{:?}", e),
+                }
+
+                frame.present();
             }
             /// The main event loop has been cleared and will not be processed
             /// again until the next event needs to be handled.
             Event::MainEventsCleared => {
+                // TODO: update states
                 window.request_redraw();
             }
             // Otherwise, just let the event pass through.

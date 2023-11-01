@@ -1,6 +1,11 @@
 import bk7084 as bk
 
-app = bk.App("BK7084", 400, 400, True, False)
+win = bk.Window()
+win.set_title("BK7084")
+win.set_size(800, 600)
+win.set_resizable(True)
+
+app = bk.App()
 counter = 0
 
 
@@ -19,4 +24,4 @@ def on_update(dt, input):
         print("Shift key is pressed")
 
 
-app.run()
+app.run(win)

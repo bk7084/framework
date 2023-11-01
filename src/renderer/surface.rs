@@ -59,6 +59,7 @@ impl<'w> Surface<'w> {
 impl<'w> Surface<'w> {
     /// Creates a new surface from a window and configures it.
     pub fn new(context: &GPUContext, window: &Window) -> Self {
+        profiling::scope!("Surface::new");
         let surface = unsafe { context.instance.create_surface(window).unwrap() };
         let caps = surface.get_capabilities(&context.adapter);
         let mut format = caps.formats[0];
@@ -102,13 +103,6 @@ impl<'w> Surface<'w> {
         }
         self.config.width = width;
         self.config.height = height;
-        self.inner.configure(device, &self.config);
-    }
-
-    /// Reconfigures the surface with its current configuration.
-    ///
-    /// This is useful for when the window is resized.
-    pub fn reconfigure(&mut self, device: &wgpu::Device) {
         self.inner.configure(device, &self.config);
     }
 }
