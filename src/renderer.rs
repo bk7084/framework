@@ -1,4 +1,4 @@
-use crate::{color, renderer::context::GPUContext};
+use crate::{color, core::Color, renderer::context::GPUContext};
 use std::sync::Arc;
 use wgpu::StoreOp;
 
@@ -14,7 +14,7 @@ pub struct Renderer {
 
 impl Renderer {
     /// Clear color of the renderer.
-    pub const CLEAR_COLOR: wgpu::Color = color!(0.60383, 0.66539, 0.42327);
+    pub const CLEAR_COLOR: Color = color!(0.60383, 0.66539, 0.42327);
 
     /// Creates a new renderer.
     pub fn new(context: &GPUContext, aspect_ratio: f32) -> Self {
@@ -52,7 +52,7 @@ impl Renderer {
                     view: &view,
                     resolve_target: None,
                     ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(Self::CLEAR_COLOR),
+                        load: wgpu::LoadOp::Clear(*Self::CLEAR_COLOR),
                         store: StoreOp::Store,
                     },
                 })],

@@ -1,20 +1,23 @@
+mod window;
+
+pub use window::*;
+
 use crate::{
-    input::{InputState, KeyCode},
+    core::{FxHashMap, SmlString},
+    input::{Input, InputState, KeyCode},
     renderer::{context::GPUContext, surface::Surface, Renderer},
     scene::Scene,
 };
-use dolly::rig::CameraRig;
-use legion::{Resources, Schedule, World};
 use pyo3::{
     prelude::*,
     types::{PyDict, PyTuple},
 };
-use std::collections::HashMap;
+use std::sync::Arc;
 use winit::{
     dpi::PhysicalSize,
     event::{Event, KeyboardInput, WindowEvent},
     event_loop::{EventLoop, EventLoopBuilder, EventLoopProxy},
-    window::{Fullscreen, Window},
+    window::Window,
 };
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
@@ -23,107 +26,23 @@ pub enum UserEvent {
 }
 unsafe impl Send for UserEvent {}
 
-#[pyclass]
-#[pyo3(name = "Window")]
-#[derive(Debug, Clone)]
-pub struct WindowBuilder {
-    pub size: Option<[u32; 2]>,
-    pub position: Option<[u32; 2]>,
-    pub resizable: bool,
-    pub title: String,
-    pub fullscreen: Option<Fullscreen>,
-    pub maximized: bool,
-    pub transparent: bool,
-    pub decorations: bool,
-}
-
-impl Default for WindowBuilder {
-    #[inline]
-    fn default() -> Self {
-        Self {
-            size: None,
-            position: None,
-            resizable: true,
-            title: "BK7084".to_owned(),
-            maximized: false,
-            fullscreen: None,
-            transparent: false,
-            decorations: true,
-        }
-    }
-}
-
-#[pymethods]
-impl WindowBuilder {
-    #[new]
-    pub fn new() -> Self {
-        Self::default()
-    }
-
-    /// Set the size of the window.
-    #[pyo3(signature = (width=800, height=600))]
-    pub fn set_size(&mut self, width: u32, height: u32) {
-        self.size = Some([width, height]);
-    }
-
-    /// Set the position of the window.
-    #[pyo3(signature = (x=200, y=200))]
-    pub fn set_position(&mut self, x: u32, y: u32) {
-        self.position = Some([x, y]);
-    }
-
-    /// Set whether the window is resizable.
-    pub fn set_resizable(&mut self, resizable: bool) {
-        self.resizable = resizable;
-    }
-
-    /// Set the title of the window.
-    pub fn set_title(&mut self, title: String) {
-        self.title = title;
-    }
-
-    /// Set whether the window is fullscreen.
-    pub fn set_fullscreen(&mut self, fullscreen: bool) {
-        self.fullscreen = if fullscreen {
-            Some(Fullscreen::Borderless(None))
-        } else {
-            None
-        };
-    }
-
-    /// Set whether the window is maximized.
-    pub fn set_maximized(&mut self, maximized: bool) {
-        self.maximized = maximized;
-    }
-
-    /// Set whether the window is transparent.
-    pub fn set_transparent(&mut self, transparent: bool) {
-        self.transparent = transparent;
-    }
-
-    /// Set whether the window has decorations.
-    pub fn set_decorations(&mut self, decorations: bool) {
-        self.decorations = decorations;
-    }
-}
-
 #[pyclass(subclass)]
-#[derive(Clone)]
-pub struct AppState {
+#[derive(Debug, Clone)]
+pub struct PyAppState {
     pub input: InputState,
     event_loop: Option<EventLoopProxy<UserEvent>>,
-    event_listeners: HashMap<String, Vec<PyObject>>,
+    event_listeners: FxHashMap<SmlString, Vec<PyObject>>,
     start_time: std::time::Instant,
     prev_time: std::time::Instant,
     curr_time: std::time::Instant,
-    scene: Scene,
+    scene: Arc<Scene>,
 }
 
-unsafe impl Send for AppState {}
+unsafe impl Send for PyAppState {}
 
 /// Python interface for AppState
 #[pymethods]
-impl AppState {
+impl PyAppState {
     #[new]
     pub fn new() -> PyResult<Self> {
         let now = std::time::Instant::now();
@@ -134,7 +53,7 @@ impl AppState {
             start_time: now,
             prev_time: now,
             curr_time: now,
-            scene: Scene::new(),
+            scene: Arc::new(Scene::new()),
         })
     }
 
@@ -142,7 +61,7 @@ impl AppState {
     #[pyo3(text_signature = "($self, event_name)")]
     pub fn register_event_type(&mut self, event_type: String) {
         self.event_listeners
-            .entry(event_type)
+            .entry(SmlString::from(event_type))
             .or_insert_with(Vec::new);
     }
 
@@ -157,33 +76,16 @@ impl AppState {
     /// Attach a handler to an event type.
     pub fn attach_event_handler(&mut self, event_type: String, listener: PyObject) {
         self.event_listeners
-            .entry(event_type)
+            .entry(SmlString::from(event_type))
             .or_insert(Vec::new())
             .push(listener);
     }
 
     /// Detach a handler from an event type.
     pub fn detach_event_handler(&mut self, event_type: String, listener: PyObject) {
-        if let Some(listeners) = self.event_listeners.get_mut(&event_type) {
+        if let Some(listeners) = self.event_listeners.get_mut(event_type.as_str()) {
             listeners.retain(|l| !l.is(&listener));
         }
-    }
-
-    /// Dispatch an event to all attached listeners.
-    #[pyo3(text_signature = "($self, event_name, *args, **kwargs)")]
-    pub fn dispatch_event(
-        &self,
-        py: Python<'_>,
-        event_name: &str,
-        args: &PyTuple,
-        kwargs: Option<&PyDict>,
-    ) -> PyResult<()> {
-        if let Some(listeners) = self.event_listeners.get(event_name) {
-            for listener in listeners {
-                listener.call(py, args, kwargs).unwrap();
-            }
-        }
-        Ok(())
     }
 
     pub fn delta_time(&self) -> f32 {
@@ -192,7 +94,7 @@ impl AppState {
 }
 
 /// Implementation of the methods only available to Rust.
-impl AppState {
+impl PyAppState {
     pub fn create_window(
         &mut self,
         event_loop: &EventLoop<UserEvent>,
@@ -254,9 +156,36 @@ impl AppState {
         }
     }
 
-    pub fn update(&mut self, dt: f32) {
+    /// Dispatch an event to all attached listeners.
+    fn dispatch_event(
+        &self,
+        py: Python<'_>,
+        event_name: &str,
+        args: &PyTuple,
+        kwargs: Option<&PyDict>,
+    ) -> PyResult<()> {
+        if let Some(listeners) = self.event_listeners.get(event_name) {
+            for listener in listeners {
+                listener.call(py, args, kwargs).unwrap();
+            }
+        }
+        Ok(())
+    }
+
+    fn dispatch_resize_event(&self, width: u32, height: u32) {
         Python::with_gil(|py| {
-            let input = self.input.take();
+            self.dispatch_event(
+                py,
+                "on_resize",
+                PyTuple::new(py, &[width.into_py(py), height.into_py(py)]),
+                None,
+            )
+        })
+        .unwrap();
+    }
+
+    fn dispatch_update_event(&self, input: Input, dt: f32) {
+        Python::with_gil(|py| {
             self.dispatch_event(
                 py,
                 "on_update",
@@ -266,18 +195,26 @@ impl AppState {
             .unwrap();
         });
     }
+
+    fn update(&mut self, dt: f32) {
+        let input = self.input.take();
+        self.dispatch_update_event(input, dt);
+    }
 }
 
 #[pyfunction]
-pub fn run_main_loop(mut app: AppState, builder: WindowBuilder) {
+pub fn run_main_loop(mut app: PyAppState, builder: WindowBuilder) {
     let event_loop = EventLoopBuilder::<UserEvent>::with_user_event().build();
 
+    // Create the displaying window.
     let mut window = app.create_window(&event_loop, builder);
     let win_id = window.id();
 
     // Create the GPU context and surface.
     let context = pollster::block_on(GPUContext::new(None));
+    // Create the surface to render to.
     let mut surface = Surface::new(&context, &window);
+    // Create the renderer.
     let mut renderer = Renderer::new(&context, surface.aspect_ratio());
 
     // Ready to present the window.
@@ -291,9 +228,12 @@ pub fn run_main_loop(mut app: AppState, builder: WindowBuilder) {
         app.curr_time = std::time::Instant::now();
         let dt = app.delta_time();
         app.prev_time = app.curr_time;
-        print!("frame time: {} secs\r", dt);
+        // print!("frame time: {} secs\r", dt);
 
         match event {
+            Event::UserEvent(_) => {
+                // todo
+            }
             Event::WindowEvent {
                 ref event,
                 window_id,
@@ -304,16 +244,20 @@ pub fn run_main_loop(mut app: AppState, builder: WindowBuilder) {
                             control_flow.set_exit();
                         }
                         WindowEvent::Resized(sz) => {
-                            surface.resize(&context.device, sz.width, sz.height);
-                            // TODO: update camera aspect ratio
+                            if surface.resize(&context.device, sz.width, sz.height) {
+                                // Dispatch the resize event.
+                                app.dispatch_resize_event(sz.width, sz.height);
+                                // TODO: update camera aspect ratio
+                            }
                         }
                         WindowEvent::ScaleFactorChanged { new_inner_size, .. } => {
-                            surface.resize(
+                            if surface.resize(
                                 &context.device,
                                 new_inner_size.width,
                                 new_inner_size.height,
-                            );
-                            // TODO: update camera aspect ratio
+                            ) {
+                                // TODO: update camera aspect ratio
+                            }
                         }
                         _ => {}
                     }
@@ -331,10 +275,10 @@ pub fn run_main_loop(mut app: AppState, builder: WindowBuilder) {
                 match renderer.render(&frame) {
                     Ok(_) => {}
                     Err(wgpu::SurfaceError::Lost) => {
-                        surface.resize(&context.device, surface.width(), surface.height())
+                        surface.resize(&context.device, surface.width(), surface.height());
                     }
                     Err(wgpu::SurfaceError::OutOfMemory) => {
-                        *control_flow = winit::event_loop::ControlFlow::Exit
+                        control_flow.set_exit();
                     }
                     Err(e) => eprintln!("{:?}", e),
                 }
@@ -344,7 +288,7 @@ pub fn run_main_loop(mut app: AppState, builder: WindowBuilder) {
             /// The main event loop has been cleared and will not be processed
             /// again until the next event needs to be handled.
             Event::MainEventsCleared => {
-                // TODO: update states
+                app.update(dt);
                 window.request_redraw();
             }
             // Otherwise, just let the event pass through.

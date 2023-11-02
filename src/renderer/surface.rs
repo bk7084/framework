@@ -91,18 +91,18 @@ impl<'w> Surface<'w> {
         }
     }
 
-    /// Resizes the surface.
+    /// Resizes the surface and reconfigures it.
     ///
     /// Size is expressed in physical pixels.
     ///
-    /// This does not reconfigure the surface, so it will not be ready for
-    /// rendering. You must call `reconfigure` after this.
-    pub fn resize(&mut self, device: &wgpu::Device, width: u32, height: u32) {
+    /// Returns `true` if the surface was resized.
+    pub fn resize(&mut self, device: &wgpu::Device, width: u32, height: u32) -> bool {
         if self.config.width == width && self.config.height == height {
-            return;
+            return false;
         }
         self.config.width = width;
         self.config.height = height;
         self.inner.configure(device, &self.config);
+        true
     }
 }

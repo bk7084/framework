@@ -1,5 +1,5 @@
 [package]
-name = "bk7084-rs"
+name = "bk7084-framework-rs"
 version = "0.1.0"
 edition = "2021"
 authors = ["Yang Chen <y.chen-14@tudelft.nl>"]
@@ -7,7 +7,7 @@ description = "A Rust backend for BK7084."
 readme = "README.md"
 
 [lib]
-name = "bk7084rs"
+name = "bkfw"
 crate-type = ["cdylib"]
 
 [dependencies]

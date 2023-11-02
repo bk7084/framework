@@ -1,4 +1,4 @@
-#[derive(Debug, Default, PartialEq, Clone, Copy)]
+#[derive(Debug, PartialEq, Clone, Copy)]
 pub struct Transform {
     pub position: glam::Vec3,
     pub scale: f32,

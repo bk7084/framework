@@ -41,7 +41,7 @@ build-backend = "maturin"
 
 [tool.maturin]
 python-source = "pypkg"
-module-name = "bk7084.bk7084rs"
+module-name = "bk7084.bkfw"
 features = ["pyo3/extension-module"]
 bindings = "pyo3"
 

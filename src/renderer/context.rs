@@ -1,6 +1,6 @@
-use crate::typedefs::ArrVec;
+use crate::core::ArrVec;
 use std::sync::Arc;
-use wgpu::{DeviceType, Limits};
+use wgpu::DeviceType;
 
 /// Aggregates all the objects needed to use the GPU.
 #[derive(Clone)]

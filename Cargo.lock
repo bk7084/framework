@@ -169,7 +169,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "327762f6e5a765692301e5bb513e0d9fef63be86bbc14528052b1cd3e6f03e07"
 
 [[package]]
-name = "bk7084-rs"
+name = "bk7084-framework-rs"
 version = "0.1.0"
 dependencies = [
  "arrayvec",
@@ -2301,18 +2301,18 @@ checksum = "0fcb9cbac069e033553e8bb871be2fbdffcab578eb25bd0f7c508cedc6dcd75a"
 
 [[package]]
 name = "zerocopy"
-version = "0.7.21"
+version = "0.7.22"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "686b7e407015242119c33dab17b8f61ba6843534de936d94368856528eae4dcc"
+checksum = "153d75bb9ec8e11aa8ebbfd2b6f734ea9138a94aa510f0749869fe0a883dce31"
 dependencies = [
  "zerocopy-derive",
 ]
 
 [[package]]
 name = "zerocopy-derive"
-version = "0.7.21"
+version = "0.7.22"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "020f3dfe25dfc38dfea49ce62d5d45ecdd7f0d8a724fa63eb36b6eba4ec76806"
+checksum = "9bcfd819c383ddfe0e1da48aebca9cb1b890445c6426325486aaf2651e089c49"
 dependencies = [
  "proc-macro2",
  "quote",

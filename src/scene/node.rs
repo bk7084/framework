@@ -1,12 +1,12 @@
 use crate::scene::transform::Transform;
 
-/// A reference to a node in the scene graph.
-#[derive(Clone, Copy, Debug, Default, PartialEq)]
-pub struct NodeRef(u32);
-
 /// A node in the scene graph.
-#[derive(Debug, Default, PartialEq)]
+#[derive(Debug, Default)]
 pub struct Node {
-    parent: NodeRef,
+    /// The index of the parent node in the nodes array, if any.
+    pub parent: Option<usize>,
+    /// The indices of the children nodes in the nodes array.
+    pub children: Vec<usize>,
+
     local: Transform,
 }

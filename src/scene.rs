@@ -3,7 +3,7 @@ mod transform;
 
 use node::*;
 
-use legion::World;
+use legion::{Resources, World};
 
 #[derive(Debug)]
 pub struct Scene {
