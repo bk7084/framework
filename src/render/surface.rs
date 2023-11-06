@@ -1,4 +1,4 @@
-use crate::renderer::context::GPUContext;
+use crate::render::context::GpuContext;
 use std::ops::{Deref, DerefMut};
 use winit::window::Window;
 
@@ -58,7 +58,7 @@ impl<'w> Surface<'w> {
 
 impl<'w> Surface<'w> {
     /// Creates a new surface from a window and configures it.
-    pub fn new(context: &GPUContext, window: &Window) -> Self {
+    pub fn new(context: &GpuContext, window: &Window) -> Self {
         profiling::scope!("Surface::new");
         let surface = unsafe { context.instance.create_surface(window).unwrap() };
         let caps = surface.get_capabilities(&context.adapter);
@@ -77,7 +77,7 @@ impl<'w> Surface<'w> {
             format,
             width: window.inner_size().width,
             height: window.inner_size().height,
-            present_mode: wgpu::PresentMode::AutoNoVsync,
+            present_mode: wgpu::PresentMode::AutoVsync,
             alpha_mode: wgpu::CompositeAlphaMode::Auto,
             view_formats: vec![],
         };

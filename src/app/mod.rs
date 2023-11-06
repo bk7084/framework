@@ -1,18 +1,21 @@
+mod input;
+pub use input::*;
 mod window;
-
 pub use window::*;
 
 use crate::{
-    core::{FxHashMap, SmlString},
-    input::{Input, InputState, KeyCode},
-    renderer::{context::GPUContext, surface::Surface, Renderer},
-    scene::Scene,
+    core::{
+        camera::{Camera, Projection},
+        Color, FxHashMap, SmlString,
+    },
+    render::{surface::Surface, GpuContext, Renderer},
+    scene::{NodeIdx, PyEntity, Scene},
 };
 use pyo3::{
     prelude::*,
     types::{PyDict, PyTuple},
 };
-use std::sync::Arc;
+use std::sync::{Arc, RwLock};
 use winit::{
     dpi::PhysicalSize,
     event::{Event, KeyboardInput, WindowEvent},
@@ -35,7 +38,7 @@ pub struct PyAppState {
     start_time: std::time::Instant,
     prev_time: std::time::Instant,
     curr_time: std::time::Instant,
-    scene: Arc<Scene>,
+    scene: Arc<RwLock<Scene>>,
 }
 
 unsafe impl Send for PyAppState {}
@@ -53,7 +56,7 @@ impl PyAppState {
             start_time: now,
             prev_time: now,
             curr_time: now,
-            scene: Arc::new(Scene::new()),
+            scene: Arc::new(RwLock::new(Scene::new())),
         })
     }
 
@@ -88,8 +91,18 @@ impl PyAppState {
         }
     }
 
+    /// Get the frame time in seconds.
     pub fn delta_time(&self) -> f32 {
         self.curr_time.duration_since(self.prev_time).as_secs_f32()
+    }
+
+    /// Create a camera
+    pub fn create_camera(&mut self, projection: Projection) -> PyEntity {
+        // let camera = Camera::new(projection, 0.0..f32::INFINITY,
+        // Color::ICE_BLUE); self.scene.get_mut().map(|scene| {
+        //     let entity = scene.spawn(NodeIdx::root(), (camera,));
+        //     entity.into()
+        // })
     }
 }
 
@@ -211,7 +224,7 @@ pub fn run_main_loop(mut app: PyAppState, builder: WindowBuilder) {
     let win_id = window.id();
 
     // Create the GPU context and surface.
-    let context = pollster::block_on(GPUContext::new(None));
+    let context = GpuContext::new(None);
     // Create the surface to render to.
     let mut surface = Surface::new(&context, &window);
     // Create the renderer.

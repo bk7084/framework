@@ -2,11 +2,8 @@
 #![feature(const_trait_impl)]
 
 mod app;
-mod camera;
 pub mod core;
-mod input;
-mod mesh;
-mod renderer;
+mod render;
 mod scene;
 
 use crate::core::SmlString;
@@ -27,9 +24,9 @@ fn bkfw(_py: Python, module: &PyModule) -> PyResult<()> {
     module.add_class::<app::WindowBuilder>()?;
     module.add_class::<app::PyAppState>()?;
     module.add_function(wrap_pyfunction!(app::run_main_loop, module)?)?;
-    module.add_class::<mesh::Mesh>()?;
-    module.add_class::<input::Input>()?;
-    module.add_class::<input::MouseButton>()?;
-    module.add_class::<input::KeyCode>()?;
+    module.add_class::<render::mesh::Mesh>()?;
+    module.add_class::<app::Input>()?;
+    module.add_class::<app::MouseButton>()?;
+    module.add_class::<app::KeyCode>()?;
     Ok(())
 }

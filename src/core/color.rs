@@ -24,11 +24,48 @@ macro_rules! color {
 }
 
 /// Linear color representation.
-#[cfg_attr(feature = "python", pyo3::pyclass)]
+#[pyo3::pyclass]
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Color(wgpu::Color);
 
+/// A set of predefined colors.
+pub const COLORS: [Color; 16] = [
+    color!(0.02122, 0.02122, 0.02732), // Dark grey
+    color!(0.14413, 0.09306, 0.16203), // Purplish grey
+    color!(0.67954, 0.58408, 0.52100), // Very light pink
+    color!(0.86316, 0.25415, 0.23455), // Peachy pink
+    color!(0.43415, 0.39157, 0.76052), // Light periwinkle
+    color!(0.43415, 0.59062, 0.76815), // Cloudy blue
+    color!(0.48515, 0.75294, 0.70110), // Ice blue
+    color!(0.92158, 0.41789, 0.76815), // Light lavender
+    color!(0.25818, 0.38643, 0.25415), // Greenish grey
+    color!(0.47932, 0.82279, 0.30947), // Washed out green
+    color!(0.82279, 0.92158, 0.35640), // Light khaki
+    color!(0.97345, 0.80695, 0.57758), // Pale
+    color!(0.68669, 0.38643, 0.26636), // Pinkish tan
+    color!(0.94731, 0.57112, 0.24620), // Very light brown
+    color!(0.99110, 0.94731, 0.37124), // Buff
+    color!(0.99110, 0.93869, 0.78354), // Off white
+];
+
 impl Color {
+    pub const DARK_GREY: Self = COLORS[0];
+    pub const PURPLISH_GREY: Self = COLORS[1];
+    pub const VERY_LIGHT_PINK: Self = COLORS[2];
+    pub const PEACHY_PINK: Self = COLORS[3];
+    pub const LIGHT_PERIWINKLE: Self = COLORS[4];
+    pub const CLOUDY_BLUE: Self = COLORS[5];
+    pub const ICE_BLUE: Self = COLORS[6];
+    pub const LIGHT_LAVENDER: Self = COLORS[7];
+    pub const GREENISH_GREY: Self = COLORS[8];
+    pub const WASHED_OUT_GREEN: Self = COLORS[9];
+    pub const LIGHT_KHAKI: Self = COLORS[10];
+    pub const PALE: Self = COLORS[11];
+    pub const PINKISH_TAN: Self = COLORS[12];
+    pub const VERY_LIGHT_BROWN: Self = COLORS[13];
+    pub const BUFF: Self = COLORS[14];
+    pub const OFF_WHITE: Self = COLORS[15];
+
     /// Creates a new color.
     #[inline]
     pub const fn new(r: f64, g: f64, b: f64, a: f64) -> Self {

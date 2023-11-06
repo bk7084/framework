@@ -3,8 +3,9 @@ use std::sync::Arc;
 use wgpu::DeviceType;
 
 /// Aggregates all the objects needed to use the GPU.
+#[pyo3::pyclass]
 #[derive(Clone)]
-pub struct GPUContext {
+pub struct GpuContext {
     /// Instance of the graphics API.
     pub instance: Arc<wgpu::Instance>,
     /// Physical device used to render.
@@ -13,7 +14,6 @@ pub struct GPUContext {
     pub device: Arc<wgpu::Device>,
     /// Command queue used to send commands to the GPU.
     pub queue: Arc<wgpu::Queue>,
-
     /// Features supported by the device.
     pub features: wgpu::Features,
     /// Limits of the device.
@@ -28,9 +28,9 @@ struct PotentialAdapter {
     features: wgpu::Features,
 }
 
-impl GPUContext {
+impl GpuContext {
     /// Creates a new GPU context.
-    pub async fn new(desired_features: Option<wgpu::Features>) -> Self {
+    pub fn new(desired_features: Option<wgpu::Features>) -> Self {
         profiling::scope!("GPUContext::new");
         let backends = wgpu::Backends::VULKAN | wgpu::Backends::METAL | wgpu::Backends::DX12;
 
@@ -70,20 +70,22 @@ impl GPUContext {
         let limits = adapter.limits;
 
         // Create the GPU device and queue.
-        let (device, queue) = adapter
-            .adapter
-            .request_device(
-                &wgpu::DeviceDescriptor {
-                    label: Some("BK7084RS GPU Logical Device"),
-                    features,
-                    limits: limits.clone(),
-                },
-                None,
-            )
-            .await
-            .expect("Failed to create device");
+        let (device, queue) = pollster::block_on(async {
+            adapter
+                .adapter
+                .request_device(
+                    &wgpu::DeviceDescriptor {
+                        label: Some("BK7084RS GPU Logical Device"),
+                        features,
+                        limits: limits.clone(),
+                    },
+                    None,
+                )
+                .await
+                .expect("Failed to create device")
+        });
 
-        GPUContext {
+        GpuContext {
             instance: Arc::new(instance),
             adapter: Arc::new(adapter.adapter),
             device: Arc::new(device),
@@ -91,5 +93,13 @@ impl GPUContext {
             features,
             limits,
         }
+    }
+}
+
+#[pyo3::pymethods]
+impl GpuContext {
+    #[new]
+    pub fn new_py() -> Self {
+        Self::new(None)
     }
 }

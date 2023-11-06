@@ -1,9 +1,13 @@
-use crate::{color, core::Color, renderer::context::GPUContext};
+use crate::{color, core::Color};
 use std::sync::Arc;
 use wgpu::StoreOp;
 
-pub mod context;
+mod attribute;
+mod context;
+pub mod mesh;
 pub mod surface;
+
+pub use context::*;
 
 pub struct Renderer {
     device: Arc<wgpu::Device>,
@@ -17,7 +21,7 @@ impl Renderer {
     pub const CLEAR_COLOR: Color = color!(0.60383, 0.66539, 0.42327);
 
     /// Creates a new renderer.
-    pub fn new(context: &GPUContext, aspect_ratio: f32) -> Self {
+    pub fn new(context: &GpuContext, aspect_ratio: f32) -> Self {
         profiling::scope!("Renderer::new");
         let device = context.device.clone();
         let queue = context.queue.clone();

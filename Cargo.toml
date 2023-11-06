@@ -1,5 +1,5 @@
 [package]
-name = "bk7084-framework-rs"
+name = "bkfw"
 version = "0.1.0"
 edition = "2021"
 authors = ["Yang Chen <y.chen-14@tudelft.nl>"]
