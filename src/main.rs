@@ -1,3 +1,4 @@
+use bkfw::{render::GpuContext, scene::NodeIdx};
 use legion::{systems::CommandBuffer, *};
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -36,8 +37,12 @@ fn create_entities(cmds: &mut CommandBuffer, #[resource] values: &Vec<u32>) {
 // }
 
 fn main() {
-    ecs_101();
+    // ecs_101();
     // ecs_intro();
+    let context = GpuContext::new(None);
+    let mut scene = bkfw::scene::Scene::new(&context.device);
+    let entity = scene.spawn(NodeIdx::root(), (0.5f32,));
+    println!("{:?}", entity);
 }
 
 fn ecs_101() {

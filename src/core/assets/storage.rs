@@ -1,0 +1,166 @@
+use crate::core::mesh::{GpuMesh, Mesh};
+use range_alloc::RangeAllocator;
+use std::{num::NonZeroU64, ops::Range, sync::Arc};
+use wgpu::CommandEncoder;
+
+/// Initial size of the mesh data buffer. 32MB.
+pub const INITIAL_MESH_DATA_SIZE: u64 = 1 << 25;
+
+/// Storage for GPU meshes in a megabuffer.
+///
+/// This manages the allocation of mesh data on the GPU.
+pub struct GpuMeshStorage {
+    buffer: Arc<wgpu::Buffer>,
+    allocator: RangeAllocator<u64>,
+    data: Vec<Option<GpuMesh>>,
+}
+
+impl GpuMeshStorage {
+    pub fn new(device: &wgpu::Device) -> Self {
+        profiling::scope!("GpuMeshStorage::new");
+        let buffer = create_gpu_mesh_storage_buffer(device, INITIAL_MESH_DATA_SIZE);
+        let allocator = RangeAllocator::new(0..INITIAL_MESH_DATA_SIZE);
+
+        Self {
+            buffer,
+            allocator,
+            data: Vec::new(),
+        }
+    }
+
+    pub fn len(&self) -> usize {
+        self.data.len()
+    }
+
+    pub fn add(
+        &mut self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        encoder: &mut wgpu::CommandEncoder,
+        mesh: &Mesh,
+    ) -> GpuMesh {
+        profiling::scope!("GpuMeshStorage::add");
+        let index_count = mesh.indices.as_ref().map(|i| i.len()).unwrap_or(0);
+        let vertex_count = mesh.attributes.vertex_count();
+
+        if index_count == 0 && vertex_count == 0 {
+            return GpuMesh::new(mesh.topology);
+        }
+
+        let mut vertex_attribute_ranges = Vec::with_capacity(mesh.attributes.0.len());
+        for (attrib, data) in &mesh.attributes.0 {
+            let range = self.allocate_range(device, encoder, data.n_bytes() as u64);
+            vertex_attribute_ranges.push((*attrib, range));
+        }
+        let index_range = self.allocate_range(device, encoder, index_count as u64 * 4);
+
+        // Copy the mesh vertex data into the buffer.
+        for (attrib, range) in vertex_attribute_ranges.iter() {
+            let data = mesh.attributes.0.get(attrib).unwrap();
+            let mut mapping = queue
+                .write_buffer_with(
+                    &self.buffer,
+                    range.start,
+                    NonZeroU64::new(data.n_bytes() as u64).unwrap(),
+                )
+                .unwrap();
+            mapping.copy_from_slice(data.as_bytes());
+        }
+        // Copy the mesh index data into the buffer.
+        if let Some(indices) = &mesh.indices {
+            let mut mapping = queue
+                .write_buffer_with(
+                    &self.buffer,
+                    index_range.start,
+                    NonZeroU64::new(indices.n_bytes() as u64).unwrap(),
+                )
+                .unwrap();
+            mapping.copy_from_slice(indices.as_bytes());
+        }
+
+        GpuMesh {
+            topology: mesh.topology,
+            vertex_attribute_ranges,
+            vertex_count: vertex_count as u32,
+            index_range,
+        }
+    }
+}
+
+impl GpuMeshStorage {
+    /// Allocates a range of the given size from the buffer.
+    ///
+    /// If the buffer is too small, it will be grown.
+    fn allocate_range(
+        &mut self,
+        device: &wgpu::Device,
+        encoder: &mut CommandEncoder,
+        n_bytes: u64,
+    ) -> Range<u64> {
+        match self.allocator.allocate_range(n_bytes) {
+            Ok(range) => range,
+            Err(..) => {
+                // Desired allocation is too large, so we need to grow the buffer.
+                self.grow_buffer(device, encoder, n_bytes);
+                self.allocator.allocate_range(n_bytes).unwrap()
+            }
+        }
+    }
+
+    /// Deallocates a range of the given size from the buffer.
+    fn deallocate_range(&mut self, range: Range<u64>) {
+        if range.is_empty() {
+            return;
+        }
+        self.allocator.free_range(range);
+    }
+
+    fn grow_buffer(&mut self, device: &wgpu::Device, encoder: &mut CommandEncoder, desired: u64) {
+        profiling::scope!("GpuMeshStorage::grow_buffers");
+
+        let n_bytes = self
+            .allocator
+            .initial_range()
+            .end
+            .checked_add(desired)
+            .unwrap()
+            .next_power_of_two();
+
+        let new_buffer = create_gpu_mesh_storage_buffer(device, n_bytes);
+
+        // Copy the old buffer into the new buffer.
+        encoder.copy_buffer_to_buffer(
+            &self.buffer,
+            0,
+            &new_buffer,
+            0,
+            self.allocator.initial_range().end,
+        );
+        self.buffer = new_buffer;
+        self.allocator.grow_to(n_bytes);
+    }
+}
+
+fn create_gpu_mesh_storage_buffer(device: &wgpu::Device, n_bytes: u64) -> Arc<wgpu::Buffer> {
+    Arc::new(device.create_buffer(&wgpu::BufferDescriptor {
+        label: Some("mesh_data_buffer"),
+        size: n_bytes,
+        usage: wgpu::BufferUsages::COPY_SRC
+            | wgpu::BufferUsages::COPY_DST
+            | wgpu::BufferUsages::INDEX
+            | wgpu::BufferUsages::STORAGE
+            | wgpu::BufferUsages::VERTEX,
+        mapped_at_creation: false,
+    }))
+}
+
+pub struct MaterialStorage {
+    // TODO: implement
+}
+
+impl MaterialStorage {
+    pub fn new(device: &wgpu::Device) -> Self {
+        // TODO: implement
+        Self {}
+    }
+}

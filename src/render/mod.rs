@@ -1,12 +1,14 @@
 use crate::{color, core::Color};
+use legion::{Resources, Schedule};
 use std::sync::Arc;
 use wgpu::StoreOp;
 
-mod attribute;
 mod context;
-pub mod mesh;
+mod pass;
+pub use pass::*;
 pub mod surface;
 
+use crate::scene::Scene;
 pub use context::*;
 
 pub struct Renderer {
@@ -14,6 +16,7 @@ pub struct Renderer {
     queue: Arc<wgpu::Queue>,
     features: wgpu::Features,
     limits: wgpu::Limits,
+    // scheduler: legion::Schedule, todo: implement legion
 }
 
 impl Renderer {
@@ -27,17 +30,26 @@ impl Renderer {
         let queue = context.queue.clone();
         let features = context.features;
         let limits = context.limits.clone();
-
         Self {
             device,
             queue,
             features,
             limits,
+            // scheduler: Schedule::builder()
+            //     .add_system(super::systems::update_transforms_system())
+            //     .add_system(super::systems::update_meshes_system())
+            //     .add_system(super::systems::update_materials_system())
+            //     .add_system(super::systems::update_cameras_system(aspect_ratio))
+            //     .build(),
         }
     }
 
     /// Renders a frame.
-    pub fn render(&mut self, frame: &wgpu::SurfaceTexture) -> Result<(), wgpu::SurfaceError> {
+    pub fn render(
+        &mut self,
+        scene: &Scene,
+        frame: &wgpu::SurfaceTexture,
+    ) -> Result<(), wgpu::SurfaceError> {
         profiling::scope!("Renderer::render");
         let view = frame
             .texture

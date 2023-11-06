@@ -1,9 +1,10 @@
 use crate::core::Color;
 use glam::Mat4;
+use pyo3::prelude::*;
 use std::{fmt::Debug, ops::Range};
 
 /// The type of projection for a camera.
-#[pyo3::pyclass]
+#[pyclass]
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum ProjectionKind {
     /// An orthographic projection.
@@ -13,7 +14,7 @@ pub enum ProjectionKind {
 }
 
 /// A projection for a camera.
-#[pyo3::pyclass]
+#[pyclass]
 #[derive(Clone, Copy)]
 pub struct Projection {
     /// The type of projection.
@@ -40,22 +41,6 @@ impl Debug for Projection {
 }
 
 impl Projection {
-    /// Creates a new perspective projection.
-    pub fn orthographic(height: f32) -> Self {
-        Self {
-            kind: ProjectionKind::Orthographic,
-            fov_or_ext: VerticalFovOrExtent { extent: height },
-        }
-    }
-
-    /// Creates a new perspective projection.
-    pub fn perspective(fov: f32) -> Self {
-        Self {
-            kind: ProjectionKind::Perspective,
-            fov_or_ext: VerticalFovOrExtent { fov },
-        }
-    }
-
     /// Returns the projection matrix for this projection.
     pub fn matrix(&self, near: f32, far: f32, aspect: f32) -> Mat4 {
         match self.kind {
@@ -79,6 +64,27 @@ impl Projection {
                     Mat4::perspective_rh(fov_v, aspect, near, far)
                 }
             }
+        }
+    }
+}
+
+#[pymethods]
+impl Projection {
+    /// Creates a new perspective projection.
+    #[staticmethod]
+    pub fn orthographic(height: f32) -> Self {
+        Self {
+            kind: ProjectionKind::Orthographic,
+            fov_or_ext: VerticalFovOrExtent { extent: height },
+        }
+    }
+
+    /// Creates a new perspective projection.
+    #[staticmethod]
+    pub fn perspective(fov: f32) -> Self {
+        Self {
+            kind: ProjectionKind::Perspective,
+            fov_or_ext: VerticalFovOrExtent { fov },
         }
     }
 }

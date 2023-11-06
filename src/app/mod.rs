@@ -9,7 +9,7 @@ use crate::{
         Color, FxHashMap, SmlString,
     },
     render::{surface::Surface, GpuContext, Renderer},
-    scene::{NodeIdx, PyEntity, Scene},
+    scene::{Entity, NodeIdx, Scene},
 };
 use pyo3::{
     prelude::*,
@@ -38,7 +38,7 @@ pub struct PyAppState {
     start_time: std::time::Instant,
     prev_time: std::time::Instant,
     curr_time: std::time::Instant,
-    scene: Arc<RwLock<Scene>>,
+    scene: Option<Arc<RwLock<Scene>>>,
 }
 
 unsafe impl Send for PyAppState {}
@@ -56,7 +56,7 @@ impl PyAppState {
             start_time: now,
             prev_time: now,
             curr_time: now,
-            scene: Arc::new(RwLock::new(Scene::new())),
+            scene: None,
         })
     }
 
@@ -97,13 +97,25 @@ impl PyAppState {
     }
 
     /// Create a camera
-    pub fn create_camera(&mut self, projection: Projection) -> PyEntity {
-        // let camera = Camera::new(projection, 0.0..f32::INFINITY,
-        // Color::ICE_BLUE); self.scene.get_mut().map(|scene| {
-        //     let entity = scene.spawn(NodeIdx::root(), (camera,));
-        //     entity.into()
-        // })
+    pub fn create_camera(&mut self, projection: Projection) -> Entity {
+        let camera = Camera::new(projection, 0.0..f32::INFINITY, Color::LIGHT_PERIWINKLE);
+        self.scene
+            .as_mut()
+            .expect("Scene not initialized!")
+            .write()
+            .map(|mut scene| scene.spawn(NodeIdx::root(), (camera,)))
+            .expect("Failed to create camera!")
     }
+
+    // pub fn add_mesh(&mut self, mesh: Mesh) -> Entity {
+    //     self.scene
+    //         .write()
+    //         .map(|mut scene| {
+    //             let gpu_mesh = scene.
+    //             scene.spawn(NodeIdx::root(), (mesh,))
+    //         })
+    //         .expect("Failed to add mesh!")
+    // }
 }
 
 /// Implementation of the methods only available to Rust.
@@ -111,7 +123,7 @@ impl PyAppState {
     pub fn create_window(
         &mut self,
         event_loop: &EventLoop<UserEvent>,
-        builder: WindowBuilder,
+        builder: PyWindowBuilder,
     ) -> Window {
         env_logger::init();
         let inner_size = builder.size.unwrap_or([800, 600]);
@@ -213,10 +225,18 @@ impl PyAppState {
         let input = self.input.take();
         self.dispatch_update_event(input, dt);
     }
+
+    /// Initialize the scene.
+    fn init_scene(&mut self, device: &wgpu::Device) {
+        match self.scene {
+            None => self.scene = Some(Arc::new(RwLock::new(Scene::new(device)))),
+            Some(_) => {}
+        }
+    }
 }
 
 #[pyfunction]
-pub fn run_main_loop(mut app: PyAppState, builder: WindowBuilder) {
+pub fn run_main_loop(mut app: PyAppState, builder: PyWindowBuilder) {
     let event_loop = EventLoopBuilder::<UserEvent>::with_user_event().build();
 
     // Create the displaying window.
@@ -225,6 +245,8 @@ pub fn run_main_loop(mut app: PyAppState, builder: WindowBuilder) {
 
     // Create the GPU context and surface.
     let context = GpuContext::new(None);
+    // Initialize the scene.
+    app.init_scene(&context.device);
     // Create the surface to render to.
     let mut surface = Surface::new(&context, &window);
     // Create the renderer.
@@ -285,15 +307,19 @@ pub fn run_main_loop(mut app: PyAppState, builder: WindowBuilder) {
                     .get_current_texture()
                     .expect("Failed to get a frame from the surface");
 
-                match renderer.render(&frame) {
-                    Ok(_) => {}
-                    Err(wgpu::SurfaceError::Lost) => {
-                        surface.resize(&context.device, surface.width(), surface.height());
+                if let Some(scene) = app.scene.as_mut() {
+                    let mut scene = scene.read().unwrap();
+
+                    match renderer.render(&scene, &frame) {
+                        Ok(_) => {}
+                        Err(wgpu::SurfaceError::Lost | wgpu::SurfaceError::Outdated) => {
+                            surface.resize(&context.device, surface.width(), surface.height());
+                        }
+                        Err(wgpu::SurfaceError::OutOfMemory) => {
+                            control_flow.set_exit();
+                        }
+                        Err(e) => eprintln!("{:?}", e),
                     }
-                    Err(wgpu::SurfaceError::OutOfMemory) => {
-                        control_flow.set_exit();
-                    }
-                    Err(e) => eprintln!("{:?}", e),
                 }
 
                 frame.present();

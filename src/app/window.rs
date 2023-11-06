@@ -2,8 +2,9 @@ use pyo3::prelude::*;
 use winit::window::Fullscreen;
 
 #[pyclass]
+#[pyo3(name = "Window")]
 #[derive(Debug, Clone)]
-pub struct WindowBuilder {
+pub struct PyWindowBuilder {
     pub size: Option<[u32; 2]>,
     pub position: Option<[u32; 2]>,
     pub resizable: bool,
@@ -14,7 +15,7 @@ pub struct WindowBuilder {
     pub decorations: bool,
 }
 
-impl Default for WindowBuilder {
+impl Default for PyWindowBuilder {
     #[inline]
     fn default() -> Self {
         Self {
@@ -31,7 +32,7 @@ impl Default for WindowBuilder {
 }
 
 #[pymethods]
-impl WindowBuilder {
+impl PyWindowBuilder {
     #[new]
     pub fn new() -> Self {
         Self::default()

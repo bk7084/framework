@@ -1,7 +1,7 @@
 import bk7084 as bk
 
 win = bk.WindowBuilder()
-win.set_title("BK7084 - 0x00")
+win.set_title("BK7084 - 0x00: Window")
 win.set_size(800, 600)
 win.set_resizable(True)
 

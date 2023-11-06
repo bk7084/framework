@@ -1,7 +1,7 @@
-__all__ = ['App', 'WindowBuilder']
+__all__ = ['App', 'Window']
 
 import inspect
-from bk7084.bkfw import WindowBuilder
+from bk7084.bkfw import Window
 from bk7084.bkfw import PyAppState
 from bk7084.bkfw import run_main_loop
 
@@ -38,6 +38,6 @@ class App(PyAppState):
                 self.attach_event_handler(args[0], fn)
             return decorator
 
-    def run(self, builder: WindowBuilder):
+    def run(self, builder: Window):
         """Starts the main loop."""
         run_main_loop(self, builder)

@@ -5,17 +5,28 @@ mod transform;
 
 use std::fmt::{Debug, Formatter};
 
-use legion::{storage::IntoComponentSource, Entity, EntityStore, Resources, World};
+use crate::core::{
+    assets::{Assets, MaterialAssets, MeshAssets},
+    mesh::{GpuMesh, Mesh},
+    Material,
+};
+use legion::{storage::IntoComponentSource, EntityStore, Resources, World};
 
+/// Entity in a scene.
 #[pyo3::pyclass]
 #[derive(Clone, Copy, Debug)]
-pub struct PyEntity(Entity);
+pub struct Entity {
+    /// The entity ID.
+    pub(crate) entity: legion::Entity,
+    /// The node ID.
+    pub(crate) node: NodeIdx,
+}
 
+/// Scene graph.
 pub struct Scene {
     world: World,
     nodes: Vec<Node>,
     resources: Resources,
-    // systems: Schedule,
 }
 
 impl Debug for Scene {
@@ -29,11 +40,16 @@ impl Debug for Scene {
 
 impl Scene {
     /// Creates a new empty scene.
-    pub fn new() -> Self {
+    pub fn new(device: &wgpu::Device) -> Self {
+        let mut resources = Resources::default();
+        let mesh_assets = MeshAssets::new(device);
+        let material_assets = MaterialAssets::new(device);
+        resources.insert(mesh_assets);
+        resources.insert(material_assets);
         Self {
             world: World::default(),
             nodes: vec![Node::root()],
-            resources: Default::default(),
+            resources,
         }
     }
 
@@ -65,7 +81,11 @@ impl Scene {
 
         // Add the node ID as a component to the entity.
         self.world.entry(entity).unwrap().add_component(node_id);
-        entity
+
+        Entity {
+            entity,
+            node: node_id,
+        }
     }
 }
 

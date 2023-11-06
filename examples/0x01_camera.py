@@ -1,12 +1,21 @@
 import bk7084 as bk
 
-win = bk.WindowBuilder()
-win.set_title("BK7084 - 0x01")
+win = bk.Window()
+win.set_title("BK7084 - 0x01: Camera")
 win.set_size(800, 600)
 win.set_resizable(True)
 
 app = bk.App()
-camera = app.create_camera()
+projection = bk.Projection.perspective(60.0)
+camera = app.create_camera(projection)
+
+cube = bk.Mesh.create_cube()
+cube_handle = app.add_mesh(cube)
+
+material = bk.Material()
+material_handle = app.add_material(material)
+
+app.create_renderable(cube_handle, material_handle)
 
 
 @app.event

@@ -8,12 +8,13 @@ readme = "README.md"
 
 [lib]
 name = "bkfw"
-crate-type = ["cdylib"]
+crate-type = ["cdylib", "lib"]
 
 [dependencies]
 arrayvec = "0.7"
 bytemuck = "1"
 cfg-if = "1"
+crossbeam-channel = "0.5"
 dolly = { git = "https://github.com/matthiascy/dolly.git", branch = "main" }
 env_logger = "0.10"
 glam = "0.24"
@@ -22,6 +23,7 @@ log = "0.4"
 pollster = "0.3"
 pyo3 = { version = "0.20", features = ["extension-module"] }
 profiling = "1.0"
+range-alloc = "0.1"
 rustc-hash = "1"
 static_assertions = "1"
 smartstring = "1"
