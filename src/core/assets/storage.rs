@@ -4,7 +4,6 @@ use crate::core::{
 };
 use range_alloc::RangeAllocator;
 use std::{num::NonZeroU64, ops::Range, sync::Arc};
-use wgpu::CommandEncoder;
 
 /// Initial size of the mesh data buffer. 32MB.
 pub const INITIAL_MESH_DATA_SIZE: u64 = 1 << 25;
@@ -50,9 +49,14 @@ impl GpuMeshStorage {
         /// Vertex attributes are stored separately in the buffer.
         for (attrib, data) in &mesh.attributes.0 {
             let range = self.allocate_range(device, encoder, data.n_bytes() as u64);
+            log::debug!(
+                "Allocating vertex attribute {:?} with size {} as range {:?}",
+                attrib,
+                data.n_bytes(),
+                range
+            );
             vertex_attribute_ranges.push((*attrib, range));
         }
-        let index_range = self.allocate_range(device, encoder, index_count as u64 * 4);
 
         // Copy the mesh vertex data into the buffer.
         for (attrib, range) in vertex_attribute_ranges.iter() {
@@ -66,23 +70,41 @@ impl GpuMeshStorage {
                 .unwrap();
             mapping.copy_from_slice(data.as_bytes());
         }
-        // Copy the mesh index data into the buffer.
-        if let Some(indices) = &mesh.indices {
-            let mut mapping = queue
-                .write_buffer_with(
-                    &self.buffer,
-                    index_range.start,
-                    NonZeroU64::new(indices.n_bytes() as u64).unwrap(),
-                )
-                .unwrap();
-            mapping.copy_from_slice(indices.as_bytes());
-        }
+
+        let (index_format, index_range) = match mesh.indices.as_ref() {
+            None => {
+                // No indices, so we don't need to allocate an index buffer.
+                (None, 0..0)
+            }
+            Some(indices) => {
+                // Make sure the size of the indices is aligned to COPY_BUFFER_ALIGNMENT.
+                let n_bytes = (indices.n_bytes() as u64 + wgpu::COPY_BUFFER_ALIGNMENT - 1)
+                    & !(wgpu::COPY_BUFFER_ALIGNMENT - 1);
+                let index_range = self.allocate_range(device, encoder, n_bytes);
+                log::debug!(
+                    "Allocating index buffer with size {} as range {:?} with padding {}",
+                    indices.n_bytes(),
+                    index_range,
+                    n_bytes - indices.n_bytes() as u64
+                );
+                // Copy the mesh index data into the buffer.
+                let mut mapping = queue
+                    .write_buffer_with(
+                        &self.buffer,
+                        index_range.start,
+                        NonZeroU64::new(n_bytes).unwrap(),
+                    )
+                    .unwrap();
+                mapping[..indices.n_bytes()].copy_from_slice(indices.as_bytes());
+                (Some(indices.format()), index_range)
+            }
+        };
 
         GpuMesh {
             topology: mesh.topology,
             vertex_attribute_ranges,
             vertex_count: vertex_count as u32,
-            index_format: mesh.indices.as_ref().map(|i| i.format()),
+            index_format,
             index_range,
             index_count: index_count as u32,
         }
@@ -96,7 +118,7 @@ impl GpuMeshStorage {
     fn allocate_range(
         &mut self,
         device: &wgpu::Device,
-        encoder: &mut CommandEncoder,
+        encoder: &mut wgpu::CommandEncoder,
         n_bytes: u64,
     ) -> Range<u64> {
         match self.allocator.allocate_range(n_bytes) {
@@ -117,7 +139,12 @@ impl GpuMeshStorage {
         self.allocator.free_range(range);
     }
 
-    fn grow_buffer(&mut self, device: &wgpu::Device, encoder: &mut CommandEncoder, desired: u64) {
+    fn grow_buffer(
+        &mut self,
+        device: &wgpu::Device,
+        encoder: &mut wgpu::CommandEncoder,
+        desired: u64,
+    ) {
         profiling::scope!("GpuMeshStorage::grow_buffers");
 
         let n_bytes = self

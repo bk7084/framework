@@ -157,16 +157,19 @@ impl Mesh {
         let mut attributes = VertexAttributes::default();
         // Vertex positions for a unit cube centered at the origin.
         let vertices = [
+            // [0.0f32, 0.5, 0.0],
+            // [-0.5, -0.5, 0.0],
+            // [0.5, -0.5, 0.0],
             // front (0.0, 0.0, 0.5)
-            [-0.5, -0.5, 0.5],
+            [-0.5f32, -0.5, 0.5],
             [0.5, -0.5, 0.5],
             [0.5, 0.5, 0.5],
             [-0.5, 0.5, 0.5],
             // back (0.0, 0.0, -0.5)
-            [-0.5, 0.5, -0.5],
+            [-0.5, -0.5, -0.5],
+            [0.5, -0.5, -0.5],
             [0.5, 0.5, -0.5],
             [0.5, -0.5, -0.5],
-            [-0.5, -0.5, -0.5],
             // right (0.5, 0.0, 0.0)
             [0.5, -0.5, -0.5],
             [0.5, 0.5, -0.5],
@@ -222,17 +225,17 @@ impl Mesh {
             [0.0, -1.0, 0.0],
         ];
         // Vertex indices for a unit cube centered at the origin.
-        let indices = vec![
+        let indices: Vec<u16> = vec![
             0u16, 1, 2, 2, 3, 0, // front
-            4, 5, 6, 6, 7, 4, // back
+            4, 7, 6, 6, 5, 4, // back
             8, 9, 10, 10, 11, 8, // right
             12, 13, 14, 14, 15, 12, // left
             16, 17, 18, 18, 19, 16, // top
-            20, 21, 22, 22, 23, 20, // bottom
+            20, 21, 22, 22, 23, 20, // bottom */
         ];
 
-        attributes.insert::<[f32; 3]>(VertexAttribute::POSITION, Arc::new(vertices));
-        attributes.insert::<[f32; 3]>(VertexAttribute::NORMAL, Arc::new(normals));
+        attributes.insert(VertexAttribute::POSITION, Arc::new(vertices));
+        attributes.insert(VertexAttribute::NORMAL, Arc::new(normals));
         Mesh {
             topology: wgpu::PrimitiveTopology::TriangleList,
             attributes,

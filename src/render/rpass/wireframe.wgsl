@@ -26,6 +26,7 @@ var<push_constant> pconsts: PushConstants;
 fn vs_main(vin: VSInput) -> VSOutput {
     var out: VSOutput;
     out.position = globals.proj * globals.view * pconsts.model * vec4<f32>(vin.position, 1.0);
+    // out.position = globals.proj * globals.view * vec4<f32>(vin.position, 1.0);
     return out;
 }
 

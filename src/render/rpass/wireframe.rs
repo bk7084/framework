@@ -3,19 +3,21 @@ use crate::{
         assets::{Handle, MeshAssets},
         camera::Camera,
         mesh::{GpuMesh, VertexAttribute},
+        Color,
     },
     render::{rpass::RenderingPass, RenderTarget, Renderer},
     scene::{NodeIdx, Scene},
 };
 use bytemuck::{Pod, Zeroable};
+use glam::{Mat4, Vec3};
 use legion::IntoQuery;
 use wgpu::{CommandEncoder, IndexFormat};
 
 #[repr(C)]
 #[derive(Debug, Clone, Copy, Pod, Zeroable)]
 struct Globals {
-    view: [[f32; 4]; 4],
-    proj: [[f32; 4]; 4],
+    view: [f32; 16],
+    proj: [f32; 16],
 }
 
 impl Globals {
@@ -95,6 +97,7 @@ impl Wireframe {
                 topology: wgpu::PrimitiveTopology::TriangleList,
                 front_face: wgpu::FrontFace::Ccw,
                 cull_mode: None,
+                polygon_mode: wgpu::PolygonMode::Line,
                 ..Default::default()
             },
             depth_stencil: Some(wgpu::DepthStencilState {
@@ -104,7 +107,11 @@ impl Wireframe {
                 stencil: Default::default(),
                 bias: Default::default(),
             }),
-            multisample: Default::default(),
+            multisample: wgpu::MultisampleState {
+                count: 1,
+                mask: !0,
+                alpha_to_coverage_enabled: false,
+            },
             fragment: Some(wgpu::FragmentState {
                 module: &shader_module,
                 entry_point: "fs_main",
@@ -156,19 +163,23 @@ impl RenderingPass for Wireframe {
             self.depth_texture = Some((texture, view));
         }
 
+        #[rustfmt::skip]
         // Update globals.
         let mut camera_query = <(&Camera, &NodeIdx)>::query();
+        // TODO: support multiple cameras.
         for (camera, node_idx) in camera_query.iter(&scene.world) {
             let view = scene.nodes.inverse_world(*node_idx).to_matrix();
+            let proj = camera.proj_matrix(target.aspect_ratio());
             let globals = Globals {
-                view: view.to_cols_array_2d(),
-                proj: camera.proj_matrix(target.aspect_ratio()).to_cols_array_2d(),
+                view: view.to_cols_array(),
+                proj: proj.to_cols_array(),
             };
             queue.write_buffer(
                 &self.globals_uniform_buffer,
                 0,
                 bytemuck::bytes_of(&globals),
             );
+            break;
         }
 
         // Create render pass.
@@ -178,7 +189,7 @@ impl RenderingPass for Wireframe {
                 view: &target.view,
                 resolve_target: None,
                 ops: wgpu::Operations {
-                    load: wgpu::LoadOp::Clear(*Renderer::CLEAR_COLOR),
+                    load: wgpu::LoadOp::Clear(*Color::DARK_GREY),
                     store: wgpu::StoreOp::Store,
                 },
             })],
@@ -206,24 +217,22 @@ impl RenderingPass for Wireframe {
                     continue;
                 }
                 Some(mesh) => {
-                    let node = scene.nodes.get(node_idx.0).unwrap();
-                    if let Some(positions) =
+                    let transform = scene.nodes.world(*node_idx).to_matrix();
+                    println!("transform: {:?}", transform);
+                    if let Some(pos_range) =
                         mesh.get_vertex_attribute_range(VertexAttribute::POSITION)
                     {
-                        render_pass
-                            .set_vertex_buffer(0, buffer.slice(positions.start..positions.end));
+                        render_pass.set_vertex_buffer(0, buffer.slice(pos_range.clone()));
                         render_pass.set_push_constants(
                             wgpu::ShaderStages::VERTEX,
                             0,
-                            bytemuck::bytes_of(
-                                &scene.nodes[*node_idx].local.to_matrix().to_cols_array_2d(),
-                            ),
+                            bytemuck::cast_slice(&transform.to_cols_array()),
                         );
                         match mesh.index_format {
                             None => render_pass.draw(0..mesh.vertex_count, 0..1),
                             Some(index_format) => {
                                 render_pass.set_index_buffer(
-                                    buffer.slice(mesh.index_range.start..mesh.index_range.end),
+                                    buffer.slice(mesh.index_range.clone()),
                                     index_format,
                                 );
                                 render_pass.draw_indexed(0..mesh.index_count, 0, 0..1);

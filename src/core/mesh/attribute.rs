@@ -119,7 +119,7 @@ pub struct VertexAttributes(
 );
 
 impl VertexAttributes {
-    pub fn insert<T: 'static + bytemuck::Pod>(
+    pub fn insert(
         &mut self,
         attrib: VertexAttribute,
         data: Arc<dyn AttribContainer + Send + Sync + 'static>,

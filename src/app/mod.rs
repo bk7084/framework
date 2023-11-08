@@ -17,6 +17,7 @@ use crate::{
     scene::{Entity, NodeIdx, Scene},
 };
 use dolly::rig::CameraRig;
+use glam::Quat;
 use pyo3::{
     prelude::*,
     types::{PyDict, PyTuple},
@@ -265,10 +266,15 @@ pub fn run_main_loop(mut app: PyAppState, builder: PyWindowBuilder) {
 
     {
         let mut scene = app.scene.as_ref().unwrap().write().unwrap();
-        scene.spawn_mesh(NodeIdx::root(), &mesh, &context.device, &context.queue);
+        let mesh_entity = scene.spawn_mesh(NodeIdx::root(), &mesh, &context.device, &context.queue);
+        scene.nodes[mesh_entity.node].local.orientation =
+            Quat::from_rotation_y(45.0f32.to_radians());
+
         let projection = Projection::perspective(60.0);
         let camera = Camera::new(projection, 0.0..f32::INFINITY, Color::LIGHT_PERIWINKLE);
-        let _ = scene.spawn(NodeIdx::root(), (camera,));
+        let camera_entity = scene.spawn(NodeIdx::root(), (camera,));
+        // scene.set_active_camera(camera_entity);
+        scene.nodes[camera_entity.node].local.position.z = 10.0;
     }
 
     // Ready to present the window.
