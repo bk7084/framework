@@ -6,11 +6,10 @@ mod transform;
 use std::fmt::{Debug, Formatter};
 
 use crate::core::{
-    assets::{Assets, MaterialAssets, MeshAssets},
-    mesh::{GpuMesh, Mesh},
-    Material,
+    assets::{MaterialAssets, MeshAssets},
+    mesh::Mesh,
 };
-use legion::{storage::IntoComponentSource, EntityStore, Resources, World};
+use legion::{storage::IntoComponentSource, World};
 
 /// Entity in a scene.
 #[pyo3::pyclass]
@@ -72,10 +71,7 @@ impl Scene {
         let entity = self.world.spawn(components);
 
         // Add a new node to the scene graph.
-        let node_id = self.nodes.push(Node {
-            parent: Some(parent),
-            ..Default::default()
-        });
+        let node_id = self.nodes.push(Node::new(Some(parent)));
 
         // Add the node ID as a component to the entity.
         self.world.entry(entity).unwrap().add_component(node_id);

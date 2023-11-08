@@ -3,7 +3,6 @@ use crate::{
     render::{rpass::RenderingPass, RenderTarget},
     scene::Scene,
 };
-use wgpu::{CommandEncoder, TextureView};
 
 pub struct ClearPass {
     pub clear_color: Color,
@@ -20,7 +19,7 @@ impl RenderingPass for ClearPass {
         &mut self,
         _device: &wgpu::Device,
         _queue: &wgpu::Queue,
-        encoder: &mut CommandEncoder,
+        encoder: &mut wgpu::CommandEncoder,
         target: &RenderTarget,
         _scene: &Scene,
     ) {

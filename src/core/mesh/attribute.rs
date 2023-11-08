@@ -1,9 +1,5 @@
-use std::{
-    any::Any,
-    collections::BTreeMap,
-    ops::{Deref, DerefMut},
-    sync::Arc,
-};
+use bytemuck::Pod;
+use std::{any::Any, collections::BTreeMap, sync::Arc};
 
 pub trait AttribContainer {
     /// Number of elements in the container.
@@ -44,7 +40,7 @@ impl<T: 'static + bytemuck::Pod> AttribContainer for Vec<T> {
     }
 }
 
-impl<T: 'static + bytemuck::Pod, const N: usize> AttribContainer for [T; N] {
+impl<T: 'static + Pod, const N: usize> AttribContainer for [T; N] {
     fn len(&self) -> usize {
         N
     }

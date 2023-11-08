@@ -1,7 +1,5 @@
 use crate::{color, core::Color};
-use legion::{Resources, Schedule};
 use std::sync::Arc;
-use wgpu::StoreOp;
 
 mod context;
 pub mod rpass;
@@ -25,7 +23,7 @@ impl Renderer {
     pub const CLEAR_COLOR: Color = color!(0.60383, 0.66539, 0.42327);
 
     /// Creates a new renderer.
-    pub fn new(context: &GpuContext, aspect_ratio: f32) -> Self {
+    pub fn new(context: &GpuContext) -> Self {
         profiling::scope!("Renderer::new");
         let device = context.device.clone();
         let queue = context.queue.clone();

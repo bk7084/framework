@@ -1,23 +1,40 @@
-use crate::scene::transform::Transform;
-use glam::Mat4;
+pub use crate::scene::transform::Transform;
+
 use std::ops::{Deref, DerefMut, Index, IndexMut};
 
 /// A node in the scene graph.
-#[derive(Clone, Copy, Debug, Default, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq)]
 pub struct Node {
     /// The index of the parent node in the nodes array, if any.
     pub parent: Option<NodeIdx>,
     /// The local transform of this node.
-    pub local: Transform,
+    local: Transform,
 }
 
 impl Node {
+    pub fn new(parent: Option<NodeIdx>) -> Self {
+        Self {
+            parent,
+            local: Transform::identity(),
+        }
+    }
+
     /// Constructs the root node.
     pub fn root() -> Self {
         Self {
             parent: None,
             local: Transform::identity(),
         }
+    }
+
+    /// Returns the local transform of this node.
+    pub fn transform(&self) -> &Transform {
+        &self.local
+    }
+
+    /// Returns the local transform of this node.
+    pub fn transform_mut(&mut self) -> &mut Transform {
+        &mut self.local
     }
 }
 
@@ -34,20 +51,6 @@ impl NodeIdx {
     /// Returns the root node ID.
     pub const fn root() -> Self {
         Self(0)
-    }
-}
-
-impl Deref for NodeIdx {
-    type Target = usize;
-
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
-}
-
-impl DerefMut for NodeIdx {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.0
     }
 }
 

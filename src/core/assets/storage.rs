@@ -46,7 +46,7 @@ impl GpuMeshStorage {
         }
 
         let mut vertex_attribute_ranges = Vec::with_capacity(mesh.attributes.0.len());
-        /// Vertex attributes are stored separately in the buffer.
+        // Vertex attributes are stored separately in the buffer.
         for (attrib, data) in &mesh.attributes.0 {
             let range = self.allocate_range(device, encoder, data.n_bytes() as u64);
             log::debug!(

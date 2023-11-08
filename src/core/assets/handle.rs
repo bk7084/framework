@@ -1,4 +1,4 @@
-use crate::core::{assets::Asset, mesh::GpuMesh};
+use crate::core::assets::Asset;
 use crossbeam_channel::{Receiver, Sender};
 use std::{
     fmt::{Debug, Formatter},

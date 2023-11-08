@@ -1,17 +1,14 @@
 use crate::{
     core::{
-        assets::{Handle, MeshAssets},
+        assets::Handle,
         camera::Camera,
         mesh::{GpuMesh, VertexAttribute},
-        Color,
     },
     render::{rpass::RenderingPass, RenderTarget, Renderer},
     scene::{NodeIdx, Scene},
 };
 use bytemuck::{Pod, Zeroable};
-use glam::{Mat4, Vec3};
 use legion::IntoQuery;
-use wgpu::{CommandEncoder, IndexFormat};
 
 #[repr(C)]
 #[derive(Debug, Clone, Copy, Pod, Zeroable)]
@@ -138,7 +135,7 @@ impl RenderingPass for Wireframe {
         &mut self,
         device: &wgpu::Device,
         queue: &wgpu::Queue,
-        encoder: &mut CommandEncoder,
+        encoder: &mut wgpu::CommandEncoder,
         target: &RenderTarget,
         scene: &Scene,
     ) {
@@ -168,7 +165,7 @@ impl RenderingPass for Wireframe {
         let mut camera_query = <(&Camera, &NodeIdx)>::query();
         // TODO: support multiple cameras.
         for (camera, node_idx) in camera_query.iter(&scene.world) {
-            let view = scene.nodes.inverse_world(*node_idx).to_matrix();
+            let view = scene.nodes.inverse_world(*node_idx).to_mat4();
             let proj = camera.proj_matrix(target.aspect_ratio());
             let globals = Globals {
                 view: view.to_cols_array(),
@@ -189,7 +186,7 @@ impl RenderingPass for Wireframe {
                 view: &target.view,
                 resolve_target: None,
                 ops: wgpu::Operations {
-                    load: wgpu::LoadOp::Clear(*Color::DARK_GREY),
+                    load: wgpu::LoadOp::Clear(*Renderer::CLEAR_COLOR),
                     store: wgpu::StoreOp::Store,
                 },
             })],
@@ -217,8 +214,7 @@ impl RenderingPass for Wireframe {
                     continue;
                 }
                 Some(mesh) => {
-                    let transform = scene.nodes.world(*node_idx).to_matrix();
-                    println!("transform: {:?}", transform);
+                    let transform = scene.nodes.world(*node_idx).to_mat4();
                     if let Some(pos_range) =
                         mesh.get_vertex_attribute_range(VertexAttribute::POSITION)
                     {

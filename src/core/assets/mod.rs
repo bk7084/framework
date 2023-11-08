@@ -7,11 +7,6 @@ use crate::core::{
     Material,
 };
 pub use handle::*;
-use std::{
-    fmt::Debug,
-    ops::Index,
-    sync::{Arc, RwLock},
-};
 
 /// Trait for representing an asset.
 pub trait Asset: Send + Sync {}
@@ -173,7 +168,7 @@ impl Assets<GpuMesh, GpuMeshStorage> {
 pub type MaterialAssets = Assets<Material, Vec<Option<Material>>>;
 
 impl Assets<Material, Vec<Option<Material>>> {
-    pub fn new(device: &wgpu::Device) -> Self {
+    pub fn new(_device: &wgpu::Device) -> Self {
         Self {
             storage: Vec::new(),
             allocator: HandleAllocator::new(),

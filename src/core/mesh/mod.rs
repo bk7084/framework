@@ -1,19 +1,10 @@
+use glam::Vec3;
 use pyo3::{pyclass, pymethods};
-use std::{
-    any::Any,
-    collections::BTreeMap,
-    fmt::{Debug, Formatter},
-    ops::{Deref, Range},
-    sync::Arc,
-};
+use std::{fmt::Debug, ops::Range, sync::Arc};
 
 mod attribute;
-use crate::core::assets::{storage::GpuMeshStorage, Asset};
+use crate::core::{assets::Asset, Plane};
 pub use attribute::*;
-
-type Vec2 = [f32; 2];
-type Vec3 = [f32; 3];
-type Vec4 = [f32; 4];
 
 /// Topology of a mesh primitive.
 #[pyo3::pyclass]
@@ -54,7 +45,6 @@ impl From<wgpu::PrimitiveTopology> for PyTopology {
             wgpu::PrimitiveTopology::LineStrip => Self::LineStrip,
             wgpu::PrimitiveTopology::TriangleList => Self::TriangleList,
             wgpu::PrimitiveTopology::TriangleStrip => Self::TriangleStrip,
-            _ => unreachable!(),
         }
     }
 }
@@ -127,10 +117,9 @@ pub struct Mesh {
 impl Mesh {
     #[new]
     pub fn new(topology: PyTopology) -> Self {
-        let mut attributes = VertexAttributes::default();
         Self {
             topology: topology.into(),
-            attributes,
+            attributes: VertexAttributes::default(),
             indices: None,
         }
     }
@@ -141,7 +130,51 @@ impl Mesh {
         Self::cube()
     }
 
-    pub fn compute_normals(&mut self) {}
+    #[staticmethod]
+    #[pyo3(name = "create_quad")]
+    pub fn new_quad_py(plane: Plane) -> Self {
+        Self::quad(plane)
+    }
+
+    /// Computes per vertex normals for the mesh.
+    pub fn compute_per_vertex_normals(&mut self) {
+        // If the mesh does not have positions, return.
+        if !self.attributes.0.contains_key(&VertexAttribute::POSITION) {
+            log::error!("Mesh does not have positions.");
+            return;
+        }
+
+        // If the mesh already has normals, return.
+        if self.attributes.0.contains_key(&VertexAttribute::NORMAL) {
+            log::warn!("Mesh already has normals. Skipping normal computation.");
+            return;
+        }
+
+        // Get the positions.
+        let positions: &[Vec3] = self
+            .attributes
+            .0
+            .get(&VertexAttribute::POSITION)
+            .unwrap()
+            .as_slice();
+
+        // Get the indices.
+        if self.indices.is_none() {
+            log::error!("Cannot compute normals without indices.");
+            return;
+        }
+
+        let indices = match &self.indices {
+            Some(Indices::U32(indices)) => indices.as_slice(),
+            Some(Indices::U16(indices)) => indices.as_slice(),
+            None => unreachable!("Cannot compute normals without indices."),
+        };
+
+        // Compute the normals.
+        // let mut normals = Vec::with_capacity(positions.len());
+        todo!("Compute normals.");
+    }
+
     pub fn compute_tangents(&mut self) {}
 }
 
@@ -152,87 +185,110 @@ pub struct VertexBufferLayout {
 }
 
 impl Mesh {
+    #[rustfmt::skip]
     /// Creates a unit cube of side length 1 centered at the origin.
     pub fn cube() -> Self {
         let mut attributes = VertexAttributes::default();
         // Vertex positions for a unit cube centered at the origin.
-        let vertices = [
-            // [0.0f32, 0.5, 0.0],
-            // [-0.5, -0.5, 0.0],
-            // [0.5, -0.5, 0.0],
+        let vertices: [[f32; 3]; 24] = [
             // front (0.0, 0.0, 0.5)
-            [-0.5f32, -0.5, 0.5],
-            [0.5, -0.5, 0.5],
-            [0.5, 0.5, 0.5],
-            [-0.5, 0.5, 0.5],
+            [-0.5f32, -0.5, 0.5], [0.5, -0.5, 0.5], [0.5, 0.5, 0.5], [-0.5, 0.5, 0.5],
             // back (0.0, 0.0, -0.5)
-            [-0.5, -0.5, -0.5],
-            [0.5, -0.5, -0.5],
-            [0.5, 0.5, -0.5],
-            [0.5, -0.5, -0.5],
+            [-0.5, -0.5, -0.5], [0.5, -0.5, -0.5], [0.5, 0.5, -0.5], [0.5, -0.5, -0.5],
             // right (0.5, 0.0, 0.0)
-            [0.5, -0.5, -0.5],
-            [0.5, 0.5, -0.5],
-            [0.5, 0.5, 0.5],
-            [0.5, -0.5, 0.5],
+            [0.5, -0.5, -0.5], [0.5, 0.5, -0.5], [0.5, 0.5, 0.5], [0.5, -0.5, 0.5],
             // left (-0.5, 0.0, 0.0)
-            [-0.5, -0.5, 0.5],
-            [-0.5, 0.5, 0.5],
-            [-0.5, 0.5, -0.5],
-            [-0.5, -0.5, -0.5],
+            [-0.5, -0.5, 0.5], [-0.5, 0.5, 0.5], [-0.5, 0.5, -0.5], [-0.5, -0.5, -0.5],
             // top (0.0, 0.5, 0.0)
-            [0.5, 0.5, -0.5],
-            [-0.5, 0.5, -0.5],
-            [-0.5, 0.5, 0.5],
-            [0.5, 0.5, 0.5],
+            [0.5, 0.5, -0.5], [-0.5, 0.5, -0.5], [-0.5, 0.5, 0.5], [0.5, 0.5, 0.5],
             // bottom (0.0, -0.5, 0.0)
-            [0.5, -0.5, 0.5],
-            [-0.5, -0.5, 0.5],
-            [-0.5, -0.5, -0.5],
-            [0.5, -0.5, -0.5],
+            [0.5, -0.5, 0.5], [-0.5, -0.5, 0.5], [-0.5, -0.5, -0.5], [0.5, -0.5, -0.5],
         ];
         // Vertex normals for a unit cube centered at the origin. Per vertex normals.
-        let normals = [
+        let normals: [[f32; 3]; 24] = [
             // front (0.0, 0.0, 1.0)
-            [0.0, 0.0, 1.0],
-            [0.0, 0.0, 1.0],
-            [0.0, 0.0, 1.0],
-            [0.0, 0.0, 1.0],
+            [0.0, 0.0, 1.0], [0.0, 0.0, 1.0], [0.0, 0.0, 1.0], [0.0, 0.0, 1.0],
             // back (0.0, 0.0, -1.0)
-            [0.0, 0.0, -1.0],
-            [0.0, 0.0, -1.0],
-            [0.0, 0.0, -1.0],
-            [0.0, 0.0, -1.0],
+            [0.0, 0.0, -1.0], [0.0, 0.0, -1.0], [0.0, 0.0, -1.0], [0.0, 0.0, -1.0],
             // right (1.0, 0.0, 0.0)
-            [1.0, 0.0, 0.0],
-            [1.0, 0.0, 0.0],
-            [1.0, 0.0, 0.0],
-            [1.0, 0.0, 0.0],
+            [1.0, 0.0, 0.0], [1.0, 0.0, 0.0], [1.0, 0.0, 0.0], [1.0, 0.0, 0.0],
             // left (-1.0, 0.0, 0.0)
-            [-1.0, 0.0, 0.0],
-            [-1.0, 0.0, 0.0],
-            [-1.0, 0.0, 0.0],
-            [-1.0, 0.0, 0.0],
+            [-1.0, 0.0, 0.0], [-1.0, 0.0, 0.0], [-1.0, 0.0, 0.0], [-1.0, 0.0, 0.0],
             // top (0.0, 1.0, 0.0)
-            [0.0, 1.0, 0.0],
-            [0.0, 1.0, 0.0],
-            [0.0, 1.0, 0.0],
-            [0.0, 1.0, 0.0],
+            [0.0, 1.0, 0.0], [0.0, 1.0, 0.0], [0.0, 1.0, 0.0], [0.0, 1.0, 0.0],
             // bottom (0.0, -1.0, 0.0)
-            [0.0, -1.0, 0.0],
-            [0.0, -1.0, 0.0],
-            [0.0, -1.0, 0.0],
-            [0.0, -1.0, 0.0],
+            [0.0, -1.0, 0.0], [0.0, -1.0, 0.0], [0.0, -1.0, 0.0], [0.0, -1.0, 0.0],
         ];
         // Vertex indices for a unit cube centered at the origin.
         let indices: Vec<u16> = vec![
-            0u16, 1, 2, 2, 3, 0, // front
+            0, 1, 2, 2, 3, 0, // front
             4, 7, 6, 6, 5, 4, // back
             8, 9, 10, 10, 11, 8, // right
             12, 13, 14, 14, 15, 12, // left
             16, 17, 18, 18, 19, 16, // top
             20, 21, 22, 22, 23, 20, // bottom */
         ];
+
+        attributes.insert(VertexAttribute::POSITION, Arc::new(vertices));
+        attributes.insert(VertexAttribute::NORMAL, Arc::new(normals));
+        Mesh {
+            topology: wgpu::PrimitiveTopology::TriangleList,
+            attributes,
+            indices: Some(Indices::U16(indices)),
+        }
+    }
+
+    pub fn quad(plane: Plane) -> Self {
+        let mut attributes = VertexAttributes::default();
+        let (vertices, normals) = match plane {
+            Plane::XY => {
+                let vertices: [[f32; 3]; 4] = [
+                    [-0.5, -0.5, 0.0],
+                    [0.5, -0.5, 0.0],
+                    [0.5, 0.5, 0.0],
+                    [-0.5, 0.5, 0.0],
+                ];
+                let normals: [[f32; 3]; 4] = [
+                    [0.0, 0.0, 1.0],
+                    [0.0, 0.0, 1.0],
+                    [0.0, 0.0, 1.0],
+                    [0.0, 0.0, 1.0],
+                ];
+                (vertices, normals)
+            }
+            Plane::XZ => {
+                let vertices: [[f32; 3]; 4] = [
+                    [-0.5, 0.0, -0.5],
+                    [0.5, 0.0, -0.5],
+                    [0.5, 0.0, 0.5],
+                    [-0.5, 0.0, 0.5],
+                ];
+                let normals: [[f32; 3]; 4] = [
+                    [0.0, 1.0, 0.0],
+                    [0.0, 1.0, 0.0],
+                    [0.0, 1.0, 0.0],
+                    [0.0, 1.0, 0.0],
+                ];
+                (vertices, normals)
+            }
+            Plane::YZ => {
+                let vertices: [[f32; 3]; 4] = [
+                    [0.0, -0.5, -0.5],
+                    [0.0, 0.5, -0.5],
+                    [0.0, 0.5, 0.5],
+                    [0.0, -0.5, 0.5],
+                ];
+                let normals: [[f32; 3]; 4] = [
+                    [1.0, 0.0, 0.0],
+                    [1.0, 0.0, 0.0],
+                    [1.0, 0.0, 0.0],
+                    [1.0, 0.0, 0.0],
+                ];
+                (vertices, normals)
+            }
+        };
+        // Vertex indices for a unit cube centered at the origin.
+        let indices: Vec<u16> = vec![0, 1, 2, 2, 3, 0];
 
         attributes.insert(VertexAttribute::POSITION, Arc::new(vertices));
         attributes.insert(VertexAttribute::NORMAL, Arc::new(normals));
