@@ -134,7 +134,7 @@ impl Camera {
     }
 
     /// Returns the projection matrix for this camera.
-    pub fn matrix(&self, aspect: f32) -> Mat4 {
+    pub fn proj_matrix(&self, aspect: f32) -> Mat4 {
         self.proj.matrix(self.near, self.far, aspect)
     }
 }

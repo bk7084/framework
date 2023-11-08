@@ -12,7 +12,7 @@ crate-type = ["cdylib", "lib"]
 
 [dependencies]
 arrayvec = "0.7"
-bytemuck = "1"
+bytemuck = {  version = "1", features = ["derive"] }
 cfg-if = "1"
 crossbeam-channel = "0.5"
 dolly = { git = "https://github.com/matthiascy/dolly.git", branch = "main" }

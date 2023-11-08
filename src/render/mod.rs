@@ -4,11 +4,12 @@ use std::sync::Arc;
 use wgpu::StoreOp;
 
 mod context;
-mod pass;
-pub use pass::*;
+pub mod rpass;
 pub mod surface;
+mod target;
+pub use target::*;
 
-use crate::scene::Scene;
+use crate::{render::rpass::RenderingPass, scene::Scene};
 pub use context::*;
 
 pub struct Renderer {
@@ -16,7 +17,7 @@ pub struct Renderer {
     queue: Arc<wgpu::Queue>,
     features: wgpu::Features,
     limits: wgpu::Limits,
-    // scheduler: legion::Schedule, todo: implement legion
+    // scheduler: Schedule,
 }
 
 impl Renderer {
@@ -48,35 +49,18 @@ impl Renderer {
     pub fn render(
         &mut self,
         scene: &Scene,
-        frame: &wgpu::SurfaceTexture,
+        rpass: &mut dyn RenderingPass,
+        target: &RenderTarget,
     ) -> Result<(), wgpu::SurfaceError> {
         profiling::scope!("Renderer::render");
-        let view = frame
-            .texture
-            .create_view(&wgpu::TextureViewDescriptor::default());
-
         let mut encoder = self
             .device
             .create_command_encoder(&wgpu::CommandEncoderDescriptor {
                 label: Some("Render"),
             });
 
-        {
-            let _render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: Some("Main Render Pass"),
-                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: &view,
-                    resolve_target: None,
-                    ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(*Self::CLEAR_COLOR),
-                        store: StoreOp::Store,
-                    },
-                })],
-                depth_stencil_attachment: None,
-                timestamp_writes: None,
-                occlusion_query_set: None,
-            });
-        }
+        rpass.record(&self.device, &self.queue, &mut encoder, target, scene);
+
         self.queue.submit(std::iter::once(encoder.finish()));
         Ok(())
     }

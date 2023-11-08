@@ -249,8 +249,12 @@ pub struct GpuMesh {
     pub vertex_attribute_ranges: Vec<(VertexAttribute, Range<u64>)>,
     /// Vertex count of the mesh.
     pub vertex_count: u32,
+    /// Index buffer format of the mesh.
+    pub index_format: Option<wgpu::IndexFormat>,
     /// Index buffer range inside the mesh data buffer. 0..0 if no index buffer.
     pub index_range: Range<u64>,
+    /// Number of indices in the index buffer.
+    pub index_count: u32,
 }
 
 impl Asset for GpuMesh {}
@@ -262,7 +266,9 @@ impl GpuMesh {
             topology,
             vertex_attribute_ranges: Vec::new(),
             vertex_count: 0,
+            index_format: None,
             index_range: 0..0,
+            index_count: 0,
         }
     }
 

@@ -1,4 +1,7 @@
-use crate::core::mesh::{GpuMesh, Mesh};
+use crate::core::{
+    assets::AssetStorage,
+    mesh::{GpuMesh, Mesh},
+};
 use range_alloc::RangeAllocator;
 use std::{num::NonZeroU64, ops::Range, sync::Arc};
 use wgpu::CommandEncoder;
@@ -10,9 +13,9 @@ pub const INITIAL_MESH_DATA_SIZE: u64 = 1 << 25;
 ///
 /// This manages the allocation of mesh data on the GPU.
 pub struct GpuMeshStorage {
-    buffer: Arc<wgpu::Buffer>,
+    pub(crate) buffer: Arc<wgpu::Buffer>,
     allocator: RangeAllocator<u64>,
-    data: Vec<Option<GpuMesh>>,
+    pub(crate) data: Vec<Option<GpuMesh>>,
 }
 
 impl GpuMeshStorage {
@@ -26,10 +29,6 @@ impl GpuMeshStorage {
             allocator,
             data: Vec::new(),
         }
-    }
-
-    pub fn len(&self) -> usize {
-        self.data.len()
     }
 
     pub fn add(
@@ -48,6 +47,7 @@ impl GpuMeshStorage {
         }
 
         let mut vertex_attribute_ranges = Vec::with_capacity(mesh.attributes.0.len());
+        /// Vertex attributes are stored separately in the buffer.
         for (attrib, data) in &mesh.attributes.0 {
             let range = self.allocate_range(device, encoder, data.n_bytes() as u64);
             vertex_attribute_ranges.push((*attrib, range));
@@ -82,7 +82,9 @@ impl GpuMeshStorage {
             topology: mesh.topology,
             vertex_attribute_ranges,
             vertex_count: vertex_count as u32,
+            index_format: mesh.indices.as_ref().map(|i| i.format()),
             index_range,
+            index_count: index_count as u32,
         }
     }
 }
@@ -138,6 +140,16 @@ impl GpuMeshStorage {
         );
         self.buffer = new_buffer;
         self.allocator.grow_to(n_bytes);
+    }
+}
+
+impl AssetStorage for GpuMeshStorage {
+    fn len(&self) -> usize {
+        self.data.len()
+    }
+
+    fn is_empty(&self) -> bool {
+        self.data.is_empty()
     }
 }
 

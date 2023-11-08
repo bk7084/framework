@@ -6,11 +6,17 @@ pub use window::*;
 use crate::{
     core::{
         camera::{Camera, Projection},
+        mesh::Mesh,
         Color, FxHashMap, SmlString,
     },
-    render::{surface::Surface, GpuContext, Renderer},
+    render::{
+        rpass::{ClearPass, Wireframe},
+        surface::Surface,
+        GpuContext, RenderTarget, Renderer,
+    },
     scene::{Entity, NodeIdx, Scene},
 };
+use dolly::rig::CameraRig;
 use pyo3::{
     prelude::*,
     types::{PyDict, PyTuple},
@@ -252,6 +258,19 @@ pub fn run_main_loop(mut app: PyAppState, builder: PyWindowBuilder) {
     // Create the renderer.
     let mut renderer = Renderer::new(&context, surface.aspect_ratio());
 
+    let mut wireframe_rpass = Wireframe::new(&context.device, surface.format());
+    // let mut clear_rpass = ClearPass::new(Renderer::CLEAR_COLOR);
+
+    let mesh = Mesh::cube();
+
+    {
+        let mut scene = app.scene.as_ref().unwrap().write().unwrap();
+        scene.spawn_mesh(NodeIdx::root(), &mesh, &context.device, &context.queue);
+        let projection = Projection::perspective(60.0);
+        let camera = Camera::new(projection, 0.0..f32::INFINITY, Color::LIGHT_PERIWINKLE);
+        let _ = scene.spawn(NodeIdx::root(), (camera,));
+    }
+
     // Ready to present the window.
     window.set_visible(true);
 
@@ -306,11 +325,17 @@ pub fn run_main_loop(mut app: PyAppState, builder: PyWindowBuilder) {
                 let frame = surface
                     .get_current_texture()
                     .expect("Failed to get a frame from the surface");
+                let target = RenderTarget {
+                    size: frame.texture.size(),
+                    view: frame
+                        .texture
+                        .create_view(&wgpu::TextureViewDescriptor::default()),
+                    format: surface.format(),
+                };
 
                 if let Some(scene) = app.scene.as_mut() {
-                    let mut scene = scene.read().unwrap();
-
-                    match renderer.render(&scene, &frame) {
+                    let scene = scene.read().unwrap();
+                    match renderer.render(&scene, &mut wireframe_rpass, &target) {
                         Ok(_) => {}
                         Err(wgpu::SurfaceError::Lost | wgpu::SurfaceError::Outdated) => {
                             surface.resize(&context.device, surface.width(), surface.height());

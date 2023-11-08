@@ -1,4 +1,5 @@
 use crate::scene::transform::Transform;
+use glam::Mat4;
 use std::ops::{Deref, DerefMut, Index, IndexMut};
 
 /// A node in the scene graph.
@@ -18,22 +19,6 @@ impl Node {
             local: Transform::identity(),
         }
     }
-
-    // /// Returns the world transform of this node.
-    // pub fn world(&self, nodes: &[Node]) -> Transform {
-    //     match self.parent {
-    //         Some(parent) => nodes[parent].world(nodes) * self.local,
-    //         None => self.local,
-    //     }
-    // }
-    //
-    // /// Returns the inverse world transform of this node.
-    // pub fn inverse_world(&self, nodes: &[Node]) -> Transform {
-    //     match self.parent {
-    //         Some(parent) => self.local.inverse() *
-    // nodes[parent].inverse_world(nodes),         None => self.local.inverse(),
-    //     }
-    // }
 }
 
 /// The ID of a node in the scene graph.
@@ -99,5 +84,92 @@ impl IndexMut<NodeIdx> for Vec<Node> {
 impl IndexMut<NodeIdx> for &mut [Node] {
     fn index_mut(&mut self, index: NodeIdx) -> &mut Self::Output {
         &mut self[index]
+    }
+}
+
+/// Container for all nodes in the scene graph.
+#[derive(Clone, Debug)]
+pub struct Nodes(Vec<Node>);
+
+impl Nodes {
+    /// Constructs a new empty scene graph with only the root node.
+    pub fn new() -> Self {
+        Self(vec![Node::root()])
+    }
+
+    /// Returns the world transform of this node.
+    pub fn world(&self, node: NodeIdx) -> Transform {
+        match self[node].parent {
+            Some(parent) => self.world(parent) * self.0[node].local,
+            None => self[node].local,
+        }
+    }
+
+    /// Returns the inverse world transform of this node.
+    pub fn inverse_world(&self, node: NodeIdx) -> Transform {
+        self.world(node).inverse()
+    }
+
+    /// Pushes a new node to the scene graph and returns its ID.
+    pub fn push(&mut self, node: Node) -> NodeIdx {
+        let idx = NodeIdx(self.0.len());
+        self.0.push(node);
+        idx
+    }
+}
+
+impl Default for Nodes {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl Deref for Nodes {
+    type Target = [Node];
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl DerefMut for Nodes {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
+    }
+}
+
+impl Index<NodeIdx> for Nodes {
+    type Output = Node;
+
+    fn index(&self, index: NodeIdx) -> &Self::Output {
+        &self.0[index.0]
+    }
+}
+
+impl Index<NodeIdx> for &Nodes {
+    type Output = Node;
+
+    fn index(&self, index: NodeIdx) -> &Self::Output {
+        &self.0[index.0]
+    }
+}
+
+impl Index<NodeIdx> for &mut Nodes {
+    type Output = Node;
+
+    fn index(&self, index: NodeIdx) -> &Self::Output {
+        &self.0[index.0]
+    }
+}
+
+impl IndexMut<NodeIdx> for Nodes {
+    fn index_mut(&mut self, index: NodeIdx) -> &mut Self::Output {
+        &mut self.0[index.0]
+    }
+}
+
+impl IndexMut<NodeIdx> for &mut Nodes {
+    fn index_mut(&mut self, index: NodeIdx) -> &mut Self::Output {
+        &mut self.0[index.0]
     }
 }

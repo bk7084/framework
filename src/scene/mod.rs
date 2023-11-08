@@ -24,9 +24,10 @@ pub struct Entity {
 
 /// Scene graph.
 pub struct Scene {
-    world: World,
-    nodes: Vec<Node>,
-    resources: Resources,
+    pub(crate) world: World,
+    pub(crate) nodes: Nodes,
+    pub(crate) meshes: MeshAssets,
+    pub(crate) materials: MaterialAssets,
 }
 
 impl Debug for Scene {
@@ -41,15 +42,13 @@ impl Debug for Scene {
 impl Scene {
     /// Creates a new empty scene.
     pub fn new(device: &wgpu::Device) -> Self {
-        let mut resources = Resources::default();
         let mesh_assets = MeshAssets::new(device);
         let material_assets = MaterialAssets::new(device);
-        resources.insert(mesh_assets);
-        resources.insert(material_assets);
         Self {
             world: World::default(),
-            nodes: vec![Node::root()],
-            resources,
+            nodes: Nodes::default(),
+            meshes: mesh_assets,
+            materials: material_assets,
         }
     }
 
@@ -73,8 +72,7 @@ impl Scene {
         let entity = self.world.spawn(components);
 
         // Add a new node to the scene graph.
-        let node_id = NodeIdx(self.nodes.len());
-        self.nodes.push(Node {
+        let node_id = self.nodes.push(Node {
             parent: Some(parent),
             ..Default::default()
         });
@@ -86,6 +84,18 @@ impl Scene {
             entity,
             node: node_id,
         }
+    }
+
+    // TODO: avoid adding the mesh multiple times
+    pub fn spawn_mesh(
+        &mut self,
+        parent: NodeIdx,
+        mesh: &Mesh,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+    ) -> Entity {
+        let mesh_handle = self.meshes.add(device, queue, mesh);
+        self.spawn(parent, (mesh_handle,))
     }
 }
 

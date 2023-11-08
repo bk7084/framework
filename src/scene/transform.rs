@@ -1,3 +1,5 @@
+use std::ops::Mul;
+
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Transform {
     pub position: glam::Vec3,
@@ -40,5 +42,47 @@ impl Transform {
             self.orientation,
             self.position,
         )
+    }
+
+    /// Combines two transforms. The result is equivalent to applying `self` and
+    /// then `other`.
+    pub fn _mul(&self, other: &Self) -> Self {
+        Self {
+            scale: self.scale * other.scale,
+            orientation: self.orientation * other.orientation,
+            position: self.scale * (self.orientation * other.position) + self.position,
+        }
+    }
+}
+
+impl Mul<Transform> for Transform {
+    type Output = Self;
+
+    fn mul(self, rhs: Self) -> Self::Output {
+        self._mul(&rhs)
+    }
+}
+
+impl Mul<Transform> for &Transform {
+    type Output = Transform;
+
+    fn mul(self, rhs: Transform) -> Self::Output {
+        self._mul(&rhs)
+    }
+}
+
+impl Mul<&Transform> for Transform {
+    type Output = Transform;
+
+    fn mul(self, rhs: &Transform) -> Self::Output {
+        self._mul(rhs)
+    }
+}
+
+impl Mul for &Transform {
+    type Output = Transform;
+
+    fn mul(self, rhs: Self) -> Self::Output {
+        self._mul(rhs)
     }
 }
