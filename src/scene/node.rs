@@ -1,4 +1,4 @@
-pub use crate::scene::transform::Transform;
+pub use crate::core::Transform;
 
 use std::ops::{Deref, DerefMut, Index, IndexMut};
 
@@ -9,6 +9,8 @@ pub struct Node {
     pub parent: Option<NodeIdx>,
     /// The local transform of this node.
     local: Transform,
+    /// Active state of this node.
+    active: bool,
 }
 
 impl Node {
@@ -16,6 +18,7 @@ impl Node {
         Self {
             parent,
             local: Transform::identity(),
+            active: true,
         }
     }
 
@@ -24,7 +27,20 @@ impl Node {
         Self {
             parent: None,
             local: Transform::identity(),
+            active: true,
         }
+    }
+
+    pub fn set_active(&mut self, active: bool) {
+        self.active = active;
+    }
+
+    pub fn is_active(&self) -> bool {
+        self.active
+    }
+
+    pub fn set_parent(&mut self, parent: Option<NodeIdx>) {
+        self.parent = parent;
     }
 
     /// Returns the local transform of this node.

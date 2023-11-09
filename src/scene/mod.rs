@@ -1,13 +1,18 @@
 mod node;
 pub use node::*;
 
-mod transform;
-
+use crossbeam_channel::{Receiver, Sender};
+use glam::Quat;
 use std::fmt::{Debug, Formatter};
 
-use crate::core::{
-    assets::{MaterialAssets, MeshAssets},
-    mesh::Mesh,
+use crate::{
+    app::command::Command,
+    core::{
+        assets::{MaterialAssets, MeshAssets},
+        camera::{Camera, Projection},
+        mesh::Mesh,
+        Color, ConcatOrder,
+    },
 };
 use legion::{storage::IntoComponentSource, World};
 
@@ -27,6 +32,10 @@ pub struct Scene {
     pub(crate) nodes: Nodes,
     pub(crate) meshes: MeshAssets,
     pub(crate) materials: MaterialAssets,
+    /// Command sender for sending commands to the scene.
+    pub(crate) cmd_sender: Sender<Command>,
+    /// Command receiver serves as a buffer for commands to be executed.
+    cmd_receiver: Receiver<Command>,
 }
 
 impl Debug for Scene {
@@ -43,11 +52,14 @@ impl Scene {
     pub fn new(device: &wgpu::Device) -> Self {
         let mesh_assets = MeshAssets::new(device);
         let material_assets = MaterialAssets::new(device);
+        let (sender, receiver) = crossbeam_channel::unbounded::<Command>();
         Self {
             world: World::default(),
             nodes: Nodes::default(),
             meshes: mesh_assets,
             materials: material_assets,
+            cmd_sender: sender,
+            cmd_receiver: receiver,
         }
     }
 
@@ -92,6 +104,101 @@ impl Scene {
     ) -> Entity {
         let mesh_handle = self.meshes.add(device, queue, mesh);
         self.spawn(parent, (mesh_handle,))
+    }
+
+    /// Processes all commands in the command receiver.
+    pub fn process_commands(&mut self) {
+        while let Ok(cmd) = self.cmd_receiver.try_recv() {
+            match cmd {
+                // Command::AddNode(parent) => {
+                //     let node_id = self.nodes.push(Node::new(parent));
+                //     self.world.entry(node_id).unwrap().add_component(node_id);
+                // }
+                // Command::RemoveNode(node) => {
+                //     self.nodes.remove(node);
+                //     self.world
+                //         .entry(node)
+                //         .unwrap()
+                //         .remove_component::<NodeIdx>();
+                // }
+                // Command::AddComponent(entity, component) => {
+                //     self.world.entry(entity).unwrap().add_component(component);
+                // }
+                // Command::RemoveComponent(entity, component) => {
+                //     self.world
+                //         .entry(entity)
+                //         .unwrap()
+                //         .remove_component::<NodeIdx>();
+                // }
+                Command::Translate {
+                    entity,
+                    translation,
+                    order,
+                } => {
+                    let node = &mut self.nodes[entity.node];
+                    match order {
+                        ConcatOrder::Pre => {
+                            node.transform_mut()
+                                .pre_concat(&Transform::from_translation(translation));
+                        }
+                        ConcatOrder::Post => {
+                            node.transform_mut()
+                                .post_concat(&Transform::from_translation(translation));
+                        }
+                    }
+                }
+                Command::Rotate {
+                    entity,
+                    rotation,
+                    order,
+                } => {
+                    let node = &mut self.nodes[entity.node];
+                    match order {
+                        ConcatOrder::Pre => {
+                            node.transform_mut()
+                                .pre_concat(&Transform::from_rotation(rotation));
+                        }
+                        ConcatOrder::Post => {
+                            node.transform_mut()
+                                .post_concat(&Transform::from_rotation(rotation));
+                        }
+                    }
+                }
+                Command::Scale {
+                    entity,
+                    scale,
+                    order,
+                } => {
+                    let node = &mut self.nodes[entity.node];
+                    match order {
+                        ConcatOrder::Pre => {
+                            node.transform_mut()
+                                .pre_concat(&Transform::from_scale(scale));
+                        }
+                        ConcatOrder::Post => {
+                            node.transform_mut()
+                                .post_concat(&Transform::from_scale(scale));
+                        }
+                    }
+                }
+                Command::SetActive { entity, active } => {
+                    self.nodes[entity.node].set_active(active);
+                }
+                Command::CameraOrbit {
+                    entity,
+                    rotation_x,
+                    rotation_y,
+                } => {
+                    let node = &mut self.nodes[entity.node];
+                    let x = node.transform().to_mat4().x_axis;
+                    let y = node.transform().to_mat4().y_axis;
+                    node.transform_mut().pre_concat(&Transform::from_rotation(
+                        Quat::from_axis_angle(y.truncate(), rotation_y)
+                            * Quat::from_axis_angle(x.truncate(), rotation_x),
+                    ));
+                }
+            }
+        }
     }
 
     pub fn node(&self, node: NodeIdx) -> &Node {

@@ -1,6 +1,17 @@
 use glam::{Affine3A, Mat4, Quat, Vec3};
 use std::ops::Mul;
 
+/// The order in which transforms are concatenated. The transformation
+/// result is in the reverse order of concatenation.
+#[pyo3::pyclass]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum ConcatOrder {
+    /// The transform is concatenated before the current one.
+    Pre,
+    /// The transform is concatenated after the current one.
+    Post,
+}
+
 /// Transform relative to the parent node or the reference frame if the node
 /// has no parent.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -90,6 +101,25 @@ impl Transform {
         let affine = Affine3A::look_at_rh(self.translation, target, up);
         let (_, rot, _) = affine.inverse().to_scale_rotation_translation();
         self.rotation = rot;
+    }
+
+    /// Concatenates the transform before the current one. The result is
+    /// equivalent to applying `self` and then `transform`.
+    pub fn pre_concat(&mut self, transform: &Transform) {
+        self.translation =
+            transform.scale * (transform.rotation * self.translation) + transform.translation;
+        self.rotation = transform.rotation * self.rotation;
+        self.scale = transform.scale * self.scale;
+    }
+
+    /// Concatenates the transform after the current one. The result is
+    /// equivalent to applying `other` and then `self`. This is the order in
+    /// which transforms are concatenated not the order in which they are
+    /// applied onto the object.
+    pub fn post_concat(&mut self, transform: &Transform) {
+        self.translation = self.scale * (self.rotation * transform.translation) + self.translation;
+        self.rotation = self.rotation * transform.rotation;
+        self.scale = self.scale * transform.scale;
     }
 
     /// Combines two transforms. The result is equivalent to applying `self` and

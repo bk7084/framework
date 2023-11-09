@@ -11,6 +11,10 @@ mod material;
 pub use material::*;
 mod light;
 pub mod mesh;
+
+mod transform;
+pub use transform::*;
+
 mod typedef;
 
 pub use typedef::*;

@@ -110,27 +110,30 @@ pub struct Camera {
     pub far: f32,
     /// Background color for this camera.
     pub background: Color,
+    /// If this camera is the main camera.
+    pub is_main: bool,
 }
 
 impl Camera {
     /// Creates a new camera with the given projection settings.
-    pub fn new(proj: Projection, depth: Range<f32>, background: Color) -> Self {
+    pub fn new(proj: Projection, depth: Range<f32>, background: Color, main: bool) -> Self {
         Self {
             proj,
             near: depth.start,
             far: depth.end,
             background,
+            is_main: main,
         }
     }
 
     /// Creates a new camera with the perspective projection settings.
     pub fn perspective(fov_v: f32, depth: Range<f32>, background: Color) -> Self {
-        Self::new(Projection::perspective(fov_v), depth, background)
+        Self::new(Projection::perspective(fov_v), depth, background, false)
     }
 
     /// Creates a new camera with the orthographic projection settings.
     pub fn orthographic(height: f32, depth: Range<f32>, background: Color) -> Self {
-        Self::new(Projection::orthographic(height), depth, background)
+        Self::new(Projection::orthographic(height), depth, background, false)
     }
 
     /// Returns the projection matrix for this camera.

@@ -1,18 +1,23 @@
 mod input;
 pub use input::*;
+pub mod command;
+
 mod window;
+
 pub use window::*;
 
 use crate::{
+    app::command::Command,
     core::{
         camera::{Camera, Projection},
         mesh::Mesh,
-        Color, FxHashMap, Plane, SmlString,
+        Color, ConcatOrder, FxHashMap, Plane, SmlString,
     },
     render::{rpass::Wireframe, surface::Surface, GpuContext, RenderTarget, Renderer},
     scene::{Entity, NodeIdx, Scene, Transform},
 };
-use glam::{Quat, Vec3};
+use crossbeam_channel::Sender;
+use glam::{Mat4, Quat, Vec3};
 use numpy as np;
 use pyo3::{
     prelude::*,
@@ -43,6 +48,8 @@ pub struct PyAppState {
     curr_time: std::time::Instant,
     context: Arc<GpuContext>,
     scene: Arc<RwLock<Scene>>,
+    sender: Sender<Command>,
+    main_camera: Option<Entity>,
 }
 
 unsafe impl Send for PyAppState {}
@@ -54,7 +61,8 @@ impl PyAppState {
     pub fn new() -> PyResult<Self> {
         let now = std::time::Instant::now();
         let context = Arc::new(GpuContext::new(None));
-        let scene = Arc::new(RwLock::new(Scene::new(&context.device)));
+        let scene = Scene::new(&context.device);
+        let sender = scene.cmd_sender.clone();
         Ok(Self {
             context,
             input: InputState::default(),
@@ -63,7 +71,9 @@ impl PyAppState {
             start_time: now,
             prev_time: now,
             curr_time: now,
-            scene,
+            scene: Arc::new(RwLock::new(scene)),
+            sender,
+            main_camera: None,
         })
     }
 
@@ -107,7 +117,7 @@ impl PyAppState {
     #[pyo3(name = "create_camera")]
     pub fn create_camera_py(&mut self, proj: Projection, pos: &np::PyArray2<f32>) -> Entity {
         Python::with_gil(|py| {
-            self.create_camera(proj, Vec3::from_slice(pos.readonly().as_slice().unwrap()))
+            self.create_main_camera(proj, Vec3::from_slice(pos.readonly().as_slice().unwrap()))
         })
     }
 
@@ -151,19 +161,30 @@ impl PyAppState {
         window
     }
 
-    /// Create a camera
-    pub fn create_camera(&mut self, proj: Projection, pos: Vec3) -> Entity {
-        self.scene
+    /// Prepare the scene for rendering.
+    pub fn prepare(&mut self) {
+        self.scene.write().unwrap().process_commands();
+    }
+
+    /// Creates the main camera.
+    pub fn create_main_camera(&mut self, proj: Projection, pos: Vec3) -> Entity {
+        let entity = self
+            .scene
             .write()
             .map(|mut scene| {
-                let camera = Camera::new(proj, 0.0..f32::INFINITY, Color::LIGHT_PERIWINKLE);
+                let camera = Camera::new(proj, 0.0..f32::INFINITY, Color::LIGHT_PERIWINKLE, true);
                 let entity = scene.spawn(NodeIdx::root(), (camera,));
                 let transform = scene.nodes[entity.node].transform_mut();
                 transform.translation = pos;
                 transform.looking_at(Vec3::ZERO, Vec3::Y);
+                // *transform =
+                //     *transform * Transform::from_mat4(Mat4::look_at_rh(pos, Vec3::ZERO,
+                // Vec3::Y));
                 entity
             })
-            .expect("Failed to create camera!")
+            .expect("Failed to create camera!");
+        self.main_camera = Some(entity);
+        entity
     }
 
     /// Returns true if an event has been fully processed.
@@ -240,8 +261,47 @@ impl PyAppState {
         });
     }
 
-    fn update(&mut self, dt: f32, _t: f32) {
+    fn update(&mut self, win_size: (u32, u32), dt: f32, _t: f32) {
         let input = self.input.take();
+
+        // Rotate the camera with the middle mouse button.
+        if input.is_mouse_pressed(MouseButton::Middle) {
+            let delta = input.cursor_delta();
+            // Make the rotation the same direction as the mouse movement.
+            let horiz = -delta[0] / win_size.0 as f32 * std::f32::consts::TAU * 2.0;
+            let vert = -delta[1] / win_size.1 as f32 * std::f32::consts::TAU * 2.0;
+            if input.is_key_pressed(KeyCode::LShift) {
+                let rot =
+                    Quat::from_mat4(&(Mat4::from_rotation_y(horiz) * Mat4::from_rotation_x(vert)));
+                self.sender
+                    .send(Command::Rotate {
+                        entity: self.main_camera.unwrap(),
+                        rotation: rot,
+                        order: ConcatOrder::Post,
+                    })
+                    .unwrap();
+            } else {
+                self.sender
+                    .send(Command::CameraOrbit {
+                        entity: self.main_camera.unwrap(),
+                        rotation_x: vert,
+                        rotation_y: horiz,
+                    })
+                    .unwrap();
+            };
+        }
+
+        // Zoom in/out with the mouse wheel.
+        if input.scroll_delta().is_normal() {
+            self.sender
+                .send(Command::Translate {
+                    entity: self.main_camera.unwrap(),
+                    translation: Vec3::new(0.0, 0.0, input.scroll_delta() * dt),
+                    order: ConcatOrder::Post,
+                })
+                .unwrap();
+        }
+
         self.dispatch_update_event(input, dt);
     }
 }
@@ -264,14 +324,14 @@ pub fn run_main_loop(mut app: PyAppState, builder: PyWindowBuilder) {
     let mut wireframe_rpass = Wireframe::new(&context.device, surface.format());
     // let mut clear_rpass = ClearPass::new(Renderer::CLEAR_COLOR);
 
+    app.create_main_camera(Projection::perspective(60.0), Vec3::new(5.0, 5.0, 5.0));
+
     let mut cube = Mesh::cube();
-
     cube.compute_per_vertex_normals();
-
     let rect = Mesh::quad(Plane::XY);
-
     // let projection = Projection::perspective(60.0);
-    // let camera_entity = app.create_camera(projection, Vec3::new(0.0, 0.0, 5.0));
+    // let camera_entity = app.create_main_camera(projection, Vec3::new(5.0, 5.0,
+    // 5.0));
 
     let (rect0_id, rect1_id) = {
         let mut scene = app.scene.write().unwrap();
@@ -279,7 +339,7 @@ pub fn run_main_loop(mut app: PyAppState, builder: PyWindowBuilder) {
         let cube_node = &mut scene.nodes[cube_entity.node];
         let mut cube_transform = cube_node.transform_mut();
         cube_transform.rotation = Quat::from_rotation_y(45.0f32.to_radians());
-        cube_transform.scale = Vec3::splat(0.2);
+        cube_transform.scale = Vec3::splat(1.5);
 
         let rect0_entity =
             scene.spawn_mesh(NodeIdx::root(), &rect, &context.device, &context.queue);
@@ -314,12 +374,6 @@ pub fn run_main_loop(mut app: PyAppState, builder: PyWindowBuilder) {
         // ControlFlow::Poll continuously runs the event loop, even if the OS hasn't
         // dispatched any events.
         control_flow.set_poll();
-
-        app.curr_time = std::time::Instant::now();
-        let dt = app.delta_time();
-        app.prev_time = app.curr_time;
-        let t = app.start_time.elapsed().as_secs_f32();
-        // print!("frame time: {} secs\r", dt);
 
         match event {
             Event::UserEvent(_) => {
@@ -387,6 +441,10 @@ pub fn run_main_loop(mut app: PyAppState, builder: PyWindowBuilder) {
             // The main event loop has been cleared and will not be processed
             // again until the next event needs to be handled.
             Event::MainEventsCleared => {
+                app.curr_time = std::time::Instant::now();
+                let dt = app.delta_time();
+                app.prev_time = app.curr_time;
+                let t = app.start_time.elapsed().as_secs_f32();
                 {
                     let mut scene = app.scene.write().unwrap();
                     let rect0 = &mut scene.nodes[rect0_id];
@@ -407,13 +465,36 @@ pub fn run_main_loop(mut app: PyAppState, builder: PyWindowBuilder) {
                     *rect1_transform = rot * tra;
 
                     // let rot_cam =
-                    //     Transform::from_rotation(Quat::from_rotation_y(30.
-                    // 0f32.to_radians() * t));
+                    //     Transform::from_rotation(Quat::from_rotation_x(50.
+                    // 0f32.to_radians() * dt)); let camera
+                    // = &mut scene.nodes[app.main_camera.
+                    // unwrap().node]; Rotate the camera
+                    // first, then translate.
+                    // camera.set_transform(*camera.transform() * rot_cam);
+                    // camera.transform_mut().post_concat(&rot_cam);
+                    // app.sender
+                    //     .send(Command::Rotate {
+                    //         entity: camera_entity,
+                    //         rotation:
+                    // Quat::from_rotation_y(50.0f32.to_radians() * dt),
+                    //         order: ConcatOrder::Post,
+                    //     })
+                    //     .unwrap();
 
-                    // let camera = &mut scene.nodes[camera_entity.node];
-                    // *camera.transform_mut().rotation = rot_cam;
+                    // Translate the camera first, then rotate.
+                    // camera.set_transform(rot_cam * *camera.transform());
+                    // camera.transform_mut().pre_concat(&rot_cam);
+                    // app.sender
+                    //     .send(Command::Rotate {
+                    //         entity: camera_entity,
+                    //         rotation:
+                    // Quat::from_rotation_y(50.0f32.to_radians() * dt),
+                    //         order: ConcatOrder::Pre,
+                    //     })
+                    //     .unwrap();
                 }
-                app.update(dt, t);
+                app.update(surface.size(), dt, t);
+                app.prepare();
                 window.request_redraw();
             }
             // Otherwise, just let the event pass through.

@@ -54,6 +54,10 @@ impl<'w> Surface<'w> {
     pub fn aspect_ratio(&self) -> f32 {
         self.config.width as f32 / self.config.height as f32
     }
+
+    pub fn size(&self) -> (u32, u32) {
+        (self.config.width, self.config.height)
+    }
 }
 
 impl<'w> Surface<'w> {

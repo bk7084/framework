@@ -1,3 +1,4 @@
+use crate::core::FxHashMap;
 use std::collections::HashMap;
 use winit::{
     dpi::PhysicalPosition,
@@ -570,8 +571,8 @@ impl From<MouseButton> for WinitMouseButton {
 /// Struct holding the state of the keyboard and mouse.
 #[derive(Debug, Clone)]
 pub struct InputState {
-    pub keys: HashMap<VirtualKeyCode, bool>,
-    pub btns: HashMap<WinitMouseButton, bool>,
+    pub keys: FxHashMap<VirtualKeyCode, bool>,
+    pub btns: FxHashMap<WinitMouseButton, bool>,
     pub mods: ModifiersState,
     pub scroll_delta: f32,
     pub cursor_delta: [f32; 2],
@@ -636,6 +637,8 @@ impl InputState {
         if *self.btns.get(&WinitMouseButton::Middle).unwrap_or(&false) {
             input.btns |= 1 << 2;
         }
+        self.cursor_delta = [0.0, 0.0];
+        self.scroll_delta = 0.0;
         input
     }
 

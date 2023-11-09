@@ -94,7 +94,7 @@ impl Wireframe {
                 topology: wgpu::PrimitiveTopology::TriangleList,
                 front_face: wgpu::FrontFace::Ccw,
                 cull_mode: None,
-                polygon_mode: wgpu::PolygonMode::Line,
+                polygon_mode: wgpu::PolygonMode::Fill,
                 ..Default::default()
             },
             depth_stencil: Some(wgpu::DepthStencilState {
@@ -165,18 +165,20 @@ impl RenderingPass for Wireframe {
         let mut camera_query = <(&Camera, &NodeIdx)>::query();
         // TODO: support multiple cameras.
         for (camera, node_idx) in camera_query.iter(&scene.world) {
-            let view = scene.nodes.inverse_world(*node_idx).to_mat4();
-            let proj = camera.proj_matrix(target.aspect_ratio());
-            let globals = Globals {
-                view: view.to_cols_array(),
-                proj: proj.to_cols_array(),
-            };
-            queue.write_buffer(
-                &self.globals_uniform_buffer,
-                0,
-                bytemuck::bytes_of(&globals),
-            );
-            break;
+            if camera.is_main {
+                let view = scene.nodes.inverse_world(*node_idx).to_mat4();
+                let proj = camera.proj_matrix(target.aspect_ratio());
+                let globals = Globals {
+                    view: view.to_cols_array(),
+                    proj: proj.to_cols_array(),
+                };
+                queue.write_buffer(
+                    &self.globals_uniform_buffer,
+                    0,
+                    bytemuck::bytes_of(&globals),
+                );
+                break;
+            }
         }
 
         // Create render pass.
