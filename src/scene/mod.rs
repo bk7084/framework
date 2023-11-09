@@ -17,13 +17,20 @@ use crate::{
 use legion::{storage::IntoComponentSource, World};
 
 /// Entity in a scene.
-#[pyo3::pyclass]
 #[derive(Clone, Copy, Debug)]
 pub struct Entity {
     /// The entity ID.
     pub(crate) entity: legion::Entity,
     /// The node ID.
     pub(crate) node: NodeIdx,
+}
+
+/// Entity with a command sender.
+#[pyo3::pyclass]
+#[derive(Clone, Debug)]
+pub struct PyEntity {
+    pub entity: Entity,
+    pub cmd_sender: Sender<Command>,
 }
 
 /// Scene graph.

@@ -14,7 +14,7 @@ use crate::{
         Color, ConcatOrder, FxHashMap, Plane, SmlString,
     },
     render::{rpass::Wireframe, surface::Surface, GpuContext, RenderTarget, Renderer},
-    scene::{Entity, NodeIdx, Scene, Transform},
+    scene::{Entity, NodeIdx, PyEntity, Scene, Transform},
 };
 use crossbeam_channel::Sender;
 use glam::{Mat4, Quat, Vec3};
@@ -115,9 +115,14 @@ impl PyAppState {
 
     /// Create a camera
     #[pyo3(name = "create_camera")]
-    pub fn create_camera_py(&mut self, proj: Projection, pos: &np::PyArray2<f32>) -> Entity {
+    pub fn create_camera_py(&mut self, proj: Projection, pos: &np::PyArray2<f32>) -> PyEntity {
         Python::with_gil(|py| {
-            self.create_main_camera(proj, Vec3::from_slice(pos.readonly().as_slice().unwrap()))
+            let entity =
+                self.create_main_camera(proj, Vec3::from_slice(pos.readonly().as_slice().unwrap()));
+            PyEntity {
+                entity,
+                cmd_sender: self.sender.clone(),
+            }
         })
     }
 
@@ -177,9 +182,6 @@ impl PyAppState {
                 let transform = scene.nodes[entity.node].transform_mut();
                 transform.translation = pos;
                 transform.looking_at(Vec3::ZERO, Vec3::Y);
-                // *transform =
-                //     *transform * Transform::from_mat4(Mat4::look_at_rh(pos, Vec3::ZERO,
-                // Vec3::Y));
                 entity
             })
             .expect("Failed to create camera!");
@@ -302,6 +304,7 @@ impl PyAppState {
                 .unwrap();
         }
 
+        // Dispatch the update event, potentially run the user's update function.
         self.dispatch_update_event(input, dt);
     }
 }
@@ -329,9 +332,6 @@ pub fn run_main_loop(mut app: PyAppState, builder: PyWindowBuilder) {
     let mut cube = Mesh::cube();
     cube.compute_per_vertex_normals();
     let rect = Mesh::quad(Plane::XY);
-    // let projection = Projection::perspective(60.0);
-    // let camera_entity = app.create_main_camera(projection, Vec3::new(5.0, 5.0,
-    // 5.0));
 
     let (rect0_id, rect1_id) = {
         let mut scene = app.scene.write().unwrap();
@@ -353,16 +353,6 @@ pub fn run_main_loop(mut app: PyAppState, builder: PyWindowBuilder) {
 
         let rect1_entity =
             scene.spawn_mesh(rect0_entity.node, &rect, &context.device, &context.queue);
-
-        // let projection = Projection::perspective(60.0);
-        // let projection = Projection::orthographic(10.0);
-        // let camera = Camera::new(projection, 0.0..f32::INFINITY,
-        // Color::LIGHT_PERIWINKLE); let camera_entity =
-        // scene.spawn(NodeIdx::root(), (camera,));
-
-        // let camera_node = &mut scene.nodes[camera_entity.node];
-        // let mut camera_transform = camera_node.transform_mut();
-        // camera_transform.translation = Vec3::new(0.0, 0.0, 5.0);
 
         (rect0_entity.node, rect1_entity.node)
     };
@@ -463,35 +453,6 @@ pub fn run_main_loop(mut app: PyAppState, builder: PyWindowBuilder) {
                     let rect1 = &mut scene.nodes[rect1_id];
                     let mut rect1_transform = rect1.transform_mut();
                     *rect1_transform = rot * tra;
-
-                    // let rot_cam =
-                    //     Transform::from_rotation(Quat::from_rotation_x(50.
-                    // 0f32.to_radians() * dt)); let camera
-                    // = &mut scene.nodes[app.main_camera.
-                    // unwrap().node]; Rotate the camera
-                    // first, then translate.
-                    // camera.set_transform(*camera.transform() * rot_cam);
-                    // camera.transform_mut().post_concat(&rot_cam);
-                    // app.sender
-                    //     .send(Command::Rotate {
-                    //         entity: camera_entity,
-                    //         rotation:
-                    // Quat::from_rotation_y(50.0f32.to_radians() * dt),
-                    //         order: ConcatOrder::Post,
-                    //     })
-                    //     .unwrap();
-
-                    // Translate the camera first, then rotate.
-                    // camera.set_transform(rot_cam * *camera.transform());
-                    // camera.transform_mut().pre_concat(&rot_cam);
-                    // app.sender
-                    //     .send(Command::Rotate {
-                    //         entity: camera_entity,
-                    //         rotation:
-                    // Quat::from_rotation_y(50.0f32.to_radians() * dt),
-                    //         order: ConcatOrder::Pre,
-                    //     })
-                    //     .unwrap();
                 }
                 app.update(surface.size(), dt, t);
                 app.prepare();

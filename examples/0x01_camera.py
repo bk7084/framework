@@ -8,7 +8,6 @@ win.set_resizable(True)
 
 app = bk.App()
 projection = bk.Projection.perspective(60.0)
-camera = app.create_camera(projection, Vec3(0.0, 0.0, 5.0))
 
 # cube = bk.Mesh.create_cube()
 # cube_handle = app.add_mesh(cube)
