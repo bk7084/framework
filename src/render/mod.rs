@@ -2,19 +2,37 @@ use crate::{color, core::Color};
 use std::sync::Arc;
 
 mod context;
+mod pipeline;
+pub use pipeline::*;
 pub mod rpass;
 pub mod surface;
 mod target;
+
 pub use target::*;
 
 use crate::{render::rpass::RenderingPass, scene::Scene};
 pub use context::*;
+
+/// Shading mode.
+#[pyo3::pyclass]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum ShadingMode {
+    /// Wireframe, no lighting.
+    Wireframe,
+    /// Flat shading.
+    Flat,
+    /// Gouraud shading.
+    Gouraud,
+    /// Blinn-Phong shading.
+    BlinnPhong,
+}
 
 pub struct Renderer {
     device: Arc<wgpu::Device>,
     queue: Arc<wgpu::Queue>,
     features: wgpu::Features,
     limits: wgpu::Limits,
+    pipelines: Pipelines,
 }
 
 impl Renderer {
@@ -33,12 +51,7 @@ impl Renderer {
             queue,
             features,
             limits,
-            // scheduler: Schedule::builder()
-            //     .add_system(super::systems::update_transforms_system())
-            //     .add_system(super::systems::update_meshes_system())
-            //     .add_system(super::systems::update_materials_system())
-            //     .add_system(super::systems::update_cameras_system(aspect_ratio))
-            //     .build(),
+            pipelines: Pipelines::new(),
         }
     }
 
