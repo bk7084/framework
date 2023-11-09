@@ -20,6 +20,7 @@ env_logger = "0.10"
 glam = "0.24"
 legion = { git = "https://github.com/matthiascy/legion.git", branch = "master" }
 log = "0.4"
+numpy = "0.20"
 pollster = "0.3"
 pyo3 = { version = "0.20", features = ["extension-module"] }
 profiling = "1.0"

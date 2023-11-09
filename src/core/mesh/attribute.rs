@@ -1,64 +1,43 @@
 use bytemuck::Pod;
-use std::{any::Any, collections::BTreeMap, sync::Arc};
+use std::collections::BTreeMap;
 
-pub trait AttribContainer {
-    /// Number of elements in the container.
-    fn len(&self) -> usize;
-    /// Whether the container is empty.
-    fn is_empty(&self) -> bool {
-        self.len() == 0
-    }
-    /// Number of bytes in the container.
-    fn n_bytes(&self) -> usize;
-    /// Convert the container to a byte slice.
-    fn as_bytes(&self) -> &[u8];
-    /// Reference to the container as an `Any`.
-    fn as_any(&self) -> &dyn Any;
-    /// Mutable reference to the container as an `Any`.
-    fn as_any_mut(&mut self) -> &mut dyn Any;
+#[derive(Clone, Debug)]
+pub struct AttribContainer {
+    pub(crate) data: Vec<u8>,
+    pub(crate) n_bytes: usize,
 }
 
-impl<T: 'static + bytemuck::Pod> AttribContainer for Vec<T> {
-    fn len(&self) -> usize {
-        self.len()
+impl AttribContainer {
+    pub fn new<T: 'static + Pod>(data: &[T]) -> Self {
+        let n_bytes = data.len() * std::mem::size_of::<T>();
+        Self {
+            data: bytemuck::cast_slice(data).to_vec(),
+            n_bytes,
+        }
     }
 
-    fn n_bytes(&self) -> usize {
-        self.len() * std::mem::size_of::<T>()
+    pub fn len(&self) -> usize {
+        self.data.len()
     }
 
-    fn as_bytes(&self) -> &[u8] {
-        bytemuck::cast_slice(self)
+    pub fn is_empty(&self) -> bool {
+        self.data.is_empty()
     }
 
-    fn as_any(&self) -> &dyn Any {
-        self
+    pub fn n_bytes(&self) -> usize {
+        self.n_bytes
     }
 
-    fn as_any_mut(&mut self) -> &mut dyn Any {
-        self
-    }
-}
-
-impl<T: 'static + Pod, const N: usize> AttribContainer for [T; N] {
-    fn len(&self) -> usize {
-        N
+    pub fn as_bytes(&self) -> &[u8] {
+        &self.data
     }
 
-    fn n_bytes(&self) -> usize {
-        self.len() * std::mem::size_of::<T>()
+    pub fn as_slice<T: 'static + Pod>(&self) -> &[T] {
+        bytemuck::cast_slice(&self.data)
     }
 
-    fn as_bytes(&self) -> &[u8] {
-        bytemuck::cast_slice(self)
-    }
-
-    fn as_any(&self) -> &dyn Any {
-        self
-    }
-
-    fn as_any_mut(&mut self) -> &mut dyn Any {
-        self
+    pub fn as_slice_mut<T: 'static + Pod>(&mut self) -> &mut [T] {
+        bytemuck::cast_slice_mut(&mut self.data)
     }
 }
 
@@ -110,16 +89,10 @@ impl VertexAttribute {
 
 /// A collection of vertex attributes.
 #[derive(Clone, Default)]
-pub struct VertexAttributes(
-    pub(crate) BTreeMap<VertexAttribute, Arc<dyn AttribContainer + Send + Sync + 'static>>,
-);
+pub struct VertexAttributes(pub(crate) BTreeMap<VertexAttribute, AttribContainer>);
 
 impl VertexAttributes {
-    pub fn insert(
-        &mut self,
-        attrib: VertexAttribute,
-        data: Arc<dyn AttribContainer + Send + Sync + 'static>,
-    ) {
+    pub fn insert(&mut self, attrib: VertexAttribute, data: AttribContainer) {
         self.0.insert(attrib, data);
     }
 

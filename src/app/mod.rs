@@ -13,6 +13,7 @@ use crate::{
     scene::{Entity, NodeIdx, Scene, Transform},
 };
 use glam::{Quat, Vec3};
+use numpy as np;
 use pyo3::{
     prelude::*,
     types::{PyDict, PyTuple},
@@ -32,7 +33,7 @@ pub enum UserEvent {
 unsafe impl Send for UserEvent {}
 
 #[pyclass(subclass)]
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct PyAppState {
     pub input: InputState,
     event_loop: Option<EventLoopProxy<UserEvent>>,
@@ -40,7 +41,8 @@ pub struct PyAppState {
     start_time: std::time::Instant,
     prev_time: std::time::Instant,
     curr_time: std::time::Instant,
-    scene: Option<Arc<RwLock<Scene>>>,
+    context: Arc<GpuContext>,
+    scene: Arc<RwLock<Scene>>,
 }
 
 unsafe impl Send for PyAppState {}
@@ -51,14 +53,17 @@ impl PyAppState {
     #[new]
     pub fn new() -> PyResult<Self> {
         let now = std::time::Instant::now();
+        let context = Arc::new(GpuContext::new(None));
+        let scene = Arc::new(RwLock::new(Scene::new(&context.device)));
         Ok(Self {
+            context,
             input: InputState::default(),
             event_loop: None,
             event_listeners: Default::default(),
             start_time: now,
             prev_time: now,
             curr_time: now,
-            scene: None,
+            scene,
         })
     }
 
@@ -99,14 +104,11 @@ impl PyAppState {
     }
 
     /// Create a camera
-    pub fn create_camera(&mut self, projection: Projection) -> Entity {
-        let camera = Camera::new(projection, 0.0..f32::INFINITY, Color::LIGHT_PERIWINKLE);
-        self.scene
-            .as_mut()
-            .expect("Scene not initialized!")
-            .write()
-            .map(|mut scene| scene.spawn(NodeIdx::root(), (camera,)))
-            .expect("Failed to create camera!")
+    #[pyo3(name = "create_camera")]
+    pub fn create_camera_py(&mut self, proj: Projection, pos: &np::PyArray2<f32>) -> Entity {
+        Python::with_gil(|py| {
+            self.create_camera(proj, Vec3::from_slice(pos.readonly().as_slice().unwrap()))
+        })
     }
 
     // pub fn add_mesh(&mut self, mesh: Mesh) -> Entity {
@@ -147,6 +149,21 @@ impl PyAppState {
             .unwrap();
         self.event_loop = Some(event_loop.create_proxy());
         window
+    }
+
+    /// Create a camera
+    pub fn create_camera(&mut self, proj: Projection, pos: Vec3) -> Entity {
+        self.scene
+            .write()
+            .map(|mut scene| {
+                let camera = Camera::new(proj, 0.0..f32::INFINITY, Color::LIGHT_PERIWINKLE);
+                let entity = scene.spawn(NodeIdx::root(), (camera,));
+                let transform = scene.nodes[entity.node].transform_mut();
+                transform.translation = pos;
+                transform.looking_at(Vec3::ZERO, Vec3::Y);
+                entity
+            })
+            .expect("Failed to create camera!")
     }
 
     /// Returns true if an event has been fully processed.
@@ -227,14 +244,6 @@ impl PyAppState {
         let input = self.input.take();
         self.dispatch_update_event(input, dt);
     }
-
-    /// Initialize the scene.
-    fn init_scene(&mut self, device: &wgpu::Device) {
-        match self.scene {
-            None => self.scene = Some(Arc::new(RwLock::new(Scene::new(device)))),
-            Some(_) => {}
-        }
-    }
 }
 
 #[pyfunction]
@@ -245,10 +254,8 @@ pub fn run_main_loop(mut app: PyAppState, builder: PyWindowBuilder) {
     let window = app.create_window(&event_loop, builder);
     let win_id = window.id();
 
-    // Create the GPU context and surface.
-    let context = GpuContext::new(None);
-    // Initialize the scene.
-    app.init_scene(&context.device);
+    let context = app.context.clone();
+
     // Create the surface to render to.
     let mut surface = Surface::new(&context, &window);
     // Create the renderer.
@@ -257,11 +264,17 @@ pub fn run_main_loop(mut app: PyAppState, builder: PyWindowBuilder) {
     let mut wireframe_rpass = Wireframe::new(&context.device, surface.format());
     // let mut clear_rpass = ClearPass::new(Renderer::CLEAR_COLOR);
 
-    let cube = Mesh::cube();
+    let mut cube = Mesh::cube();
+
+    cube.compute_per_vertex_normals();
+
     let rect = Mesh::quad(Plane::XY);
 
+    // let projection = Projection::perspective(60.0);
+    // let camera_entity = app.create_camera(projection, Vec3::new(0.0, 0.0, 5.0));
+
     let (rect0_id, rect1_id) = {
-        let mut scene = app.scene.as_ref().unwrap().write().unwrap();
+        let mut scene = app.scene.write().unwrap();
         let cube_entity = scene.spawn_mesh(NodeIdx::root(), &cube, &context.device, &context.queue);
         let cube_node = &mut scene.nodes[cube_entity.node];
         let mut cube_transform = cube_node.transform_mut();
@@ -282,14 +295,15 @@ pub fn run_main_loop(mut app: PyAppState, builder: PyWindowBuilder) {
             scene.spawn_mesh(rect0_entity.node, &rect, &context.device, &context.queue);
 
         // let projection = Projection::perspective(60.0);
-        let projection = Projection::orthographic(10.0);
-        let camera = Camera::new(projection, 0.0..f32::INFINITY, Color::LIGHT_PERIWINKLE);
-        let camera_entity = scene.spawn(NodeIdx::root(), (camera,));
+        // let projection = Projection::orthographic(10.0);
+        // let camera = Camera::new(projection, 0.0..f32::INFINITY,
+        // Color::LIGHT_PERIWINKLE); let camera_entity =
+        // scene.spawn(NodeIdx::root(), (camera,));
 
-        let camera_node = &mut scene.nodes[camera_entity.node];
-        let mut camera_transform = camera_node.transform_mut();
-        camera_transform.translation = Vec3::new(0.0, 0.0, 5.0);
-        // camera_transform.translation = Vec3::new(10.0, 10.0, 10.0);
+        // let camera_node = &mut scene.nodes[camera_entity.node];
+        // let mut camera_transform = camera_node.transform_mut();
+        // camera_transform.translation = Vec3::new(0.0, 0.0, 5.0);
+
         (rect0_entity.node, rect1_entity.node)
     };
 
@@ -356,18 +370,16 @@ pub fn run_main_loop(mut app: PyAppState, builder: PyWindowBuilder) {
                     format: surface.format(),
                 };
 
-                if let Some(scene) = app.scene.as_mut() {
-                    let scene = scene.read().unwrap();
-                    match renderer.render(&scene, &mut wireframe_rpass, &target) {
-                        Ok(_) => {}
-                        Err(wgpu::SurfaceError::Lost | wgpu::SurfaceError::Outdated) => {
-                            surface.resize(&context.device, surface.width(), surface.height());
-                        }
-                        Err(wgpu::SurfaceError::OutOfMemory) => {
-                            control_flow.set_exit();
-                        }
-                        Err(e) => eprintln!("{:?}", e),
+                let scene = app.scene.read().unwrap();
+                match renderer.render(&scene, &mut wireframe_rpass, &target) {
+                    Ok(_) => {}
+                    Err(wgpu::SurfaceError::Lost | wgpu::SurfaceError::Outdated) => {
+                        surface.resize(&context.device, surface.width(), surface.height());
                     }
+                    Err(wgpu::SurfaceError::OutOfMemory) => {
+                        control_flow.set_exit();
+                    }
+                    Err(e) => eprintln!("{:?}", e),
                 }
 
                 frame.present();
@@ -376,7 +388,7 @@ pub fn run_main_loop(mut app: PyAppState, builder: PyWindowBuilder) {
             // again until the next event needs to be handled.
             Event::MainEventsCleared => {
                 {
-                    let mut scene = app.scene.as_mut().unwrap().write().unwrap();
+                    let mut scene = app.scene.write().unwrap();
                     let rect0 = &mut scene.nodes[rect0_id];
                     let mut rect0_transform = rect0.transform_mut();
 
@@ -385,7 +397,7 @@ pub fn run_main_loop(mut app: PyAppState, builder: PyWindowBuilder) {
                         Transform::from_rotation(Quat::from_rotation_z(45.0f32.to_radians() * t));
 
                     let rot0 =
-                        Transform::from_rotation(Quat::from_rotation_y(60.0f32.to_radians() * t));
+                        Transform::from_rotation(Quat::from_rotation_z(60.0f32.to_radians() * t));
 
                     // *rect0_transform = rot * tra * rot0;
                     *rect0_transform = tra * rot0;
@@ -393,6 +405,13 @@ pub fn run_main_loop(mut app: PyAppState, builder: PyWindowBuilder) {
                     let rect1 = &mut scene.nodes[rect1_id];
                     let mut rect1_transform = rect1.transform_mut();
                     *rect1_transform = rot * tra;
+
+                    // let rot_cam =
+                    //     Transform::from_rotation(Quat::from_rotation_y(30.
+                    // 0f32.to_radians() * t));
+
+                    // let camera = &mut scene.nodes[camera_entity.node];
+                    // *camera.transform_mut().rotation = rot_cam;
                 }
                 app.update(dt, t);
                 window.request_redraw();

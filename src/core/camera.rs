@@ -1,5 +1,5 @@
-use crate::core::Color;
-use glam::Mat4;
+use crate::{core::Color, scene::NodeIdx};
+use glam::{Mat4, Vec3};
 use pyo3::prelude::*;
 use std::{fmt::Debug, ops::Range};
 

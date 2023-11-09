@@ -51,7 +51,7 @@ impl Scene {
         }
     }
 
-    /// Spawns a new entity with the given components.
+    /// Spawns a new entity with the given components together with a new node.
     ///
     /// Together with the entity, a new node will be created and added to the
     /// scene graph. The entity will be parented to the given parent node. If
@@ -92,6 +92,18 @@ impl Scene {
     ) -> Entity {
         let mesh_handle = self.meshes.add(device, queue, mesh);
         self.spawn(parent, (mesh_handle,))
+    }
+
+    pub fn node(&self, node: NodeIdx) -> &Node {
+        &self.nodes[node]
+    }
+
+    pub fn node_mut(&mut self, node: NodeIdx) -> &mut Node {
+        &mut self.nodes[node]
+    }
+
+    pub fn children(&self, node: NodeIdx) -> impl Iterator<Item = NodeIdx> + '_ {
+        self.nodes.children(node)
     }
 }
 

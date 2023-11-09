@@ -36,6 +36,11 @@ impl Node {
     pub fn transform_mut(&mut self) -> &mut Transform {
         &mut self.local
     }
+
+    /// Sets the local transform of this node.
+    pub fn set_transform(&mut self, transform: Transform) {
+        self.local = transform;
+    }
 }
 
 /// The ID of a node in the scene graph.
@@ -118,6 +123,17 @@ impl Nodes {
         let idx = NodeIdx(self.0.len());
         self.0.push(node);
         idx
+    }
+
+    /// Returns an iterator over the children of the given node.
+    pub fn children(&self, node_idx: NodeIdx) -> impl Iterator<Item = NodeIdx> + '_ {
+        self.0.iter().enumerate().filter_map(move |(idx, node)| {
+            if node.parent == Some(node_idx) {
+                Some(NodeIdx(idx))
+            } else {
+                None
+            }
+        })
     }
 }
 

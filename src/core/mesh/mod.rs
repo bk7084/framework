@@ -151,12 +151,12 @@ impl Mesh {
         }
 
         // Get the positions.
-        let positions: &[Vec3] = self
+        let positions = self
             .attributes
             .0
             .get(&VertexAttribute::POSITION)
             .unwrap()
-            .as_slice();
+            .as_slice::<[f32; 3]>();
 
         // Get the indices.
         if self.indices.is_none() {
@@ -164,11 +164,14 @@ impl Mesh {
             return;
         }
 
-        let indices = match &self.indices {
-            Some(Indices::U32(indices)) => indices.as_slice(),
-            Some(Indices::U16(indices)) => indices.as_slice(),
-            None => unreachable!("Cannot compute normals without indices."),
-        };
+        // let indices = match &self.indices {
+        //     Some(Indices::U32(indices)) => indices.as_slice(),
+        //     Some(Indices::U16(indices)) => indices.as_slice(),
+        //     None => unreachable!("Cannot compute normals without indices."),
+        // };
+        for pos in positions.iter() {
+            log::info!("{:?}", pos);
+        }
 
         // Compute the normals.
         // let mut normals = Vec::with_capacity(positions.len());
@@ -229,8 +232,8 @@ impl Mesh {
             20, 21, 22, 22, 23, 20, // bottom */
         ];
 
-        attributes.insert(VertexAttribute::POSITION, Arc::new(vertices));
-        attributes.insert(VertexAttribute::NORMAL, Arc::new(normals));
+        attributes.insert(VertexAttribute::POSITION, AttribContainer::new(&vertices));
+        attributes.insert(VertexAttribute::NORMAL, AttribContainer::new(&normals));
         Mesh {
             topology: wgpu::PrimitiveTopology::TriangleList,
             attributes,
@@ -290,8 +293,8 @@ impl Mesh {
         // Vertex indices for a unit cube centered at the origin.
         let indices: Vec<u16> = vec![0, 1, 2, 2, 3, 0];
 
-        attributes.insert(VertexAttribute::POSITION, Arc::new(vertices));
-        attributes.insert(VertexAttribute::NORMAL, Arc::new(normals));
+        attributes.insert(VertexAttribute::POSITION, AttribContainer::new(&vertices));
+        attributes.insert(VertexAttribute::NORMAL, AttribContainer::new(&normals));
         Mesh {
             topology: wgpu::PrimitiveTopology::TriangleList,
             attributes,

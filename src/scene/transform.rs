@@ -1,4 +1,4 @@
-use glam::{Mat4, Quat, Vec3};
+use glam::{Affine3A, Mat4, Quat, Vec3};
 use std::ops::Mul;
 
 /// Transform relative to the parent node or the reference frame if the node
@@ -61,16 +61,6 @@ impl Transform {
         self.scale = scale;
     }
 
-    /// Combines two transforms. The result is equivalent to applying `self` and
-    /// then `other`.
-    pub fn _mul(&self, other: &Self) -> Self {
-        Self {
-            scale: self.scale * other.scale,
-            rotation: self.rotation * other.rotation,
-            translation: self.scale * (self.rotation * other.translation) + self.translation,
-        }
-    }
-
     /// Sets the translation component of the transform.
     pub fn from_translation(translation: Vec3) -> Self {
         Self {
@@ -92,6 +82,23 @@ impl Transform {
         Self {
             scale,
             ..Default::default()
+        }
+    }
+
+    /// Look at a target position.
+    pub fn looking_at(&mut self, target: Vec3, up: Vec3) {
+        let affine = Affine3A::look_at_rh(self.translation, target, up);
+        let (_, rot, _) = affine.inverse().to_scale_rotation_translation();
+        self.rotation = rot;
+    }
+
+    /// Combines two transforms. The result is equivalent to applying `self` and
+    /// then `other`.
+    fn _mul(&self, other: &Self) -> Self {
+        Self {
+            scale: self.scale * other.scale,
+            rotation: self.rotation * other.rotation,
+            translation: self.scale * (self.rotation * other.translation) + self.translation,
         }
     }
 }
