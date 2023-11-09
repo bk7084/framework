@@ -15,7 +15,6 @@ pub struct Renderer {
     queue: Arc<wgpu::Queue>,
     features: wgpu::Features,
     limits: wgpu::Limits,
-    // scheduler: Schedule,
 }
 
 impl Renderer {

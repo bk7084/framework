@@ -55,6 +55,7 @@ impl Debug for Scene {
 }
 
 impl Scene {
+    // TODO: separate GPU resources from scene graph
     /// Creates a new empty scene.
     pub fn new(device: &wgpu::Device) -> Self {
         let mesh_assets = MeshAssets::new(device);
@@ -222,32 +223,34 @@ impl Scene {
 }
 
 mod tests {
-    use crate::scene::node::NodeIdx;
+    use crate::{render::GpuContext, scene::node::NodeIdx};
 
     #[test]
     fn entity_spawning() {
-        let mut scene = super::Scene::new();
+        let context = GpuContext::new(None);
+        let mut scene = super::Scene::new(&context.device);
         let entity = scene.spawn(NodeIdx::root(), ());
         assert_eq!(scene.nodes.len(), 2);
-        assert_eq!(scene.nodes[1].parent, Some(NodeIdx::root()));
+        assert_eq!(scene.nodes[NodeIdx(1)].parent, Some(NodeIdx::root()));
 
         let entity1 = scene.spawn(NodeIdx(1), ());
         assert_eq!(scene.nodes.len(), 3);
-        assert_eq!(scene.nodes[2].parent, Some(NodeIdx(1)));
+        assert_eq!(scene.nodes[NodeIdx(2)].parent, Some(NodeIdx(1)));
 
         let entity2 = scene.spawn(NodeIdx(1), ());
         assert_eq!(scene.nodes.len(), 4);
-        assert_eq!(scene.nodes[3].parent, Some(NodeIdx(1)));
+        assert_eq!(scene.nodes[NodeIdx(3)].parent, Some(NodeIdx(1)));
 
         let entity3 = scene.spawn(NodeIdx::root(), ());
         assert_eq!(scene.nodes.len(), 5);
-        assert_eq!(scene.nodes[4].parent, Some(NodeIdx::root()));
+        assert_eq!(scene.nodes[NodeIdx(4)].parent, Some(NodeIdx::root()));
     }
 
     #[test]
     #[should_panic]
     fn entity_spawning_failed() {
-        let mut scene = super::Scene::new();
+        let context = GpuContext::new(None);
+        let mut scene = super::Scene::new(&context.device);
         let _ = scene.spawn(NodeIdx(1), ());
     }
 }
