@@ -1,4 +1,7 @@
-use crate::{core::ConcatOrder, scene::Entity};
+use crate::{
+    core::{mesh::Mesh, ConcatOrder},
+    scene::Entity,
+};
 use glam::{Quat, Vec3};
 
 /// Possible commands that can be executed.
@@ -31,3 +34,9 @@ pub enum Command {
     /// Sets if the entity is active or not.
     SetActive { entity: Entity, active: bool },
 }
+
+/// Receiver of commands.
+pub type CommandReceiver = crossbeam_channel::Receiver<Command>;
+
+/// Sender of commands.
+pub type CommandSender = crossbeam_channel::Sender<Command>;

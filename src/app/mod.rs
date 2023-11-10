@@ -48,11 +48,12 @@ pub struct PyAppState {
     curr_time: std::time::Instant,
     context: Arc<GpuContext>,
     scene: Arc<RwLock<Scene>>,
+    renderer: Arc<RwLock<Renderer>>,
     sender: Sender<Command>,
     main_camera: Option<Entity>,
 }
 
-unsafe impl Send for PyAppState {}
+// unsafe impl Send for PyAppState {}
 
 /// Python interface for AppState
 #[pymethods]
@@ -61,8 +62,9 @@ impl PyAppState {
     pub fn new() -> PyResult<Self> {
         let now = std::time::Instant::now();
         let context = Arc::new(GpuContext::new(None));
-        let scene = Scene::new(&context.device);
-        let sender = scene.cmd_sender.clone();
+        let scene = Scene::new();
+        let sender = scene.cmd_sender().clone();
+        let renderer = Renderer::new(&context, scene.cmd_receiver().clone());
         Ok(Self {
             context,
             input: InputState::default(),
@@ -72,6 +74,7 @@ impl PyAppState {
             prev_time: now,
             curr_time: now,
             scene: Arc::new(RwLock::new(scene)),
+            renderer: Arc::new(RwLock::new(renderer)),
             sender,
             main_camera: None,
         })
@@ -116,7 +119,7 @@ impl PyAppState {
     /// Create a camera
     #[pyo3(name = "create_camera")]
     pub fn create_camera_py(&mut self, proj: Projection, pos: &np::PyArray2<f32>) -> PyEntity {
-        Python::with_gil(|py| {
+        Python::with_gil(|_py| {
             let entity =
                 self.create_main_camera(proj, Vec3::from_slice(pos.readonly().as_slice().unwrap()));
             PyEntity {
@@ -126,15 +129,14 @@ impl PyAppState {
         })
     }
 
-    // pub fn add_mesh(&mut self, mesh: Mesh) -> Entity {
-    //     self.scene
-    //         .write()
-    //         .map(|mut scene| {
-    //             let gpu_mesh = scene.
-    //             scene.spawn(NodeIdx::root(), (mesh,))
-    //         })
-    //         .expect("Failed to add mesh!")
-    // }
+    /// Adds a mesh to the scene.
+    pub fn add_mesh(&mut self, mesh: &Mesh) -> PyEntity {
+        let entity = self.spawn_object_with_mesh(NodeIdx::root(), mesh);
+        PyEntity {
+            entity,
+            cmd_sender: self.sender.clone(),
+        }
+    }
 }
 
 /// Implementation of the methods only available to Rust.
@@ -164,6 +166,21 @@ impl PyAppState {
             .unwrap();
         self.event_loop = Some(event_loop.create_proxy());
         window
+    }
+
+    /// Spawn an object with the given mesh and parent.
+    ///
+    /// Returns the entity ID of the spawned object.
+    pub fn spawn_object_with_mesh(&mut self, parent: NodeIdx, mesh: &Mesh) -> Entity {
+        let mesh_handle = self
+            .renderer
+            .write()
+            .map(|mut renderer| renderer.add_mesh(mesh))
+            .unwrap();
+        self.scene
+            .write()
+            .map(|mut scene| scene.spawn(parent, (mesh_handle,)))
+            .unwrap()
     }
 
     /// Prepare the scene for rendering.
@@ -316,13 +333,10 @@ pub fn run_main_loop(mut app: PyAppState, builder: PyWindowBuilder) {
     // Create the displaying window.
     let window = app.create_window(&event_loop, builder);
     let win_id = window.id();
-
     let context = app.context.clone();
 
     // Create the surface to render to.
     let mut surface = Surface::new(&context, &window);
-    // Create the renderer.
-    let mut renderer = Renderer::new(&context);
 
     let mut wireframe_rpass = Wireframe::new(&context.device, surface.format());
     // let mut clear_rpass = ClearPass::new(Renderer::CLEAR_COLOR);
@@ -334,25 +348,23 @@ pub fn run_main_loop(mut app: PyAppState, builder: PyWindowBuilder) {
     let rect = Mesh::quad(Plane::XY);
 
     let (rect0_id, rect1_id) = {
+        let cube_entity = app.spawn_object_with_mesh(NodeIdx::root(), &cube);
+        let rect0_entity = app.spawn_object_with_mesh(NodeIdx::root(), &rect);
+        let rect1_entity = app.spawn_object_with_mesh(rect0_entity.node, &rect);
+
         let mut scene = app.scene.write().unwrap();
-        let cube_entity = scene.spawn_mesh(NodeIdx::root(), &cube, &context.device, &context.queue);
         let cube_node = &mut scene.nodes[cube_entity.node];
-        let mut cube_transform = cube_node.transform_mut();
+        let cube_transform = cube_node.transform_mut();
         cube_transform.rotation = Quat::from_rotation_y(45.0f32.to_radians());
         cube_transform.scale = Vec3::splat(1.5);
 
-        let rect0_entity =
-            scene.spawn_mesh(NodeIdx::root(), &rect, &context.device, &context.queue);
-        let mut rect_node = &mut scene.nodes[rect0_entity.node];
-        let mut rect_transform = rect_node.transform_mut();
+        let rect_node = &mut scene.nodes[rect0_entity.node];
+        let rect_transform = rect_node.transform_mut();
         // rect_node.set_position([2.0, 0.0, 0.0].into());
         // rect_transform.rotation = Quat::from_rotation_z(45.0f32.to_radians());
         let tra = Transform::from_translation(Vec3::new(2.0, 0.0, 0.0));
         let rot = Transform::from_rotation(Quat::from_rotation_z(45.0f32.to_radians()));
         *rect_transform = tra * *rect_transform * rot;
-
-        let rect1_entity =
-            scene.spawn_mesh(rect0_entity.node, &rect, &context.device, &context.queue);
 
         (rect0_entity.node, rect1_entity.node)
     };
@@ -415,7 +427,12 @@ pub fn run_main_loop(mut app: PyAppState, builder: PyWindowBuilder) {
                 };
 
                 let scene = app.scene.read().unwrap();
-                match renderer.render(&scene, &mut wireframe_rpass, &target) {
+                match app
+                    .renderer
+                    .write()
+                    .unwrap()
+                    .render(&scene, &mut wireframe_rpass, &target)
+                {
                     Ok(_) => {}
                     Err(wgpu::SurfaceError::Lost | wgpu::SurfaceError::Outdated) => {
                         surface.resize(&context.device, surface.width(), surface.height());
@@ -438,7 +455,7 @@ pub fn run_main_loop(mut app: PyAppState, builder: PyWindowBuilder) {
                 {
                     let mut scene = app.scene.write().unwrap();
                     let rect0 = &mut scene.nodes[rect0_id];
-                    let mut rect0_transform = rect0.transform_mut();
+                    let rect0_transform = rect0.transform_mut();
 
                     let tra = Transform::from_translation(Vec3::new(2.0, 0.0, 0.0));
                     let rot =
@@ -451,7 +468,7 @@ pub fn run_main_loop(mut app: PyAppState, builder: PyWindowBuilder) {
                     *rect0_transform = tra * rot0;
 
                     let rect1 = &mut scene.nodes[rect1_id];
-                    let mut rect1_transform = rect1.transform_mut();
+                    let rect1_transform = rect1.transform_mut();
                     *rect1_transform = rot * tra;
                 }
                 app.update(surface.size(), dt, t);

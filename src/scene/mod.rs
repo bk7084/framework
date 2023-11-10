@@ -6,12 +6,11 @@ use glam::Quat;
 use std::fmt::{Debug, Formatter};
 
 use crate::{
-    app::command::Command,
+    app::command::{Command, CommandReceiver, CommandSender},
     core::{
-        assets::{MaterialAssets, MeshAssets},
-        camera::{Camera, Projection},
+        assets::{GpuMeshAssets, MaterialAssets, MeshAssets},
         mesh::Mesh,
-        Color, ConcatOrder,
+        ConcatOrder,
     },
 };
 use legion::{storage::IntoComponentSource, World};
@@ -35,14 +34,14 @@ pub struct PyEntity {
 
 /// Scene graph.
 pub struct Scene {
+    /// Legion world for storing entities and components.
     pub(crate) world: World,
+    /// Scene graph nodes.
     pub(crate) nodes: Nodes,
-    pub(crate) meshes: MeshAssets,
-    pub(crate) materials: MaterialAssets,
     /// Command sender for sending commands to the scene.
-    pub(crate) cmd_sender: Sender<Command>,
+    cmd_sender: CommandSender,
     /// Command receiver serves as a buffer for commands to be executed.
-    cmd_receiver: Receiver<Command>,
+    cmd_receiver: CommandReceiver,
 }
 
 impl Debug for Scene {
@@ -57,18 +56,24 @@ impl Debug for Scene {
 impl Scene {
     // TODO: separate GPU resources from scene graph
     /// Creates a new empty scene.
-    pub fn new(device: &wgpu::Device) -> Self {
-        let mesh_assets = MeshAssets::new(device);
-        let material_assets = MaterialAssets::new(device);
+    pub fn new() -> Self {
         let (sender, receiver) = crossbeam_channel::unbounded::<Command>();
         Self {
             world: World::default(),
             nodes: Nodes::default(),
-            meshes: mesh_assets,
-            materials: material_assets,
             cmd_sender: sender,
             cmd_receiver: receiver,
         }
+    }
+
+    /// Returns the command sender.
+    pub fn cmd_sender(&self) -> &CommandSender {
+        &self.cmd_sender
+    }
+
+    /// Returns the command receiver.
+    pub fn cmd_receiver(&self) -> &CommandReceiver {
+        &self.cmd_receiver
     }
 
     /// Spawns a new entity with the given components together with a new node.
@@ -100,18 +105,6 @@ impl Scene {
             entity,
             node: node_id,
         }
-    }
-
-    // TODO: avoid adding the mesh multiple times
-    pub fn spawn_mesh(
-        &mut self,
-        parent: NodeIdx,
-        mesh: &Mesh,
-        device: &wgpu::Device,
-        queue: &wgpu::Queue,
-    ) -> Entity {
-        let mesh_handle = self.meshes.add(device, queue, mesh);
-        self.spawn(parent, (mesh_handle,))
     }
 
     /// Processes all commands in the command receiver.
@@ -223,25 +216,24 @@ impl Scene {
 }
 
 mod tests {
-    use crate::{render::GpuContext, scene::node::NodeIdx};
-
     #[test]
     fn entity_spawning() {
-        let context = GpuContext::new(None);
-        let mut scene = super::Scene::new(&context.device);
-        let entity = scene.spawn(NodeIdx::root(), ());
+        use super::NodeIdx;
+
+        let mut scene = super::Scene::new();
+        let _entity = scene.spawn(NodeIdx::root(), ());
         assert_eq!(scene.nodes.len(), 2);
         assert_eq!(scene.nodes[NodeIdx(1)].parent, Some(NodeIdx::root()));
 
-        let entity1 = scene.spawn(NodeIdx(1), ());
+        let _entity1 = scene.spawn(NodeIdx(1), ());
         assert_eq!(scene.nodes.len(), 3);
         assert_eq!(scene.nodes[NodeIdx(2)].parent, Some(NodeIdx(1)));
 
-        let entity2 = scene.spawn(NodeIdx(1), ());
+        let _entity2 = scene.spawn(NodeIdx(1), ());
         assert_eq!(scene.nodes.len(), 4);
         assert_eq!(scene.nodes[NodeIdx(3)].parent, Some(NodeIdx(1)));
 
-        let entity3 = scene.spawn(NodeIdx::root(), ());
+        let _entity3 = scene.spawn(NodeIdx::root(), ());
         assert_eq!(scene.nodes.len(), 5);
         assert_eq!(scene.nodes[NodeIdx(4)].parent, Some(NodeIdx::root()));
     }
@@ -249,8 +241,7 @@ mod tests {
     #[test]
     #[should_panic]
     fn entity_spawning_failed() {
-        let context = GpuContext::new(None);
-        let mut scene = super::Scene::new(&context.device);
-        let _ = scene.spawn(NodeIdx(1), ());
+        let mut scene = super::Scene::new();
+        let _ = scene.spawn(super::NodeIdx(1), ());
     }
 }

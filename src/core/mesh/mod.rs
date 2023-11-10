@@ -1,6 +1,4 @@
-use glam::Vec3;
-use pyo3::{pyclass, pymethods};
-use std::{fmt::Debug, ops::Range, sync::Arc};
+use std::{fmt::Debug, ops::Range};
 
 mod attribute;
 use crate::core::{assets::Asset, Plane};
@@ -102,7 +100,7 @@ impl Indices {
     }
 }
 
-#[pyclass]
+#[pyo3::pyclass]
 #[derive(Clone)]
 pub struct Mesh {
     /// Topology of the mesh primitive.
@@ -113,7 +111,9 @@ pub struct Mesh {
     pub(crate) indices: Option<Indices>,
 }
 
-#[pymethods]
+impl Asset for Mesh {}
+
+#[pyo3::pymethods]
 impl Mesh {
     #[new]
     pub fn new(topology: PyTopology) -> Self {

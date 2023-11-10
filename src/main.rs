@@ -40,7 +40,7 @@ fn main() {
     // ecs_101();
     // ecs_intro();
     let context = GpuContext::new(None);
-    let mut scene = bkfw::scene::Scene::new(&context.device);
+    let mut scene = bkfw::scene::Scene::new();
     let entity = scene.spawn(NodeIdx::root(), (0.5f32,));
     println!("{:?}", entity);
 }
@@ -67,7 +67,7 @@ fn ecs_101() {
         ValObj { val: 1 },
     ));
 
-    let entities = world.extend(vec![
+    let _entities = world.extend(vec![
         (Position { x: 1.0, y: 1.0 }, Velocity { dx: 1.0, dy: 1.0 }),
         (Position { x: 2.0, y: 2.0 }, Velocity { dx: 1.0, dy: 1.0 }),
         (Position { x: 3.0, y: 3.0 }, Velocity { dx: 1.0, dy: 1.0 }),

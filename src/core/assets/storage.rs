@@ -198,7 +198,7 @@ pub struct MaterialStorage {
 }
 
 impl MaterialStorage {
-    pub fn new(device: &wgpu::Device) -> Self {
+    pub fn new(_device: &wgpu::Device) -> Self {
         // TODO: implement
         Self {}
     }

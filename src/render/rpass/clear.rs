@@ -1,6 +1,6 @@
 use crate::{
     core::Color,
-    render::{rpass::RenderingPass, RenderTarget},
+    render::{rpass::RenderingPass, RenderTarget, Renderer},
     scene::Scene,
 };
 
@@ -21,6 +21,7 @@ impl RenderingPass for ClearPass {
         _queue: &wgpu::Queue,
         encoder: &mut wgpu::CommandEncoder,
         target: &RenderTarget,
+        _renderer: &Renderer,
         _scene: &Scene,
     ) {
         let _render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {

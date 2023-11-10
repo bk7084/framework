@@ -1,10 +1,9 @@
-use crate::{core::Color, scene::NodeIdx};
-use glam::{Mat4, Vec3};
-use pyo3::prelude::*;
+use crate::core::Color;
+use glam::Mat4;
 use std::{fmt::Debug, ops::Range};
 
 /// The type of projection for a camera.
-#[pyclass]
+#[pyo3::pyclass]
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum ProjectionKind {
     /// An orthographic projection.
@@ -14,7 +13,7 @@ pub enum ProjectionKind {
 }
 
 /// A projection for a camera.
-#[pyclass]
+#[pyo3::pyclass]
 #[derive(Clone, Copy)]
 pub struct Projection {
     /// The type of projection.
@@ -68,7 +67,7 @@ impl Projection {
     }
 }
 
-#[pymethods]
+#[pyo3::pymethods]
 impl Projection {
     /// Creates a new perspective projection.
     #[staticmethod]

@@ -98,7 +98,8 @@ impl<A: Asset> Assets<A, Vec<Option<A>>> {
     }
 }
 
-pub type MeshAssets = Assets<GpuMesh, GpuMeshStorage>;
+/// A collection of GPU meshes.
+pub type GpuMeshAssets = Assets<GpuMesh, GpuMeshStorage>;
 
 // Specialize the `Assets` type for `GpuMesh` as it needs a custom storage.
 impl Assets<GpuMesh, GpuMeshStorage> {
@@ -165,6 +166,7 @@ impl Assets<GpuMesh, GpuMeshStorage> {
     }
 }
 
+/// A collection of materials.
 pub type MaterialAssets = Assets<Material, Vec<Option<Material>>>;
 
 impl Assets<Material, Vec<Option<Material>>> {
@@ -175,3 +177,6 @@ impl Assets<Material, Vec<Option<Material>>> {
         }
     }
 }
+
+/// A collection of meshes (CPU-side).
+pub type MeshAssets = Assets<Mesh, Vec<Option<Mesh>>>;

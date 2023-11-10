@@ -137,6 +137,7 @@ impl RenderingPass for Wireframe {
         queue: &wgpu::Queue,
         encoder: &mut wgpu::CommandEncoder,
         target: &RenderTarget,
+        renderer: &Renderer,
         scene: &Scene,
     ) {
         // (Re-)create depth texture if necessary.
@@ -208,9 +209,9 @@ impl RenderingPass for Wireframe {
         render_pass.set_bind_group(0, &self.globals_bind_group, &[]);
 
         let mut mesh_query = <(&Handle<GpuMesh>, &NodeIdx)>::query();
-        let buffer = scene.meshes.buffer();
+        let buffer = renderer.meshes.buffer();
         for (mesh_handle, node_idx) in mesh_query.iter(&scene.world) {
-            match scene.meshes.get(*mesh_handle) {
+            match renderer.meshes.get(*mesh_handle) {
                 None => {
                     log::error!("Missing mesh {:?}", mesh_handle);
                     continue;

@@ -1,7 +1,10 @@
 mod clear;
 mod wireframe;
 
-use crate::{core::FxHashMap, render::RenderTarget, scene::Scene};
+use crate::{
+    render::{RenderTarget, Renderer},
+    scene::Scene,
+};
 pub use clear::*;
 pub use wireframe::*;
 
@@ -13,6 +16,7 @@ pub trait RenderingPass {
         queue: &wgpu::Queue,
         encoder: &mut wgpu::CommandEncoder,
         target: &RenderTarget,
+        renderer: &Renderer,
         scene: &Scene,
     );
 }

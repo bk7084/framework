@@ -1,4 +1,4 @@
-use crate::{core::FxHashMap, render::RenderTarget, scene::Scene};
+use crate::core::FxHashMap;
 
 /// Pipeline kind.
 #[pyo3::pyclass]
@@ -137,14 +137,14 @@ impl Pipelines {
     }
 
     /// Creates a new pipeline for the given key.
-    pub fn create(&mut self, key: PipelineId) {}
+    pub fn create(&mut self, _key: PipelineId) {}
 }
 
 mod tests {
-    use super::*;
-
     #[test]
     fn test_pipeline_id() {
+        use crate::render::{PipelineId, PipelineKind};
+
         for topology in [
             wgpu::PrimitiveTopology::PointList,
             wgpu::PrimitiveTopology::LineList,
