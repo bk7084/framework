@@ -184,7 +184,7 @@ impl PyAppState {
     }
 
     /// Prepare the scene for rendering.
-    pub fn prepare(&mut self) {
+    pub fn prepare_scene(&mut self) {
         self.scene.write().unwrap().process_commands();
     }
 
@@ -289,25 +289,29 @@ impl PyAppState {
             // Make the rotation the same direction as the mouse movement.
             let horiz = -delta[0] / win_size.0 as f32 * std::f32::consts::TAU * 2.0;
             let vert = -delta[1] / win_size.1 as f32 * std::f32::consts::TAU * 2.0;
-            if input.is_key_pressed(KeyCode::LShift) {
-                let rot =
-                    Quat::from_mat4(&(Mat4::from_rotation_y(horiz) * Mat4::from_rotation_x(vert)));
-                self.sender
-                    .send(Command::Rotate {
-                        entity: self.main_camera.unwrap(),
-                        rotation: rot,
-                        order: ConcatOrder::Post,
-                    })
-                    .unwrap();
-            } else {
-                self.sender
-                    .send(Command::CameraOrbit {
-                        entity: self.main_camera.unwrap(),
-                        rotation_x: vert,
-                        rotation_y: horiz,
-                    })
-                    .unwrap();
-            };
+            // Set a threshold to avoid jitter.
+            if horiz.abs() > 0.0001 || vert.abs() > 0.0001 {
+                if input.is_key_pressed(KeyCode::LShift) {
+                    let rot = Quat::from_mat4(
+                        &(Mat4::from_rotation_y(horiz) * Mat4::from_rotation_x(vert)),
+                    );
+                    self.sender
+                        .send(Command::Rotate {
+                            entity: self.main_camera.unwrap(),
+                            rotation: rot,
+                            order: ConcatOrder::Post,
+                        })
+                        .unwrap();
+                } else {
+                    self.sender
+                        .send(Command::CameraOrbit {
+                            entity: self.main_camera.unwrap(),
+                            rotation_x: vert,
+                            rotation_y: horiz,
+                        })
+                        .unwrap();
+                };
+            }
         }
 
         // Zoom in/out with the mouse wheel.
@@ -341,7 +345,7 @@ pub fn run_main_loop(mut app: PyAppState, builder: PyWindowBuilder) {
     let mut wireframe_rpass = Wireframe::new(&context.device, surface.format());
     // let mut clear_rpass = ClearPass::new(Renderer::CLEAR_COLOR);
 
-    app.create_main_camera(Projection::perspective(75.0), Vec3::new(5.0, 5.0, 5.0));
+    app.create_main_camera(Projection::perspective(45.0), Vec3::new(5.0, 5.0, 5.0));
 
     let mut cube = Mesh::cube(1.0);
     cube.compute_per_vertex_normals();
@@ -349,6 +353,7 @@ pub fn run_main_loop(mut app: PyAppState, builder: PyWindowBuilder) {
     let sphere = Mesh::sphere(1.0, 32, 16);
     let obj_cube = Mesh::load_from_obj("./data/cube/cube.obj");
     let obj_sibenik = Mesh::load_from_obj("./data/sibenik/sibenik.obj");
+    let obj_sponza = Mesh::load_from_obj("./data/sponza/sponza.obj");
 
     let (rect0_id, rect1_id, sphere_id) = {
         let cube_entity = app.spawn_object_with_mesh(NodeIdx::root(), &cube);
@@ -357,6 +362,7 @@ pub fn run_main_loop(mut app: PyAppState, builder: PyWindowBuilder) {
         let sphere_entity = app.spawn_object_with_mesh(NodeIdx::root(), &sphere);
         let obj_cube_entity = app.spawn_object_with_mesh(NodeIdx::root(), &obj_cube);
         let obj_sibenik_entity = app.spawn_object_with_mesh(NodeIdx::root(), &obj_sibenik);
+        let obj_sponza_entity = app.spawn_object_with_mesh(NodeIdx::root(), &obj_sponza);
 
         let mut scene = app.scene.write().unwrap();
         let cube_node = &mut scene.nodes[cube_entity.node];
@@ -380,9 +386,9 @@ pub fn run_main_loop(mut app: PyAppState, builder: PyWindowBuilder) {
         let obj_cube_transform = obj_cube_node.transform_mut();
         obj_cube_transform.translation = Vec3::new(0.0, 0.0, -2.0);
 
-        let obj_sibenik_node = &mut scene.nodes[obj_sibenik_entity.node];
-        let obj_sibenik_transform = obj_sibenik_node.transform_mut();
-        obj_sibenik_transform.translation = Vec3::new(0.0, 0.0, 0.0);
+        // let obj_sibenik_node = &mut scene.nodes[obj_sibenik_entity.node];
+        // let obj_sibenik_transform = obj_sibenik_node.transform_mut();
+        // obj_sibenik_transform.translation = Vec3::new(0.0, 0.0, 0.0);
 
         (rect0_entity.node, rect1_entity.node, cube_entity.node)
     };
@@ -490,7 +496,7 @@ pub fn run_main_loop(mut app: PyAppState, builder: PyWindowBuilder) {
                     *rect1_transform = rot * tra;
                 }
                 app.update(surface.size(), dt, t);
-                app.prepare();
+                app.prepare_scene();
                 window.request_redraw();
             }
             // Otherwise, just let the event pass through.

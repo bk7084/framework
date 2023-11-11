@@ -26,11 +26,10 @@ var<push_constant> pconsts: PushConstants;
 fn vs_main(vin: VSInput) -> VSOutput {
     var out: VSOutput;
     out.position = globals.proj * globals.view * pconsts.model * vec4<f32>(vin.position, 1.0);
-    // out.position = globals.proj * globals.view * vec4<f32>(vin.position, 1.0);
     return out;
 }
 
 @fragment
 fn fs_main(vout: VSOutput) -> @location(0) vec4<f32> {
-    return vec4<f32>(1.0, 0.0, 0.0, 1.0);
+    return vec4<f32>(0.99110, 0.93869, 0.78354, 1.0);
 }

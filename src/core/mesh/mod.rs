@@ -1,7 +1,10 @@
 use std::{fmt::Debug, ops::Range};
 
 mod attribute;
-use crate::core::{assets::Asset, Alignment};
+use crate::core::{
+    assets::{Asset, Handle},
+    Alignment, Material,
+};
 pub use attribute::*;
 
 /// Topology of a mesh primitive.
@@ -100,6 +103,17 @@ impl Indices {
     }
 }
 
+/// A submesh is a range of indices, it specifies a range of indices to be
+/// rendered with a specific material.
+#[pyo3::pyclass]
+#[derive(Clone, Debug)]
+pub struct SubMesh {
+    /// Range of indices of the submesh.
+    pub indices: Range<u32>,
+    /// Material of the submesh.
+    pub material: Option<Handle<Material>>,
+}
+
 #[pyo3::pyclass]
 #[derive(Clone)]
 pub struct Mesh {
@@ -109,6 +123,9 @@ pub struct Mesh {
     pub(crate) attributes: VertexAttributes,
     /// Indices of the mesh.
     pub(crate) indices: Option<Indices>,
+    /// Sub-meshes of the mesh. If the mesh has no sub-meshes, it is assumed
+    /// that the entire mesh is using the default material.
+    pub(crate) sub_meshes: Option<Vec<SubMesh>>,
 }
 
 impl Asset for Mesh {}
@@ -121,6 +138,7 @@ impl Mesh {
             topology: topology.into(),
             attributes: VertexAttributes::default(),
             indices: None,
+            sub_meshes: None,
         }
     }
 
@@ -239,6 +257,7 @@ impl Mesh {
             topology: wgpu::PrimitiveTopology::TriangleList,
             attributes,
             indices: Some(Indices::U16(indices)),
+            sub_meshes: None,
         }
     }
 
@@ -285,6 +304,7 @@ impl Mesh {
             topology: wgpu::PrimitiveTopology::TriangleList,
             attributes,
             indices: Some(Indices::U16(indices)),
+            sub_meshes: None,
         }
     }
 
@@ -349,34 +369,41 @@ impl Mesh {
             topology: wgpu::PrimitiveTopology::TriangleList,
             attributes,
             indices: Some(Indices::U32(indices)),
+            sub_meshes: None,
         }
     }
 
     /// Loads a mesh from a wavefront obj file.
     pub fn load_from_obj(path: &str) -> Self {
         log::debug!("Loading mesh from {}.", path);
-        let (models, materials) = tobj::load_obj(path, &tobj::GPU_LOAD_OPTIONS).unwrap();
+        let options = tobj::LoadOptions {
+            single_index: true,
+            triangulate: true,
+            ignore_points: true,
+            ignore_lines: true,
+        };
+        let (models, materials) = tobj::load_obj(path, &options).unwrap();
         let materials = materials.expect("Failed to load materials.");
         log::debug!("- Loaded {} models.", models.len());
         log::debug!("- Loaded {} materials.", materials.len());
         let mut attributes = VertexAttributes::default();
         let mut vertices = Vec::new();
         let mut normals = Vec::new();
-        let mut texcoords = Vec::new();
+        let mut uvs = Vec::new();
         let mut indices = Vec::new();
 
-        let mut index_offset = 0;
         for model in models.iter() {
             let mesh = &model.mesh;
-            vertices.append(&mut mesh.positions.clone());
-            normals.append(&mut mesh.normals.clone());
-            texcoords.append(&mut mesh.texcoords.clone());
             let mut mesh_indices = mesh.indices.clone();
+            let index_offset = vertices.len() as u32 / 3;
             for index in mesh_indices.iter_mut() {
                 *index += index_offset;
             }
-            index_offset += mesh.positions.len() as u32 / 3;
+            vertices.append(&mut mesh.positions.clone());
+            normals.append(&mut mesh.normals.clone());
+            uvs.append(&mut mesh.texcoords.clone());
             indices.append(&mut mesh_indices);
+            // TODO: material_id
         }
 
         attributes.insert(VertexAttribute::POSITION, AttribContainer::new(&vertices));
@@ -385,8 +412,8 @@ impl Mesh {
             attributes.insert(VertexAttribute::NORMAL, AttribContainer::new(&normals));
         }
 
-        if !texcoords.is_empty() {
-            attributes.insert(VertexAttribute::UV0, AttribContainer::new(&texcoords));
+        if !uvs.is_empty() {
+            attributes.insert(VertexAttribute::UV0, AttribContainer::new(&uvs));
         }
 
         Mesh {
@@ -397,6 +424,8 @@ impl Mesh {
             } else {
                 None
             },
+            // TODO: submeshes
+            sub_meshes: None,
         }
     }
 }

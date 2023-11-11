@@ -3,6 +3,7 @@ use crate::{
         assets::Handle,
         camera::Camera,
         mesh::{GpuMesh, VertexAttribute},
+        Color,
     },
     render::{rpass::RenderingPass, RenderTarget, Renderer},
     scene::{NodeIdx, Scene},
@@ -189,7 +190,8 @@ impl RenderingPass for Wireframe {
                 view: &target.view,
                 resolve_target: None,
                 ops: wgpu::Operations {
-                    load: wgpu::LoadOp::Clear(*Renderer::CLEAR_COLOR),
+                    // load: wgpu::LoadOp::Clear(*Renderer::CLEAR_COLOR),
+                    load: wgpu::LoadOp::Clear(*Color::PURPLISH_GREY),
                     store: wgpu::StoreOp::Store,
                 },
             })],
