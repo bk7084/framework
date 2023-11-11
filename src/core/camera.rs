@@ -4,15 +4,16 @@ use std::{fmt::Debug, ops::Range};
 
 /// The type of projection for a camera.
 #[pyo3::pyclass]
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq, Default)]
 pub enum ProjectionKind {
     /// An orthographic projection.
     Orthographic,
     /// A perspective projection.
+    #[default]
     Perspective,
 }
 
-/// A projection for a camera.
+/// Describes the projection settings for a camera.
 #[pyo3::pyclass]
 #[derive(Clone, Copy)]
 pub struct Projection {
@@ -20,6 +21,21 @@ pub struct Projection {
     pub kind: ProjectionKind,
     /// The vertical field of view or vertical extent of this projection.
     pub fov_or_ext: VerticalFovOrExtent,
+    /// The minimum depth(near plane) of this projection.
+    pub min_depth: f32,
+    /// The maximum depth(far plane) of this projection.
+    pub max_depth: f32,
+}
+
+impl Default for Projection {
+    fn default() -> Self {
+        Self {
+            kind: ProjectionKind::Perspective,
+            fov_or_ext: VerticalFovOrExtent { fov: 60.0 },
+            min_depth: 0.1,
+            max_depth: f32::INFINITY,
+        }
+    }
 }
 
 impl Debug for Projection {
@@ -34,6 +50,8 @@ impl Debug for Projection {
                 .debug_struct("Projection")
                 .field("kind", &self.kind)
                 .field("fov", &unsafe { self.fov_or_ext.fov })
+                .field("min_depth", &self.min_depth)
+                .field("max_depth", &self.max_depth)
                 .finish(),
         }
     }
@@ -41,7 +59,7 @@ impl Debug for Projection {
 
 impl Projection {
     /// Returns the projection matrix for this projection.
-    pub fn matrix(&self, near: f32, far: f32, aspect: f32) -> Mat4 {
+    pub fn matrix(&self, aspect: f32) -> Mat4 {
         match self.kind {
             ProjectionKind::Orthographic => {
                 let extent_v = unsafe { self.fov_or_ext.extent };
@@ -51,16 +69,16 @@ impl Projection {
                     half_extent_v,
                     -half_extent_v,
                     half_extent_v,
-                    near,
-                    far,
+                    self.min_depth,
+                    self.max_depth,
                 )
             }
             ProjectionKind::Perspective => {
                 let fov_v = unsafe { self.fov_or_ext.fov }.to_radians();
-                if far == f32::INFINITY {
-                    Mat4::perspective_infinite_rh(fov_v, aspect, near)
+                if self.max_depth == f32::INFINITY {
+                    Mat4::perspective_infinite_rh(fov_v, aspect, self.min_depth)
                 } else {
-                    Mat4::perspective_rh(fov_v, aspect, near, far)
+                    Mat4::perspective_rh(fov_v, aspect, self.min_depth, self.max_depth)
                 }
             }
         }
@@ -71,19 +89,23 @@ impl Projection {
 impl Projection {
     /// Creates a new perspective projection.
     #[staticmethod]
-    pub fn orthographic(height: f32) -> Self {
+    pub fn orthographic(height: f32, z_near: f32, z_far: f32) -> Self {
         Self {
             kind: ProjectionKind::Orthographic,
             fov_or_ext: VerticalFovOrExtent { extent: height },
+            min_depth: z_near,
+            max_depth: z_far,
         }
     }
 
     /// Creates a new perspective projection.
     #[staticmethod]
-    pub fn perspective(fov: f32) -> Self {
+    pub fn perspective(fov: f32, z_near: f32, z_far: f32) -> Self {
         Self {
             kind: ProjectionKind::Perspective,
             fov_or_ext: VerticalFovOrExtent { fov },
+            min_depth: z_near,
+            max_depth: z_far,
         }
     }
 }
@@ -103,10 +125,6 @@ pub union VerticalFovOrExtent {
 pub struct Camera {
     /// The projection settings for this camera.
     pub proj: Projection,
-    /// The near depth of this camera.
-    pub near: f32,
-    /// The far depth of this camera.
-    pub far: f32,
     /// Background color for this camera.
     pub background: Color,
     /// If this camera is the main camera.
@@ -115,11 +133,9 @@ pub struct Camera {
 
 impl Camera {
     /// Creates a new camera with the given projection settings.
-    pub fn new(proj: Projection, depth: Range<f32>, background: Color, main: bool) -> Self {
+    pub fn new(proj: Projection, background: Color, main: bool) -> Self {
         Self {
             proj,
-            near: depth.start,
-            far: depth.end,
             background,
             is_main: main,
         }
@@ -127,16 +143,24 @@ impl Camera {
 
     /// Creates a new camera with the perspective projection settings.
     pub fn perspective(fov_v: f32, depth: Range<f32>, background: Color) -> Self {
-        Self::new(Projection::perspective(fov_v), depth, background, false)
+        Self::new(
+            Projection::perspective(fov_v, depth.start, depth.end),
+            background,
+            false,
+        )
     }
 
     /// Creates a new camera with the orthographic projection settings.
     pub fn orthographic(height: f32, depth: Range<f32>, background: Color) -> Self {
-        Self::new(Projection::orthographic(height), depth, background, false)
+        Self::new(
+            Projection::orthographic(height, depth.start, depth.end),
+            background,
+            false,
+        )
     }
 
     /// Returns the projection matrix for this camera.
     pub fn proj_matrix(&self, aspect: f32) -> Mat4 {
-        self.proj.matrix(self.near, self.far, aspect)
+        self.proj.matrix(aspect)
     }
 }

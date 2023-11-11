@@ -13,6 +13,7 @@ pub mod mesh;
 mod transform;
 pub use transform::*;
 
+mod texture;
 mod typedef;
 
 pub use typedef::*;

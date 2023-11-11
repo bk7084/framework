@@ -9,7 +9,7 @@ pub use window::*;
 use crate::{
     app::command::Command,
     core::{
-        camera::{Camera, Projection},
+        camera::{Camera, Projection, ProjectionKind},
         mesh::Mesh,
         Alignment, Color, ConcatOrder, FxHashMap, SmlString,
     },
@@ -194,7 +194,7 @@ impl PyAppState {
             .scene
             .write()
             .map(|mut scene| {
-                let camera = Camera::new(proj, 0.0..f32::INFINITY, Color::LIGHT_PERIWINKLE, true);
+                let camera = Camera::new(proj, Color::LIGHT_PERIWINKLE, true);
                 let entity = scene.spawn(NodeIdx::root(), (camera,));
                 let transform = scene.nodes[entity.node].transform_mut();
                 transform.translation = pos;
@@ -345,7 +345,10 @@ pub fn run_main_loop(mut app: PyAppState, builder: PyWindowBuilder) {
     let mut wireframe_rpass = Wireframe::new(&context.device, surface.format());
     // let mut clear_rpass = ClearPass::new(Renderer::CLEAR_COLOR);
 
-    app.create_main_camera(Projection::perspective(45.0), Vec3::new(5.0, 5.0, 5.0));
+    app.create_main_camera(
+        Projection::perspective(45.0, 0.0001, f32::INFINITY),
+        Vec3::new(5.0, 5.0, 5.0),
+    );
 
     let mut cube = Mesh::cube(1.0);
     cube.compute_per_vertex_normals();
