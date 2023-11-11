@@ -94,7 +94,7 @@ impl Wireframe {
                 topology: wgpu::PrimitiveTopology::TriangleList,
                 front_face: wgpu::FrontFace::Ccw,
                 cull_mode: None,
-                polygon_mode: wgpu::PolygonMode::Fill,
+                polygon_mode: wgpu::PolygonMode::Line,
                 ..Default::default()
             },
             depth_stencil: Some(wgpu::DepthStencilState {

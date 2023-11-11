@@ -1,7 +1,7 @@
 use std::{fmt::Debug, ops::Range};
 
 mod attribute;
-use crate::core::{assets::Asset, Plane};
+use crate::core::{assets::Asset, Alignment};
 pub use attribute::*;
 
 /// Topology of a mesh primitive.
@@ -126,14 +126,14 @@ impl Mesh {
 
     #[staticmethod]
     #[pyo3(name = "create_cube")]
-    pub fn new_cube_py() -> Self {
-        Self::cube()
+    pub fn new_cube_py(length: f32) -> Self {
+        Self::cube(length)
     }
 
     #[staticmethod]
     #[pyo3(name = "create_quad")]
-    pub fn new_quad_py(plane: Plane) -> Self {
-        Self::quad(plane)
+    pub fn new_quad_py(length: f32, align: Alignment) -> Self {
+        Self::plane(length, align)
     }
 
     /// Computes per vertex normals for the mesh.
@@ -190,22 +190,23 @@ pub struct VertexBufferLayout {
 impl Mesh {
     #[rustfmt::skip]
     /// Creates a unit cube of side length 1 centered at the origin.
-    pub fn cube() -> Self {
+    pub fn cube(length: f32) -> Self {
         let mut attributes = VertexAttributes::default();
+        let half = length * 0.5;
         // Vertex positions for a unit cube centered at the origin.
         let vertices: [[f32; 3]; 24] = [
             // front (0.0, 0.0, 0.5)
-            [-0.5f32, -0.5, 0.5], [0.5, -0.5, 0.5], [0.5, 0.5, 0.5], [-0.5, 0.5, 0.5],
-            // back (0.0, 0.0, -0.5)
-            [-0.5, -0.5, -0.5], [0.5, -0.5, -0.5], [0.5, 0.5, -0.5], [0.5, -0.5, -0.5],
-            // right (0.5, 0.0, 0.0)
-            [0.5, -0.5, -0.5], [0.5, 0.5, -0.5], [0.5, 0.5, 0.5], [0.5, -0.5, 0.5],
-            // left (-0.5, 0.0, 0.0)
-            [-0.5, -0.5, 0.5], [-0.5, 0.5, 0.5], [-0.5, 0.5, -0.5], [-0.5, -0.5, -0.5],
-            // top (0.0, 0.5, 0.0)
-            [0.5, 0.5, -0.5], [-0.5, 0.5, -0.5], [-0.5, 0.5, 0.5], [0.5, 0.5, 0.5],
-            // bottom (0.0, -0.5, 0.0)
-            [0.5, -0.5, 0.5], [-0.5, -0.5, 0.5], [-0.5, -0.5, -0.5], [0.5, -0.5, -0.5],
+            [-half, -half, half], [half, -half, half], [half, half, half], [-half, half, half],
+            // back (0.0, 0.0, -half)
+            [-half, -half, -half], [half, -half, -half], [half, half, -half], [half, -half, -half],
+            // right (half, 0.0, 0.0)
+            [half, -half, -half], [half, half, -half], [half, half, half], [half, -half, half],
+            // left (-half, 0.0, 0.0)
+            [-half, -half, half], [-half, half, half], [-half, half, -half], [-half, -half, -half],
+            // top (0.0, half, 0.0)
+            [half, half, -half], [-half, half, -half], [-half, half, half], [half, half, half],
+            // bottom (0.0, -half, 0.0)
+            [half, -half, half], [-half, -half, half], [-half, -half, -half], [half, -half, -half],
         ];
         // Vertex normals for a unit cube centered at the origin. Per vertex normals.
         let normals: [[f32; 3]; 24] = [
@@ -241,51 +242,36 @@ impl Mesh {
         }
     }
 
-    pub fn quad(plane: Plane) -> Self {
+    #[rustfmt::skip]
+    /// Creates a unit quad of side length 1 centered at the origin.
+    pub fn plane(length: f32, align: Alignment) -> Self {
         let mut attributes = VertexAttributes::default();
-        let (vertices, normals) = match plane {
-            Plane::XY => {
+        let half = length * 0.5;
+        let (vertices, normals) = match align {
+            Alignment::XY => {
                 let vertices: [[f32; 3]; 4] = [
-                    [-0.5, -0.5, 0.0],
-                    [0.5, -0.5, 0.0],
-                    [0.5, 0.5, 0.0],
-                    [-0.5, 0.5, 0.0],
+                    [-half, -half, 0.0], [half, -half, 0.0], [half, half, 0.0], [-half, half, 0.0],
                 ];
                 let normals: [[f32; 3]; 4] = [
-                    [0.0, 0.0, 1.0],
-                    [0.0, 0.0, 1.0],
-                    [0.0, 0.0, 1.0],
-                    [0.0, 0.0, 1.0],
+                    [0.0, 0.0, 1.0], [0.0, 0.0, 1.0], [0.0, 0.0, 1.0], [0.0, 0.0, 1.0],
                 ];
                 (vertices, normals)
             }
-            Plane::XZ => {
+            Alignment::XZ => {
                 let vertices: [[f32; 3]; 4] = [
-                    [-0.5, 0.0, -0.5],
-                    [0.5, 0.0, -0.5],
-                    [0.5, 0.0, 0.5],
-                    [-0.5, 0.0, 0.5],
+                    [-half, 0.0, -half], [half, 0.0, -half], [half, 0.0, half], [-half, 0.0, half],
                 ];
                 let normals: [[f32; 3]; 4] = [
-                    [0.0, 1.0, 0.0],
-                    [0.0, 1.0, 0.0],
-                    [0.0, 1.0, 0.0],
-                    [0.0, 1.0, 0.0],
+                    [0.0, 1.0, 0.0], [0.0, 1.0, 0.0], [0.0, 1.0, 0.0], [0.0, 1.0, 0.0],
                 ];
                 (vertices, normals)
             }
-            Plane::YZ => {
+            Alignment::YZ => {
                 let vertices: [[f32; 3]; 4] = [
-                    [0.0, -0.5, -0.5],
-                    [0.0, 0.5, -0.5],
-                    [0.0, 0.5, 0.5],
-                    [0.0, -0.5, 0.5],
+                    [0.0, -half, -half], [0.0, half, -half], [0.0, half, half], [0.0, -half, half],
                 ];
                 let normals: [[f32; 3]; 4] = [
-                    [1.0, 0.0, 0.0],
-                    [1.0, 0.0, 0.0],
-                    [1.0, 0.0, 0.0],
-                    [1.0, 0.0, 0.0],
+                    [1.0, 0.0, 0.0], [1.0, 0.0, 0.0], [1.0, 0.0, 0.0], [1.0, 0.0, 0.0],
                 ];
                 (vertices, normals)
             }
@@ -299,6 +285,118 @@ impl Mesh {
             topology: wgpu::PrimitiveTopology::TriangleList,
             attributes,
             indices: Some(Indices::U16(indices)),
+        }
+    }
+
+    /// Creates a sphere of centered at the origin.
+    ///
+    /// # Arguments
+    ///
+    /// * `radius` - Radius of the sphere.
+    /// * `segments` - Number of segments around the sphere.
+    /// * `rings` - Number of rings from the top to the bottom of the sphere.
+    pub fn sphere(radius: f32, segments: u32, rings: u32) -> Mesh {
+        let mut attributes = VertexAttributes::default();
+        let mut vertices = Vec::new();
+        let mut normals = Vec::new();
+        let mut uvs = Vec::new();
+        let mut indices = Vec::new();
+
+        // Create the vertices.
+        for ring in 0..=rings {
+            let v = ring as f32 / rings as f32;
+            let theta = v * std::f32::consts::PI;
+            let sin_theta = theta.sin();
+            let cos_theta = theta.cos();
+
+            for segment in 0..=segments {
+                let u = segment as f32 / segments as f32;
+                let phi = u * std::f32::consts::PI * 2.0;
+                let sin_phi = phi.sin();
+                let cos_phi = phi.cos();
+
+                let x = cos_phi * sin_theta;
+                let y = cos_theta;
+                let z = sin_phi * sin_theta;
+
+                vertices.push([radius * x, radius * y, radius * z]);
+                normals.push([x, y, z]);
+                uvs.push([u, v]);
+            }
+        }
+
+        // Create the indices.
+        for ring in 0..rings {
+            for segment in 0..segments {
+                let next_segment = segment + 1;
+                let next_ring = ring + 1;
+
+                indices.push(ring * (segments + 1) + segment);
+                indices.push(next_ring * (segments + 1) + segment);
+                indices.push(next_ring * (segments + 1) + next_segment);
+
+                indices.push(ring * (segments + 1) + segment);
+                indices.push(next_ring * (segments + 1) + next_segment);
+                indices.push(ring * (segments + 1) + next_segment);
+            }
+        }
+
+        attributes.insert(VertexAttribute::POSITION, AttribContainer::new(&vertices));
+        attributes.insert(VertexAttribute::NORMAL, AttribContainer::new(&normals));
+        attributes.insert(VertexAttribute::UV0, AttribContainer::new(&uvs));
+
+        Mesh {
+            topology: wgpu::PrimitiveTopology::TriangleList,
+            attributes,
+            indices: Some(Indices::U32(indices)),
+        }
+    }
+
+    /// Loads a mesh from a wavefront obj file.
+    pub fn load_from_obj(path: &str) -> Self {
+        log::debug!("Loading mesh from {}.", path);
+        let (models, materials) = tobj::load_obj(path, &tobj::GPU_LOAD_OPTIONS).unwrap();
+        let materials = materials.expect("Failed to load materials.");
+        log::debug!("- Loaded {} models.", models.len());
+        log::debug!("- Loaded {} materials.", materials.len());
+        let mut attributes = VertexAttributes::default();
+        let mut vertices = Vec::new();
+        let mut normals = Vec::new();
+        let mut texcoords = Vec::new();
+        let mut indices = Vec::new();
+
+        let mut index_offset = 0;
+        for model in models.iter() {
+            let mesh = &model.mesh;
+            vertices.append(&mut mesh.positions.clone());
+            normals.append(&mut mesh.normals.clone());
+            texcoords.append(&mut mesh.texcoords.clone());
+            let mut mesh_indices = mesh.indices.clone();
+            for index in mesh_indices.iter_mut() {
+                *index += index_offset;
+            }
+            index_offset += mesh.positions.len() as u32 / 3;
+            indices.append(&mut mesh_indices);
+        }
+
+        attributes.insert(VertexAttribute::POSITION, AttribContainer::new(&vertices));
+
+        if !normals.is_empty() {
+            attributes.insert(VertexAttribute::NORMAL, AttribContainer::new(&normals));
+        }
+
+        if !texcoords.is_empty() {
+            attributes.insert(VertexAttribute::UV0, AttribContainer::new(&texcoords));
+        }
+
+        Mesh {
+            topology: wgpu::PrimitiveTopology::TriangleList,
+            attributes,
+            indices: if !indices.is_empty() {
+                Some(Indices::U32(indices))
+            } else {
+                None
+            },
         }
     }
 }
@@ -340,5 +438,29 @@ impl GpuMesh {
         self.vertex_attribute_ranges
             .iter()
             .find_map(|(attrib, range)| (*attrib == attribute).then_some(range.clone()))
+    }
+}
+
+mod icosphere {
+    // Helper function to calculate the midpoint of two vertices
+    pub fn midpoint(v1: &[f32; 3], v2: &[f32; 3]) -> [f32; 3] {
+        [
+            (v1[0] + v2[0]) / 2.0,
+            (v1[1] + v2[1]) / 2.0,
+            (v1[2] + v2[2]) / 2.0,
+        ]
+    }
+
+    // Helper function to normalize a vector
+    pub fn normalize(v: [f32; 3]) -> [f32; 3] {
+        let length = (v[0].powi(2) + v[1].powi(2) + v[2].powi(2)).sqrt();
+        [v[0] / length, v[1] / length, v[2] / length]
+    }
+
+    // Helper function to calculate UV coordinates based on a vector
+    pub fn uv_coordinates(v: [f32; 3]) -> [f32; 2] {
+        let u = 0.5 + (v[2].atan2(v[0]) / (2.0 * std::f32::consts::PI));
+        let v = 0.5 - (v[1].asin() / std::f32::consts::PI);
+        [u, v]
     }
 }

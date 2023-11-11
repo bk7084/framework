@@ -28,7 +28,7 @@ range-alloc = "0.1"
 rustc-hash = "1"
 static_assertions = "1"
 smartstring = "1"
-tobj = "4.0"
+tobj = { git = "https://github.com/matthiascy/tobj.git", branch = "master" }
 winit = "0.28"
 wgpu = "0.18"
 

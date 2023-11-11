@@ -1,15 +1,13 @@
 mod node;
 pub use node::*;
 
-use crossbeam_channel::{Receiver, Sender};
+use crossbeam_channel::{Sender};
 use glam::Quat;
 use std::fmt::{Debug, Formatter};
 
 use crate::{
     app::command::{Command, CommandReceiver, CommandSender},
     core::{
-        assets::{GpuMeshAssets, MaterialAssets, MeshAssets},
-        mesh::Mesh,
         ConcatOrder,
     },
 };

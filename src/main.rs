@@ -39,7 +39,7 @@ fn create_entities(cmds: &mut CommandBuffer, #[resource] values: &Vec<u32>) {
 fn main() {
     // ecs_101();
     // ecs_intro();
-    let context = GpuContext::new(None);
+    let _context = GpuContext::new(None);
     let mut scene = bkfw::scene::Scene::new();
     let entity = scene.spawn(NodeIdx::root(), (0.5f32,));
     println!("{:?}", entity);

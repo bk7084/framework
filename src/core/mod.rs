@@ -5,8 +5,6 @@ pub mod camera;
 mod color;
 pub use color::*;
 pub mod assets;
-
-pub mod geometry;
 mod material;
 pub use material::*;
 mod light;
@@ -19,10 +17,10 @@ mod typedef;
 
 pub use typedef::*;
 
-/// A plane in 3D space.
+/// The alignment of a plane.
 #[pyo3::pyclass]
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
-pub enum Plane {
+pub enum Alignment {
     /// The XY plane.
     XY,
     /// The XZ plane.

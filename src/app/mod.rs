@@ -11,7 +11,7 @@ use crate::{
     core::{
         camera::{Camera, Projection},
         mesh::Mesh,
-        Color, ConcatOrder, FxHashMap, Plane, SmlString,
+        Alignment, Color, ConcatOrder, FxHashMap, SmlString,
     },
     render::{rpass::Wireframe, surface::Surface, GpuContext, RenderTarget, Renderer},
     scene::{Entity, NodeIdx, PyEntity, Scene, Transform},
@@ -341,16 +341,22 @@ pub fn run_main_loop(mut app: PyAppState, builder: PyWindowBuilder) {
     let mut wireframe_rpass = Wireframe::new(&context.device, surface.format());
     // let mut clear_rpass = ClearPass::new(Renderer::CLEAR_COLOR);
 
-    app.create_main_camera(Projection::perspective(60.0), Vec3::new(5.0, 5.0, 5.0));
+    app.create_main_camera(Projection::perspective(75.0), Vec3::new(5.0, 5.0, 5.0));
 
-    let mut cube = Mesh::cube();
+    let mut cube = Mesh::cube(1.0);
     cube.compute_per_vertex_normals();
-    let rect = Mesh::quad(Plane::XY);
+    let rect = Mesh::plane(0.5, Alignment::XY);
+    let sphere = Mesh::sphere(1.0, 32, 16);
+    let obj_cube = Mesh::load_from_obj("./data/cube/cube.obj");
+    let obj_sibenik = Mesh::load_from_obj("./data/sibenik/sibenik.obj");
 
-    let (rect0_id, rect1_id) = {
+    let (rect0_id, rect1_id, sphere_id) = {
         let cube_entity = app.spawn_object_with_mesh(NodeIdx::root(), &cube);
         let rect0_entity = app.spawn_object_with_mesh(NodeIdx::root(), &rect);
         let rect1_entity = app.spawn_object_with_mesh(rect0_entity.node, &rect);
+        let sphere_entity = app.spawn_object_with_mesh(NodeIdx::root(), &sphere);
+        let obj_cube_entity = app.spawn_object_with_mesh(NodeIdx::root(), &obj_cube);
+        let obj_sibenik_entity = app.spawn_object_with_mesh(NodeIdx::root(), &obj_sibenik);
 
         let mut scene = app.scene.write().unwrap();
         let cube_node = &mut scene.nodes[cube_entity.node];
@@ -366,7 +372,19 @@ pub fn run_main_loop(mut app: PyAppState, builder: PyWindowBuilder) {
         let rot = Transform::from_rotation(Quat::from_rotation_z(45.0f32.to_radians()));
         *rect_transform = tra * *rect_transform * rot;
 
-        (rect0_entity.node, rect1_entity.node)
+        let sphere_node = &mut scene.nodes[sphere_entity.node];
+        let sphere_transform = sphere_node.transform_mut();
+        sphere_transform.translation = Vec3::new(-4.0, 0.0, 0.0);
+
+        let obj_cube_node = &mut scene.nodes[obj_cube_entity.node];
+        let obj_cube_transform = obj_cube_node.transform_mut();
+        obj_cube_transform.translation = Vec3::new(0.0, 0.0, -2.0);
+
+        let obj_sibenik_node = &mut scene.nodes[obj_sibenik_entity.node];
+        let obj_sibenik_transform = obj_sibenik_node.transform_mut();
+        obj_sibenik_transform.translation = Vec3::new(0.0, 0.0, 0.0);
+
+        (rect0_entity.node, rect1_entity.node, cube_entity.node)
     };
 
     // Ready to present the window.

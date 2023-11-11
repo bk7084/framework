@@ -48,6 +48,11 @@ impl GpuMeshStorage {
         let mut vertex_attribute_ranges = Vec::with_capacity(mesh.attributes.0.len());
         // Vertex attributes are stored separately in the buffer.
         for (attrib, data) in &mesh.attributes.0 {
+            log::trace!(
+                "-- Allocating vertex attribute {:?}, n_bytes: {}",
+                attrib.name,
+                data.n_bytes()
+            );
             let range = self.allocate_range(device, encoder, data.n_bytes() as u64);
             log::debug!(
                 "Allocating vertex attribute {:?} with size {} as range {:?}",
@@ -121,9 +126,14 @@ impl GpuMeshStorage {
         encoder: &mut wgpu::CommandEncoder,
         n_bytes: u64,
     ) -> Range<u64> {
+        log::trace!("Allocating {} bytes from mesh buffer", n_bytes);
         match self.allocator.allocate_range(n_bytes) {
             Ok(range) => range,
             Err(..) => {
+                log::trace!(
+                    "Buffer is too small ({}), growing...",
+                    self.allocator.total_available()
+                );
                 // Desired allocation is too large, so we need to grow the buffer.
                 self.grow_buffer(device, encoder, n_bytes);
                 self.allocator.allocate_range(n_bytes).unwrap()

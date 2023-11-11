@@ -21,11 +21,6 @@ classifiers = [
 ]
 dependencies = [
     'numpy',
-    'pyopengl',
-    'glfw',
-    'pypng',
-    'imgui[glfw]',
-    'Pillow',
     'numba>=0.55',
 ]
 
