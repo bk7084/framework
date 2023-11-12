@@ -17,6 +17,7 @@ cfg-if = "1"
 crossbeam-channel = "0.5"
 dolly = { git = "https://github.com/matthiascy/dolly.git", branch = "main" }
 env_logger = "0.10"
+image = "0.24"
 glam = "0.24"
 legion = { git = "https://github.com/matthiascy/legion.git", branch = "master" }
 log = "0.4"

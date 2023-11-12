@@ -9,7 +9,7 @@ pub use window::*;
 use crate::{
     app::command::Command,
     core::{
-        camera::{Camera, Projection, ProjectionKind},
+        camera::{Camera, Projection},
         mesh::Mesh,
         Alignment, Color, ConcatOrder, FxHashMap, SmlString,
     },
@@ -172,14 +172,21 @@ impl PyAppState {
     ///
     /// Returns the entity ID of the spawned object.
     pub fn spawn_object_with_mesh(&mut self, parent: NodeIdx, mesh: &Mesh) -> Entity {
-        let mesh_handle = self
+        let gpu_mesh_handle = self
             .renderer
             .write()
             .map(|mut renderer| renderer.add_mesh(mesh))
             .unwrap();
+
+        // TODO: handle materials
+        let materials = match mesh.materials {
+            None => {}
+            Some(_) => {}
+        };
+
         self.scene
             .write()
-            .map(|mut scene| scene.spawn(parent, (mesh_handle,)))
+            .map(|mut scene| scene.spawn(parent, (gpu_mesh_handle,)))
             .unwrap()
     }
 

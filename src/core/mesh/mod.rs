@@ -1,9 +1,13 @@
-use std::{fmt::Debug, ops::Range};
+use rustc_hash::{FxHashMap, FxHashSet};
+use std::{fmt::Debug, ops::Range, path::PathBuf, sync::atomic::AtomicU64};
 
 mod attribute;
-use crate::core::{
-    assets::{Asset, Handle},
-    Alignment, Material,
+use crate::{
+    app::command::{Command, CommandSender},
+    core::{
+        assets::{Asset, Handle},
+        Alignment, ArrVec, Material,
+    },
 };
 pub use attribute::*;
 
@@ -110,13 +114,18 @@ impl Indices {
 pub struct SubMesh {
     /// Range of indices of the submesh.
     pub indices: Range<u32>,
-    /// Material of the submesh.
-    pub material: Option<Handle<Material>>,
+    /// Material of the submesh (index into the material array of the mesh).
+    /// If the material is None, the submesh uses the default material.
+    pub material: Option<u32>,
 }
 
+/// Mesh id counter. 0 and 1 are reserved for the default cube and quad.
+static MESH_ID: AtomicU64 = AtomicU64::new(2);
+
 #[pyo3::pyclass]
-#[derive(Clone)]
 pub struct Mesh {
+    /// Unique id of the mesh.
+    pub(crate) id: u64,
     /// Topology of the mesh primitive.
     pub(crate) topology: wgpu::PrimitiveTopology,
     /// Vertex attributes of the mesh.
@@ -126,19 +135,40 @@ pub struct Mesh {
     /// Sub-meshes of the mesh. If the mesh has no sub-meshes, it is assumed
     /// that the entire mesh is using the default material.
     pub(crate) sub_meshes: Option<Vec<SubMesh>>,
+    /// Path to the mesh file, if it's loaded from a file.
+    pub(crate) path: Option<PathBuf>,
+    /// Materials of the mesh.
+    pub(crate) materials: Option<Vec<Material>>,
 }
 
 impl Asset for Mesh {}
+
+impl Clone for Mesh {
+    fn clone(&self) -> Self {
+        Self {
+            id: MESH_ID.fetch_add(1, std::sync::atomic::Ordering::Relaxed),
+            topology: self.topology,
+            attributes: self.attributes.clone(),
+            indices: self.indices.clone(),
+            sub_meshes: self.sub_meshes.clone(),
+            path: self.path.clone(),
+            materials: self.materials.clone(),
+        }
+    }
+}
 
 #[pyo3::pymethods]
 impl Mesh {
     #[new]
     pub fn new(topology: PyTopology) -> Self {
         Self {
+            id: MESH_ID.fetch_add(1, std::sync::atomic::Ordering::Relaxed),
+            path: None,
             topology: topology.into(),
             attributes: VertexAttributes::default(),
             indices: None,
             sub_meshes: None,
+            materials: None,
         }
     }
 
@@ -254,10 +284,13 @@ impl Mesh {
         attributes.insert(VertexAttribute::POSITION, AttribContainer::new(&vertices));
         attributes.insert(VertexAttribute::NORMAL, AttribContainer::new(&normals));
         Mesh {
+            id: 0,
             topology: wgpu::PrimitiveTopology::TriangleList,
             attributes,
             indices: Some(Indices::U16(indices)),
             sub_meshes: None,
+            path: None,
+            materials: None,
         }
     }
 
@@ -301,10 +334,13 @@ impl Mesh {
         attributes.insert(VertexAttribute::POSITION, AttribContainer::new(&vertices));
         attributes.insert(VertexAttribute::NORMAL, AttribContainer::new(&normals));
         Mesh {
+            id: 1,
             topology: wgpu::PrimitiveTopology::TriangleList,
             attributes,
             indices: Some(Indices::U16(indices)),
             sub_meshes: None,
+            path: None,
+            materials: None,
         }
     }
 
@@ -366,10 +402,13 @@ impl Mesh {
         attributes.insert(VertexAttribute::UV0, AttribContainer::new(&uvs));
 
         Mesh {
+            id: MESH_ID.fetch_add(1, std::sync::atomic::Ordering::Relaxed),
             topology: wgpu::PrimitiveTopology::TriangleList,
             attributes,
             indices: Some(Indices::U32(indices)),
             sub_meshes: None,
+            path: None,
+            materials: None,
         }
     }
 
@@ -392,18 +431,37 @@ impl Mesh {
         let mut uvs = Vec::new();
         let mut indices = Vec::new();
 
+        // Classify the submeshes by material.
+        let mut sub_meshes = Vec::new();
+        let mut sub_meshes_by_material = FxHashMap::default();
         for model in models.iter() {
             let mesh = &model.mesh;
-            let mut mesh_indices = mesh.indices.clone();
-            let index_offset = vertices.len() as u32 / 3;
-            for index in mesh_indices.iter_mut() {
-                *index += index_offset;
+            sub_meshes_by_material
+                .entry(mesh.material_id)
+                .or_insert_with(Vec::new)
+                .push(mesh);
+        }
+
+        let mut index_start = 0;
+        for (material_id, meshes) in sub_meshes_by_material.iter() {
+            let mut sub_mesh = SubMesh {
+                indices: index_start..index_start,
+                material: material_id.map(|id| id as u32),
+            };
+            for mesh in meshes.iter() {
+                let mut mesh_indices = mesh.indices.clone();
+                let index_offset = vertices.len() as u32 / 3;
+                for index in mesh_indices.iter_mut() {
+                    *index += index_offset;
+                }
+                vertices.append(&mut mesh.positions.clone());
+                normals.append(&mut mesh.normals.clone());
+                uvs.append(&mut mesh.texcoords.clone());
+                indices.append(&mut mesh_indices);
+                index_start += mesh_indices.len() as u32;
             }
-            vertices.append(&mut mesh.positions.clone());
-            normals.append(&mut mesh.normals.clone());
-            uvs.append(&mut mesh.texcoords.clone());
-            indices.append(&mut mesh_indices);
-            // TODO: material_id
+            sub_mesh.indices.end = index_start;
+            sub_meshes.push(sub_mesh);
         }
 
         attributes.insert(VertexAttribute::POSITION, AttribContainer::new(&vertices));
@@ -417,6 +475,7 @@ impl Mesh {
         }
 
         Mesh {
+            id: MESH_ID.fetch_add(1, std::sync::atomic::Ordering::Relaxed),
             topology: wgpu::PrimitiveTopology::TriangleList,
             attributes,
             indices: if !indices.is_empty() {
@@ -424,14 +483,24 @@ impl Mesh {
             } else {
                 None
             },
-            // TODO: submeshes
-            sub_meshes: None,
+            sub_meshes: Some(sub_meshes),
+            path: None,
+            materials: Some(
+                materials
+                    .iter()
+                    .map(|m| Material::from_tobj_material(m.clone(), path.as_ref()))
+                    .collect(),
+            ),
         }
     }
 }
 
 /// A mesh on the GPU.
 pub struct GpuMesh {
+    /// Unique id of the mesh from which it was created.
+    pub mesh_id: u64,
+    /// Path to the mesh file, if it's loaded from a file.
+    pub mesh_path: Option<PathBuf>,
     /// Topology of the mesh primitive.
     pub topology: wgpu::PrimitiveTopology,
     /// Vertex attributes of the mesh.
@@ -444,20 +513,25 @@ pub struct GpuMesh {
     pub index_range: Range<u64>,
     /// Number of indices in the index buffer.
     pub index_count: u32,
+    /// Sub-meshes of the mesh.
+    pub sub_meshes: Option<Vec<SubMesh>>,
 }
 
 impl Asset for GpuMesh {}
 
 impl GpuMesh {
     /// Creates a new empty gpu mesh.
-    pub fn new(topology: wgpu::PrimitiveTopology) -> Self {
+    pub fn empty(topology: wgpu::PrimitiveTopology) -> Self {
         Self {
+            mesh_id: u64::MAX,
+            mesh_path: None,
             topology,
             vertex_attribute_ranges: Vec::new(),
             vertex_count: 0,
             index_format: None,
             index_range: 0..0,
             index_count: 0,
+            sub_meshes: None,
         }
     }
 

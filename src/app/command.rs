@@ -1,7 +1,4 @@
-use crate::{
-    core::{ConcatOrder},
-    scene::Entity,
-};
+use crate::{core::ConcatOrder, scene::Entity};
 use glam::{Quat, Vec3};
 
 /// Possible commands that can be executed.

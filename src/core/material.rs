@@ -1,5 +1,5 @@
 use crate::core::assets::Asset;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use crate::core::{FxHashMap, SmlString};
 
@@ -8,7 +8,7 @@ use crate::core::{FxHashMap, SmlString};
 #[derive(Debug, Clone)]
 pub struct Material {
     /// Material name.
-    pub name: String,
+    pub name: SmlString,
     /// Ambient color. `Ka` in the `MTL` spec.
     pub ka: Option<[f32; 3]>,
     /// Diffuse color. `Kd` in the `MTL` spec.
@@ -50,9 +50,84 @@ pub struct Material {
     /// The illumnination model to use for this material. The different
     /// illumination models are specified in the [`MTL` spec](http://paulbourke.net/dataformats/mtl/).
     pub illumination_model: Option<u8>,
-    /// Key value pairs of any unrecognized parameters encountered while parsing
-    /// the material.
-    pub unknown_params: Option<FxHashMap<SmlString, String>>,
 }
 
 impl Asset for Material {}
+
+impl Material {
+    pub fn from_tobj_material(mtl: tobj::Material, relative_to: &Path) -> Self {
+        let map_bump = match mtl.unknown_param.get("map_bump").map(AsRef::<Path>::as_ref) {
+            None => mtl.unknown_param.get("bump").map(AsRef::<Path>::as_ref),
+            Some(v) => Some(v),
+        }
+        .map(|v| resolve_path(&v, relative_to))
+        .flatten();
+        let map_disp = match mtl.unknown_param.get("map_disp").map(AsRef::<Path>::as_ref) {
+            None => mtl.unknown_param.get("disp").map(AsRef::<Path>::as_ref),
+            Some(v) => Some(v),
+        }
+        .map(|v| resolve_path(&v, relative_to))
+        .flatten();
+        let map_decal = match mtl
+            .unknown_param
+            .get("map_decal")
+            .map(AsRef::<Path>::as_ref)
+        {
+            None => mtl.unknown_param.get("decal").map(AsRef::<Path>::as_ref),
+            Some(v) => Some(v),
+        }
+        .map(|v| resolve_path(&v, relative_to))
+        .flatten();
+
+        Self {
+            name: mtl.name.into(),
+            ka: mtl.ambient,
+            kd: mtl.diffuse,
+            ks: mtl.specular,
+            ns: mtl.shininess,
+            ni: mtl.optical_density,
+            opacity: mtl.dissolve,
+            map_ka: mtl
+                .ambient_texture
+                .map(|v| resolve_path(v.as_ref(), relative_to))
+                .flatten(),
+            map_kd: mtl
+                .diffuse_texture
+                .map(|v| resolve_path(v.as_ref(), relative_to))
+                .flatten(),
+            map_ks: mtl
+                .specular_texture
+                .map(|v| resolve_path(v.as_ref(), relative_to))
+                .flatten(),
+            map_ns: mtl
+                .shininess_texture
+                .map(|v| resolve_path(v.as_ref(), relative_to))
+                .flatten(),
+            map_d: mtl
+                .dissolve_texture
+                .map(|v| resolve_path(v.as_ref(), relative_to))
+                .flatten(),
+            map_bump,
+            map_disp,
+            map_decal,
+            map_norm: mtl
+                .normal_texture
+                .map(|v| resolve_path(v.as_ref(), relative_to))
+                .flatten(),
+            illumination_model: mtl.illumination_model,
+        }
+    }
+}
+
+fn resolve_path(path: &Path, base: &Path) -> Option<PathBuf> {
+    let path = if path.is_absolute() {
+        path.to_path_buf()
+    } else {
+        base.join(path)
+    };
+    if path.exists() {
+        Some(path)
+    } else {
+        None
+    }
+}

@@ -14,8 +14,9 @@ pub use target::*;
 use crate::{
     app::command::{Command, CommandReceiver},
     core::{
-        assets::{GpuMeshAssets, Handle, MaterialAssets},
+        assets::{GpuMeshAssets, Handle, MaterialAssets, TextureAssets},
         mesh::{GpuMesh, Mesh},
+        FxHashMap, SmlString,
     },
     render::rpass::RenderingPass,
     scene::Scene,
@@ -44,6 +45,8 @@ pub struct Renderer {
     pipelines: Pipelines,
     meshes: GpuMeshAssets,
     materials: MaterialAssets,
+    textures: TextureAssets,
+    samplers: FxHashMap<SmlString, wgpu::Sampler>,
     cmd_receiver: Receiver<Command>,
 }
 
@@ -59,7 +62,34 @@ impl Renderer {
         let features = context.features;
         let limits = context.limits.clone();
         let meshes = GpuMeshAssets::new(&device);
-        let materials = MaterialAssets::new(&device);
+        let materials = MaterialAssets::new();
+        let textures = TextureAssets::new();
+        let mut samplers = FxHashMap::default();
+        let default_sampler = context.device.create_sampler(&wgpu::SamplerDescriptor {
+            label: Some("sampler_default"),
+            address_mode_u: wgpu::AddressMode::ClampToEdge,
+            address_mode_v: wgpu::AddressMode::ClampToEdge,
+            address_mode_w: wgpu::AddressMode::ClampToEdge,
+            mag_filter: wgpu::FilterMode::Linear,
+            min_filter: wgpu::FilterMode::Linear,
+            mipmap_filter: wgpu::FilterMode::Nearest,
+            lod_min_clamp: 0.0,
+            lod_max_clamp: 100.0,
+            ..Default::default()
+        });
+        let depth_sampler = context.device.create_sampler(&wgpu::SamplerDescriptor {
+            label: Some("sampler_depth"),
+            address_mode_u: wgpu::AddressMode::ClampToEdge,
+            address_mode_v: wgpu::AddressMode::ClampToEdge,
+            address_mode_w: wgpu::AddressMode::ClampToEdge,
+            mag_filter: wgpu::FilterMode::Nearest,
+            min_filter: wgpu::FilterMode::Nearest,
+            mipmap_filter: wgpu::FilterMode::Nearest,
+            compare: Some(wgpu::CompareFunction::LessEqual),
+            ..Default::default()
+        });
+        samplers.insert(SmlString::from("default"), default_sampler);
+        samplers.insert(SmlString::from("default_depth"), depth_sampler);
         Self {
             device,
             queue,
@@ -68,6 +98,8 @@ impl Renderer {
             pipelines: Pipelines::new(),
             meshes,
             materials,
+            textures,
+            samplers: Default::default(),
             cmd_receiver: receiver,
         }
     }

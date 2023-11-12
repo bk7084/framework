@@ -9,6 +9,7 @@ use crate::{
     scene::{NodeIdx, Scene},
 };
 use bytemuck::{Pod, Zeroable};
+use glam::{Affine3A, Mat4, Vec3, Vec4};
 use legion::IntoQuery;
 
 #[repr(C)]

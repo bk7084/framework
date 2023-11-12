@@ -1,5 +1,5 @@
 use crate::core::{
-    assets::AssetStorage,
+    assets::{AssetStorage, Handle},
     mesh::{GpuMesh, Mesh},
 };
 use range_alloc::RangeAllocator;
@@ -14,7 +14,7 @@ pub const INITIAL_MESH_DATA_SIZE: u64 = 1 << 25;
 pub struct GpuMeshStorage {
     pub(crate) buffer: Arc<wgpu::Buffer>,
     allocator: RangeAllocator<u64>,
-    pub(crate) data: Vec<Option<GpuMesh>>,
+    pub(crate) data: Vec<Option<(Handle<GpuMesh>, GpuMesh)>>,
 }
 
 impl GpuMeshStorage {
@@ -42,7 +42,7 @@ impl GpuMeshStorage {
         let vertex_count = mesh.attributes.vertex_count();
 
         if index_count == 0 && vertex_count == 0 {
-            return GpuMesh::new(mesh.topology);
+            return GpuMesh::empty(mesh.topology);
         }
 
         let mut vertex_attribute_ranges = Vec::with_capacity(mesh.attributes.0.len());
@@ -106,12 +106,15 @@ impl GpuMeshStorage {
         };
 
         GpuMesh {
+            mesh_id: mesh.id,
+            mesh_path: mesh.path.clone(),
             topology: mesh.topology,
             vertex_attribute_ranges,
             vertex_count: vertex_count as u32,
             index_format,
             index_range,
             index_count: index_count as u32,
+            sub_meshes: mesh.sub_meshes.clone(),
         }
     }
 }

@@ -1,15 +1,13 @@
 mod node;
 pub use node::*;
 
-use crossbeam_channel::{Sender};
-use glam::Quat;
+use crossbeam_channel::Sender;
+use glam::{Quat, Vec3};
 use std::fmt::{Debug, Formatter};
 
 use crate::{
     app::command::{Command, CommandReceiver, CommandSender},
-    core::{
-        ConcatOrder,
-    },
+    core::ConcatOrder,
 };
 use legion::{storage::IntoComponentSource, World};
 

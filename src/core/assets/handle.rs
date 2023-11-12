@@ -1,17 +1,53 @@
 use crate::core::assets::Asset;
 use crossbeam_channel::{Receiver, Sender};
 use std::{
+    cmp::Ordering,
     fmt::{Debug, Formatter},
+    hash::{Hash, Hasher},
     marker::PhantomData,
     sync::atomic::AtomicU32,
 };
 
 /// Handle to an asset.
-#[derive(Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub struct Handle<T: Asset> {
     pub(crate) generation: u32,
     pub(crate) index: u32,
     _marker: PhantomData<T>,
+}
+
+impl<T: Asset> PartialEq for Handle<T> {
+    fn eq(&self, other: &Self) -> bool {
+        self.index == other.index && self.generation == other.generation
+    }
+}
+
+impl<T: Asset> Eq for Handle<T> {}
+
+impl<T: Asset> PartialOrd for Handle<T> {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        // First compare generations then indices.
+        Some(
+            self.generation
+                .cmp(&other.generation)
+                .then(self.index.cmp(&other.index)),
+        )
+    }
+}
+
+impl<T: Asset> Ord for Handle<T> {
+    fn cmp(&self, other: &Self) -> Ordering {
+        // First compare generations then indices.
+        self.generation
+            .cmp(&other.generation)
+            .then(self.index.cmp(&other.index))
+    }
+}
+
+impl<T: Asset> Hash for Handle<T> {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.index.hash(state);
+        self.generation.hash(state);
+    }
 }
 
 impl<T: Asset> Clone for Handle<T> {

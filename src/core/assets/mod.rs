@@ -4,9 +4,12 @@ pub mod storage;
 use crate::core::{
     assets::storage::GpuMeshStorage,
     mesh::{GpuMesh, Mesh},
-    Material,
+    texture::{Texture, TextureSampler},
+    Material, SmlString,
 };
 pub use handle::*;
+use std::{path::Path, sync::Arc};
+use wgpu::TextureFormat;
 
 /// Trait for representing an asset.
 pub trait Asset: Send + Sync {}
@@ -101,6 +104,11 @@ impl<A: Asset> Assets<A, Vec<Option<A>>> {
 /// A collection of GPU meshes.
 pub type GpuMeshAssets = Assets<GpuMesh, GpuMeshStorage>;
 
+/// Returns true if the given GPU mesh is created from the given mesh.
+fn same_mesh(a: &Mesh, b: &GpuMesh) -> bool {
+    a.id == b.mesh_id || (a.path.is_some() && a.path == b.mesh_path)
+}
+
 // Specialize the `Assets` type for `GpuMesh` as it needs a custom storage.
 impl Assets<GpuMesh, GpuMeshStorage> {
     pub fn new(device: &wgpu::Device) -> Self {
@@ -116,6 +124,14 @@ impl Assets<GpuMesh, GpuMeshStorage> {
         queue: &wgpu::Queue,
         mesh: &Mesh,
     ) -> Handle<GpuMesh> {
+        for (idx, gpu_mesh) in self.storage.data.iter().enumerate() {
+            if let Some((hdl, gpu_mesh)) = gpu_mesh {
+                if same_mesh(mesh, gpu_mesh) {
+                    return *hdl;
+                }
+            }
+        }
+
         let handle = self.allocator.reserve();
         self.flush();
         let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
@@ -123,7 +139,7 @@ impl Assets<GpuMesh, GpuMeshStorage> {
         });
 
         let gpu_mesh = self.storage.add(device, queue, &mut encoder, mesh);
-        self.storage.data[handle.index as usize] = Some(gpu_mesh);
+        self.storage.data[handle.index as usize] = Some((handle, gpu_mesh));
 
         queue.submit(std::iter::once(encoder.finish()));
 
@@ -131,7 +147,9 @@ impl Assets<GpuMesh, GpuMeshStorage> {
     }
 
     pub fn get(&self, handle: Handle<GpuMesh>) -> Option<&GpuMesh> {
-        self.storage.data[handle.index as usize].as_ref()
+        self.storage.data[handle.index as usize]
+            .as_ref()
+            .map(|(_, mesh)| mesh)
     }
 
     pub fn remove(&mut self, handle: Handle<GpuMesh>) -> Option<GpuMesh> {
@@ -139,7 +157,7 @@ impl Assets<GpuMesh, GpuMeshStorage> {
         match self.storage.data[handle.index as usize].take() {
             Some(mesh) => {
                 self.allocator.recycle(handle);
-                Some(mesh)
+                Some(mesh.1)
             }
             None => None,
         }
@@ -170,7 +188,7 @@ impl Assets<GpuMesh, GpuMeshStorage> {
 pub type MaterialAssets = Assets<Material, Vec<Option<Material>>>;
 
 impl Assets<Material, Vec<Option<Material>>> {
-    pub fn new(_device: &wgpu::Device) -> Self {
+    pub fn new() -> Self {
         Self {
             storage: Vec::new(),
             allocator: HandleAllocator::new(),
@@ -180,3 +198,65 @@ impl Assets<Material, Vec<Option<Material>>> {
 
 /// A collection of meshes (CPU-side).
 pub type MeshAssets = Assets<Mesh, Vec<Option<Mesh>>>;
+
+/// A collection of textures.
+pub type TextureAssets = Assets<Texture, Vec<Option<Texture>>>;
+
+impl Assets<Texture, Vec<Option<Texture>>> {
+    pub fn new() -> Self {
+        Self {
+            storage: Vec::new(),
+            allocator: HandleAllocator::new(),
+        }
+    }
+
+    /// Creates a new texture by loading it from a file.
+    pub fn load_from_file(
+        &mut self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        filepath: &Path,
+    ) -> Handle<Texture> {
+        let img = image::open(filepath).unwrap().to_rgba8();
+        let dims = img.dimensions();
+        let size = wgpu::Extent3d {
+            width: dims.0,
+            height: dims.1,
+            depth_or_array_layers: 1,
+        };
+        let desc = wgpu::TextureDescriptor {
+            label: None,
+            size,
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: TextureFormat::Rgba8UnormSrgb,
+            usage: wgpu::TextureUsages::COPY_DST | wgpu::TextureUsages::TEXTURE_BINDING,
+            view_formats: &[],
+        };
+        let raw = device.create_texture(&desc);
+        let view = raw.create_view(&wgpu::TextureViewDescriptor::default());
+        queue.write_texture(
+            wgpu::ImageCopyTexture {
+                texture: &raw,
+                mip_level: 0,
+                origin: wgpu::Origin3d::ZERO,
+                aspect: wgpu::TextureAspect::All,
+            },
+            &img,
+            wgpu::ImageDataLayout {
+                offset: 0,
+                bytes_per_row: Some(4 * dims.0),
+                rows_per_image: Some(dims.1),
+            },
+            size,
+        );
+        let texture = Texture {
+            raw,
+            view,
+            size,
+            sampler: SmlString::from("default"),
+        };
+        self.add(texture)
+    }
+}
