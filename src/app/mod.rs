@@ -10,8 +10,8 @@ use crate::{
     app::command::Command,
     core::{
         camera::{Camera, Projection},
-        mesh::Mesh,
-        Alignment, Color, ConcatOrder, FxHashMap, MaterialBundle, SmlString,
+        mesh::{Mesh, SubMesh},
+        Alignment, Color, ConcatOrder, FxHashMap, Material, MaterialBundle, SmlString,
     },
     render::{
         rpass::{BlinnPhongShading, Wireframe},
@@ -177,26 +177,15 @@ impl PyAppState {
     ///
     /// Returns the entity ID of the spawned object.
     pub fn spawn_object_with_mesh(&mut self, parent: NodeIdx, mesh: &Mesh) -> Entity {
-        let gpu_mesh_handle = self
-            .renderer
-            .write()
-            .map(|mut renderer| renderer.add_mesh(mesh))
-            .unwrap();
+        let mut renderer = self.renderer.write().unwrap();
 
-        let materials = match &mesh.materials {
-            None => MaterialBundle::empty(),
-            Some(mtls) => self
-                .renderer
-                .write()
-                .map(|mut renderer| {
-                    MaterialBundle(mtls.iter().map(|mtl| renderer.add_material(mtl)).collect())
-                })
-                .expect("Failed to add materials to renderer!"),
-        };
+        let gpu_mesh_handle = renderer.upload_mesh(mesh);
+
+        let material_bundle = renderer.upload_materials(mesh.materials.as_ref());
 
         self.scene
             .write()
-            .map(|mut scene| scene.spawn(parent, (gpu_mesh_handle, materials)))
+            .map(|mut scene| scene.spawn(parent, (gpu_mesh_handle, material_bundle)))
             .unwrap()
     }
 
@@ -369,7 +358,48 @@ pub fn run_main_loop(mut app: PyAppState, builder: PyWindowBuilder) {
     );
 
     let mut cube = Mesh::cube(1.0);
-    cube.compute_per_vertex_normals();
+    cube.materials = Some(vec![
+        Material {
+            kd: Some([1.0, 0.0, 0.0]),
+            ..Default::default()
+        },
+        Material {
+            kd: Some([0.0, 1.0, 0.0]),
+            ..Default::default()
+        },
+        Material {
+            kd: Some([0.0, 0.0, 1.0]),
+            ..Default::default()
+        },
+        Material {
+            kd: Some([1.0, 1.0, 0.0]),
+            ..Default::default()
+        },
+    ]);
+    println!("cube indices: {:?}", cube.indices);
+    cube.sub_meshes = Some(vec![
+        SubMesh {
+            range: 0..3,
+            material: Some(0),
+        },
+        SubMesh {
+            range: 3..6,
+            material: Some(1),
+        },
+        SubMesh {
+            range: 6..9,
+            material: Some(2),
+        },
+        SubMesh {
+            range: 9..12,
+            material: Some(3),
+        },
+        SubMesh {
+            range: 12..36,
+            material: None,
+        },
+    ]);
+
     let rect = Mesh::plane(0.5, Alignment::XY);
     let sphere = Mesh::sphere(1.0, 32, 16);
     // let obj_cube = Mesh::load_from_obj("./data/cube/cube.obj");

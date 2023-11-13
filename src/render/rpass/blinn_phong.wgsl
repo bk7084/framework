@@ -6,6 +6,7 @@ struct Globals {
 
 struct PushConstants {
     model: mat4x4<f32>,
+    material_index: u32,
 }
 
 /// Data for a directional light.
@@ -70,12 +71,13 @@ struct VSOutput {
 
 @group(0) @binding(0)
 var<uniform> globals: Globals;
-@group(1) @binding(0)
-var<uniform> material: Material;
-// var<storage> materials: array<Material>;
 
-@group(2) @binding(0)
-var textures: binding_array<texture_2d<f32>>;
+@group(1) @binding(0)
+// var<uniform> material: Material;
+var<storage> materials: array<Material>;
+
+//@group(2) @binding(0)
+//var textures: binding_array<texture_2d<f32>>;
 
 var<push_constant> pconsts: PushConstants;
 
@@ -88,5 +90,6 @@ fn vs_main(vin: VSInput) -> VSOutput {
 
 @fragment
 fn fs_main(vout: VSOutput) -> @location(0) vec4<f32> {
+    var material = materials[pconsts.material_index];
     return vec4<f32>(material.kd, 1.0);
 }

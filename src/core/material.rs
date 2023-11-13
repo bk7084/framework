@@ -1,10 +1,17 @@
 use crate::core::assets::{Asset, Handle};
-use std::path::{Path, PathBuf};
+use std::{
+    ops::Deref,
+    path::{Path, PathBuf},
+};
+use wgpu::util::DeviceExt;
 
-use crate::core::{SmlString, Texture};
+use crate::{
+    core::{SmlString, Texture},
+    render::rpass::MaterialUniform,
+};
 
 /// Material description derived from a `MTL` file.
-#[pyo3::pyclass]
+// #[pyo3::pyclass]
 #[derive(Debug, Clone)]
 pub struct Material {
     /// Material name.
@@ -143,14 +150,96 @@ impl Default for Material {
     }
 }
 
-/// A collection of materials.
-pub struct MaterialBundle(pub Vec<Handle<GpuMaterial>>);
+/// A collection of materials that uploaded to the GPU.
+pub struct MaterialBundle {
+    /// Buffer containing the material data.
+    pub buffer: wgpu::Buffer,
+    /// Bind group for the material buffer.
+    pub bind_group: wgpu::BindGroup,
+    /// Number of materials in the bundle.
+    pub n_materials: u32,
+}
 
-impl MaterialBundle {
-    pub fn empty() -> Self {
-        Self(Vec::new())
+impl Deref for MaterialBundle {
+    type Target = wgpu::Buffer;
+
+    fn deref(&self) -> &Self::Target {
+        &self.buffer
     }
 }
+
+impl MaterialBundle {
+    pub fn bind_group_layout(device: &wgpu::Device) -> wgpu::BindGroupLayout {
+        device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("shading_materials_bind_group_layout"),
+            entries: &[wgpu::BindGroupLayoutEntry {
+                binding: 0,
+                visibility: wgpu::ShaderStages::FRAGMENT,
+                ty: wgpu::BindingType::Buffer {
+                    ty: wgpu::BufferBindingType::Storage { read_only: true },
+                    has_dynamic_offset: false,
+                    min_binding_size: wgpu::BufferSize::new(MaterialUniform::SIZE),
+                },
+                count: None,
+            }],
+        })
+    }
+
+    pub fn default(device: &wgpu::Device) -> Self {
+        let material_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("default_material_bundle_buffer"),
+            contents: bytemuck::cast_slice(&[MaterialUniform::default()]),
+            usage: wgpu::BufferUsages::UNIFORM
+                | wgpu::BufferUsages::COPY_DST
+                | wgpu::BufferUsages::STORAGE,
+        });
+        let layout = Self::bind_group_layout(device);
+        let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("default_material_bundle_bind_group"),
+            layout: &layout,
+            entries: &[wgpu::BindGroupEntry {
+                binding: 0,
+                resource: material_buffer.as_entire_binding(),
+            }],
+        });
+        Self {
+            buffer: material_buffer,
+            bind_group,
+            n_materials: 1,
+        }
+    }
+
+    pub fn new(device: &wgpu::Device, mtls: &[MaterialUniform]) -> Self {
+        let buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: None,
+            contents: bytemuck::cast_slice(&mtls),
+            usage: wgpu::BufferUsages::UNIFORM
+                | wgpu::BufferUsages::COPY_DST
+                | wgpu::BufferUsages::STORAGE,
+        });
+        let layout = Self::bind_group_layout(device);
+        let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: None,
+            layout: &layout,
+            entries: &[wgpu::BindGroupEntry {
+                binding: 0,
+                resource: buffer.as_entire_binding(),
+            }],
+        });
+        Self {
+            buffer,
+            bind_group,
+            n_materials: mtls.len() as u32,
+        }
+    }
+}
+
+/// A collection of textures that uploaded to the GPU.
+pub struct TextureBundle(wgpu::Buffer);
+
+impl Asset for MaterialBundle {}
+
+impl Asset for TextureBundle {}
 
 pub struct GpuMaterial {
     /// Material name.

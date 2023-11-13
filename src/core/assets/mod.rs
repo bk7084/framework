@@ -5,7 +5,7 @@ use crate::core::{
     assets::storage::GpuMeshStorage,
     mesh::{GpuMesh, Mesh},
     texture::{Texture, TextureSampler},
-    GpuMaterial, Material, SmlString,
+    GpuMaterial, Material, MaterialBundle, SmlString,
 };
 pub use handle::*;
 use std::path::Path;
@@ -193,6 +193,17 @@ impl Assets<GpuMesh, GpuMeshStorage> {
 pub type MaterialAssets = Assets<GpuMaterial, Vec<Option<GpuMaterial>>>;
 
 impl Assets<GpuMaterial, Vec<Option<GpuMaterial>>> {
+    pub fn new() -> Self {
+        Self {
+            storage: Vec::new(),
+            allocator: HandleAllocator::new(),
+        }
+    }
+}
+
+pub type MaterialBundleAssets = Assets<MaterialBundle, Vec<Option<MaterialBundle>>>;
+
+impl Assets<MaterialBundle, Vec<Option<MaterialBundle>>> {
     pub fn new() -> Self {
         Self {
             storage: Vec::new(),

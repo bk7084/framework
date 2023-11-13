@@ -67,7 +67,7 @@ impl From<PyTopology> for wgpu::PrimitiveTopology {
 }
 
 /// Indices of a mesh.
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub enum Indices {
     U32(Vec<u32>),
     U16(Vec<u16>),
@@ -112,8 +112,8 @@ impl Indices {
 #[pyo3::pyclass]
 #[derive(Clone, Debug)]
 pub struct SubMesh {
-    /// Range of indices of the submesh.
-    pub indices: Range<u32>,
+    /// Range of indices/vertices of the submesh.
+    pub range: Range<u32>,
     /// Material of the submesh (index into the material array of the mesh).
     /// If the material is None, the submesh uses the default material.
     pub material: Option<u32>,
@@ -246,7 +246,7 @@ impl Mesh {
             // front (0.0, 0.0, 0.5)
             [-half, -half, half], [half, -half, half], [half, half, half], [-half, half, half],
             // back (0.0, 0.0, -half)
-            [-half, -half, -half], [half, -half, -half], [half, half, -half], [half, -half, -half],
+            [-half, -half, -half], [half, -half, -half], [half, half, -half], [-half, half, -half],
             // right (half, 0.0, 0.0)
             [half, -half, -half], [half, half, -half], [half, half, half], [half, -half, half],
             // left (-half, 0.0, 0.0)
@@ -274,7 +274,7 @@ impl Mesh {
         // Vertex indices for a unit cube centered at the origin.
         let indices: Vec<u16> = vec![
             0, 1, 2, 2, 3, 0, // front
-            4, 7, 6, 6, 5, 4, // back
+            4, 7, 6, 4, 6, 5, // 6, 5, 4, // back
             8, 9, 10, 10, 11, 8, // right
             12, 13, 14, 14, 15, 12, // left
             16, 17, 18, 18, 19, 16, // top
@@ -445,7 +445,7 @@ impl Mesh {
         let mut index_start = 0;
         for (material_id, meshes) in sub_meshes_by_material.iter() {
             let mut sub_mesh = SubMesh {
-                indices: index_start..index_start,
+                range: index_start..index_start,
                 material: material_id.map(|id| id as u32),
             };
             for mesh in meshes.iter() {
@@ -460,7 +460,7 @@ impl Mesh {
                 indices.append(&mut mesh_indices);
                 index_start += mesh_indices.len() as u32;
             }
-            sub_mesh.indices.end = index_start;
+            sub_mesh.range.end = index_start;
             sub_meshes.push(sub_mesh);
         }
 

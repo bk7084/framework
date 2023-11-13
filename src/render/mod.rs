@@ -1,6 +1,7 @@
 use crate::{color, core::Color};
 use crossbeam_channel::Receiver;
 use std::{path::Path, sync::Arc};
+use wgpu::util::DeviceExt;
 
 mod context;
 mod pipeline;
@@ -14,11 +15,11 @@ pub use target::*;
 use crate::{
     app::command::{Command, CommandReceiver},
     core::{
-        assets::{GpuMeshAssets, Handle, MaterialAssets, TextureAssets},
+        assets::{GpuMeshAssets, Handle, MaterialAssets, MaterialBundleAssets, TextureAssets},
         mesh::{GpuMesh, Mesh},
-        FxHashMap, GpuMaterial, Material, SmlString, Texture,
+        FxHashMap, GpuMaterial, Material, MaterialBundle, SmlString, Texture,
     },
-    render::rpass::RenderingPass,
+    render::rpass::{MaterialUniform, RenderingPass},
     scene::Scene,
 };
 pub use context::*;
@@ -45,8 +46,10 @@ pub struct Renderer {
     pipelines: Pipelines,
     meshes: GpuMeshAssets,
     materials: MaterialAssets,
+    material_bundles: MaterialBundleAssets,
     textures: TextureAssets,
     default_material: Handle<GpuMaterial>,
+    default_material_bundle: Handle<MaterialBundle>,
     samplers: FxHashMap<SmlString, wgpu::Sampler>,
     cmd_receiver: Receiver<Command>,
 }
@@ -110,6 +113,9 @@ impl Renderer {
             map_norm: None,
             illumination_model: None,
         });
+        let mut material_bundles = MaterialBundleAssets::new();
+        let default_material_bundle = MaterialBundle::default(&context.device);
+        let default_material_bundle_handle = material_bundles.add(default_material_bundle);
         Self {
             device,
             queue,
@@ -118,52 +124,82 @@ impl Renderer {
             pipelines: Pipelines::new(),
             meshes,
             materials,
+            material_bundles,
             textures,
             default_material,
+            default_material_bundle: default_material_bundle_handle,
             samplers: Default::default(),
             cmd_receiver: receiver,
         }
     }
 
-    /// Adds a mesh to the renderer (creates `GpuMesh`).
-    pub fn add_mesh(&mut self, mesh: &Mesh) -> Handle<GpuMesh> {
+    /// Uploads a mesh to the GPU, creates `GpuMesh` from `Mesh` then adds it to
+    /// the renderer.
+    pub fn upload_mesh(&mut self, mesh: &Mesh) -> Handle<GpuMesh> {
         self.meshes.add(&self.device, &self.queue, mesh)
     }
 
-    /// Adds a material to the renderer.
-    pub fn add_material(&mut self, material: &Material) -> Handle<GpuMaterial> {
-        let gpu_material = GpuMaterial {
-            name: material.name.clone(),
-            ka: material.ka,
-            kd: material.kd,
-            ks: material.ks,
-            ns: material.ns,
-            ni: material.ni,
-            opacity: material.opacity,
-            map_ka: material.map_ka.as_ref().map(|path| self.add_texture(&path)),
-            map_kd: material.map_kd.as_ref().map(|path| self.add_texture(&path)),
-            map_ks: material.map_ks.as_ref().map(|path| self.add_texture(&path)),
-            map_ns: material.map_ns.as_ref().map(|path| self.add_texture(&path)),
-            map_d: material.map_d.as_ref().map(|path| self.add_texture(&path)),
-            map_bump: material
-                .map_bump
-                .as_ref()
-                .map(|path| self.add_texture(&path)),
-            map_disp: material
-                .map_disp
-                .as_ref()
-                .map(|path| self.add_texture(&path)),
-            map_decal: material
-                .map_decal
-                .as_ref()
-                .map(|path| self.add_texture(&path)),
-            map_norm: material
-                .map_norm
-                .as_ref()
-                .map(|path| self.add_texture(&path)),
-            illumination_model: material.illumination_model,
+    /// Creates a bundle of materials and a bundle of textures from a list of
+    /// materials.
+    pub fn upload_materials(
+        &mut self,
+        materials: Option<&Vec<Material>>,
+    ) -> Handle<MaterialBundle> {
+        // Temporarily omitting the texture loading.
+        let material_bundle = match materials {
+            None => {
+                // Mesh has no material, use default material.
+                self.default_material_bundle
+            }
+            Some(materials) => {
+                // Material bundle size is the number of materials + 1 (for the
+                // default material).
+                let materials_data = materials
+                    .iter()
+                    .map(|mtl| MaterialUniform::from_material_new(mtl))
+                    .chain(std::iter::once(MaterialUniform::default()))
+                    .collect::<Vec<_>>();
+                let bundle = MaterialBundle::new(&self.device, &materials_data);
+                self.material_bundles.add(bundle)
+            }
         };
-        self.materials.add(gpu_material)
+
+        material_bundle
+
+        // let gpu_material = GpuMaterial {
+        //     name: material.name.clone(),
+        //     ka: material.ka,
+        //     kd: material.kd,
+        //     ks: material.ks,
+        //     ns: material.ns,
+        //     ni: material.ni,
+        //     opacity: material.opacity,
+        //     map_ka: material.map_ka.as_ref().map(|path|
+        // self.add_texture(&path)),     map_kd:
+        // material.map_kd.as_ref().map(|path| self.add_texture(&path)),
+        //     map_ks: material.map_ks.as_ref().map(|path|
+        // self.add_texture(&path)),     map_ns:
+        // material.map_ns.as_ref().map(|path| self.add_texture(&path)),
+        //     map_d: material.map_d.as_ref().map(|path|
+        // self.add_texture(&path)),     map_bump: material
+        //         .map_bump
+        //         .as_ref()
+        //         .map(|path| self.add_texture(&path)),
+        //     map_disp: material
+        //         .map_disp
+        //         .as_ref()
+        //         .map(|path| self.add_texture(&path)),
+        //     map_decal: material
+        //         .map_decal
+        //         .as_ref()
+        //         .map(|path| self.add_texture(&path)),
+        //     map_norm: material
+        //         .map_norm
+        //         .as_ref()
+        //         .map(|path| self.add_texture(&path)),
+        //     illumination_model: material.illumination_model,
+        // };
+        // self.materials.add(gpu_material)
     }
 
     pub fn add_texture(&mut self, filepath: &Path) -> Handle<Texture> {

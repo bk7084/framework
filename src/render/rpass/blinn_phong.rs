@@ -18,20 +18,29 @@ struct Globals {
     proj: [f32; 16],
 }
 
+#[repr(C)]
+#[derive(Debug, Clone, Copy, Pod, Zeroable)]
+struct PushConstants {
+    /// Model matrix.
+    model: [f32; 16],
+    /// Material index.
+    material: u32,
+}
+
 impl Globals {
     pub const SIZE: wgpu::BufferAddress = std::mem::size_of::<Self>() as wgpu::BufferAddress;
 }
 
 #[repr(C)]
 #[derive(Debug, Clone, Copy, Pod, Zeroable)]
-struct MaterialUniform {
-    ka: [f32; 4],
-    kd: [f32; 4],
-    ks: [f32; 4],
-    ns: f32,
-    ni: f32,
-    d: f32,
-    illum: i32,
+pub struct MaterialUniform {
+    pub ka: [f32; 4],
+    pub kd: [f32; 4],
+    pub ks: [f32; 4],
+    pub ns: f32,
+    pub ni: f32,
+    pub d: f32,
+    pub illum: i32,
     // map_ka: i32,
     // map_kd: i32,
     // map_ks: i32,
@@ -45,10 +54,50 @@ struct MaterialUniform {
     // padding: [u32; 2],
 }
 
+impl Default for MaterialUniform {
+    fn default() -> Self {
+        MaterialUniform {
+            ka: [1.0, 1.0, 1.0, 0.0],
+            kd: [0.6, 0.8, 0.3, 0.0],
+            ks: [1.0, 0.0, 0.0, 0.0],
+            ns: 0.0,
+            ni: 0.0,
+            d: 0.0,
+            illum: 0,
+        }
+    }
+}
+
 impl MaterialUniform {
     pub const SIZE: wgpu::BufferAddress = std::mem::size_of::<Self>() as wgpu::BufferAddress;
 
     pub fn from_material(mtl: &GpuMaterial) -> Self {
+        let ka = mtl.ka.map(|c| [c[0], c[1], c[2], 0.0]).unwrap_or([0.0; 4]);
+        let kd = mtl.kd.map(|c| [c[0], c[1], c[2], 0.0]).unwrap_or([0.0; 4]);
+        let ks = mtl.ks.map(|c| [c[0], c[1], c[2], 0.0]).unwrap_or([0.0; 4]);
+        Self {
+            ka,
+            kd,
+            ks,
+            ns: mtl.ns.unwrap_or(0.0),
+            ni: mtl.ni.unwrap_or(0.0),
+            d: mtl.opacity.unwrap_or(1.0),
+            illum: mtl.illumination_model.unwrap_or(0) as i32,
+            // map_ka: value.map_ka.map(|_| 1).unwrap_or(0),
+            // map_kd: value.map_kd.map(|_| 1).unwrap_or(0),
+            // map_ks: value.map_ks.map(|_| 1).unwrap_or(0),
+            // map_ns: value.map_ns.map(|_| 1).unwrap_or(0),
+            // map_d: value.map_d.map(|_| 1).unwrap_or(0),
+            // map_bump: value.map_bump.map(|_| 1).unwrap_or(0),
+            // map_disp: value.map_disp.map(|_| 1).unwrap_or(0),
+            // map_decal: value.map_decal.map(|_| 1).unwrap_or(0),
+            // map_norm: value.map_norm.map(|_| 1).unwrap_or(0),
+            // vertex_color: value.vertex_color as u32,
+            // padding: [0; 2],
+        }
+    }
+
+    pub fn from_material_new(mtl: &Material) -> Self {
         let ka = mtl.ka.map(|c| [c[0], c[1], c[2], 0.0]).unwrap_or([0.0; 4]);
         let kd = mtl.kd.map(|c| [c[0], c[1], c[2], 0.0]).unwrap_or([0.0; 4]);
         let ks = mtl.ks.map(|c| [c[0], c[1], c[2], 0.0]).unwrap_or([0.0; 4]);
@@ -84,9 +133,9 @@ pub struct BlinnPhongShading {
     pub globals_uniform_buffer: wgpu::Buffer,
     pub globals_bind_group_layout: wgpu::BindGroupLayout,
 
-    pub material_bind_group: wgpu::BindGroup,
-    pub material_uniform_buffer: wgpu::Buffer,
-    pub material_bind_group_layout: wgpu::BindGroupLayout,
+    // pub materials_bind_group: wgpu::BindGroup,
+    // pub materials_uniform_buffer: wgpu::Buffer,
+    pub materials_bind_group_layout: wgpu::BindGroupLayout,
 
     pub pipeline: wgpu::RenderPipeline,
 }
@@ -134,36 +183,28 @@ impl BlinnPhongShading {
                     binding: 0,
                     visibility: wgpu::ShaderStages::FRAGMENT,
                     ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Uniform,
+                        ty: wgpu::BufferBindingType::Storage { read_only: true },
                         has_dynamic_offset: false,
                         min_binding_size: wgpu::BufferSize::new(MaterialUniform::SIZE),
                     },
                     count: None,
                 }],
             });
-        let materials_uniform_buffer = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("shading_materials_uniform_buffer"),
-            size: MaterialUniform::SIZE,
-            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-            mapped_at_creation: false,
-        });
 
-        let materials_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("shading_materials_bind_group"),
-            layout: &materials_bind_group_layout,
-            entries: &[wgpu::BindGroupEntry {
-                binding: 0,
-                resource: materials_uniform_buffer.as_entire_binding(),
-            }],
-        });
-
+        let model_matrix_size = std::mem::size_of::<[f32; 16]>() as u32;
         let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("shading_pipeline_layout"),
             bind_group_layouts: &[&globals_bind_group_layout, &materials_bind_group_layout],
-            push_constant_ranges: &[wgpu::PushConstantRange {
-                stages: wgpu::ShaderStages::VERTEX,
-                range: 0..std::mem::size_of::<[f32; 16]>() as u32,
-            }],
+            push_constant_ranges: &[
+                wgpu::PushConstantRange {
+                    stages: wgpu::ShaderStages::VERTEX,
+                    range: 0..model_matrix_size,
+                },
+                wgpu::PushConstantRange {
+                    stages: wgpu::ShaderStages::FRAGMENT,
+                    range: model_matrix_size..model_matrix_size + 4,
+                },
+            ],
         });
 
         let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
@@ -194,7 +235,7 @@ impl BlinnPhongShading {
             primitive: wgpu::PrimitiveState {
                 topology: wgpu::PrimitiveTopology::TriangleList,
                 front_face: wgpu::FrontFace::Ccw,
-                cull_mode: None,
+                cull_mode: Some(wgpu::Face::Back),
                 polygon_mode: wgpu::PolygonMode::Fill,
                 ..Default::default()
             },
@@ -218,9 +259,7 @@ impl BlinnPhongShading {
             globals_bind_group,
             globals_uniform_buffer,
             globals_bind_group_layout,
-            material_bind_group: materials_bind_group,
-            material_uniform_buffer: materials_uniform_buffer,
-            material_bind_group_layout: materials_bind_group_layout,
+            materials_bind_group_layout,
             pipeline,
         }
     }
@@ -304,13 +343,14 @@ impl RenderingPass for BlinnPhongShading {
         render_pass.set_pipeline(&self.pipeline);
         render_pass.set_bind_group(0, &self.globals_bind_group, &[]);
 
-        let mut mesh_query = <(&Handle<GpuMesh>, &NodeIdx, &MaterialBundle)>::query();
+        let mut mesh_query = <(&Handle<GpuMesh>, &NodeIdx, &Handle<MaterialBundle>)>::query();
         let buffer = renderer.meshes.buffer();
-        for (mesh_handle, node_idx, materials) in mesh_query.iter(&scene.world) {
+        for (mesh_hdl, node_idx, mtls_hdl) in mesh_query.iter(&scene.world) {
+            let mtls = renderer.material_bundles.get(*mtls_hdl).unwrap();
             let transform = scene.nodes.world(*node_idx).to_mat4();
-            match renderer.meshes.get(*mesh_handle) {
+            match renderer.meshes.get(*mesh_hdl) {
                 None => {
-                    log::error!("Missing mesh {:?}", mesh_handle);
+                    log::error!("Missing mesh {:?}", mesh_hdl);
                     continue;
                 }
                 Some(mesh) => {
@@ -325,58 +365,41 @@ impl RenderingPass for BlinnPhongShading {
                             0,
                             bytemuck::cast_slice(&transform.to_cols_array()),
                         );
+                        // Bind material.
+                        render_pass.set_bind_group(1, &mtls.bind_group, &[]);
                         match mesh.index_format {
-                            None => match mesh.sub_meshes.as_ref() {
-                                None => {
-                                    let material =
-                                        renderer.materials.get(renderer.default_material).unwrap();
-                                    // Update material.
-                                    queue.write_buffer(
-                                        &self.material_uniform_buffer,
-                                        0,
-                                        bytemuck::bytes_of(&MaterialUniform::from_material(
-                                            material,
-                                        )),
-                                    );
-                                    // Bind material.
-                                    render_pass.set_bind_group(1, &self.material_bind_group, &[]);
-                                    render_pass.draw(0..mesh.vertex_count, 0..1);
-                                }
-                                Some(sub_meshes) => {
-                                    for sub_mesh in sub_meshes {
-                                        let material = {
-                                            let hdl = match sub_mesh.material {
-                                                None => {
-                                                    // Use default material.
-                                                    renderer.default_material
-                                                }
-                                                Some(idx) => {
-                                                    *materials.0.get(idx as usize).unwrap()
-                                                }
-                                            };
-                                            renderer.materials.get(hdl).unwrap()
-                                        };
-                                        // Update material.
-                                        queue.write_buffer(
-                                            &self.material_uniform_buffer,
-                                            0,
-                                            bytemuck::bytes_of(&MaterialUniform::from_material(
-                                                material,
-                                            )),
+                            None => {
+                                // No index buffer, draw directly.
+                                match mesh.sub_meshes.as_ref() {
+                                    None => {
+                                        // No sub-meshes, use the default material.
+                                        // Update material index.
+                                        render_pass.set_push_constants(
+                                            wgpu::ShaderStages::FRAGMENT,
+                                            std::mem::size_of::<[f32; 16]>() as u32,
+                                            bytemuck::cast_slice(&[0u32]),
                                         );
-                                        // Bind material.
-                                        render_pass.set_bind_group(
-                                            1,
-                                            &self.material_bind_group,
-                                            &[],
-                                        );
-                                        render_pass.draw(
-                                            sub_mesh.indices.start..sub_mesh.indices.end,
-                                            0..1,
-                                        )
+                                        render_pass.draw(0..mesh.vertex_count, 0..1);
+                                    }
+                                    Some(sub_meshes) => {
+                                        // Draw each sub-mesh.
+                                        for sub_mesh in sub_meshes {
+                                            let material_idx =
+                                                sub_mesh.material.unwrap_or(mtls.n_materials - 1);
+                                            // Update material index.
+                                            render_pass.set_push_constants(
+                                                wgpu::ShaderStages::FRAGMENT,
+                                                std::mem::size_of::<[f32; 16]>() as u32,
+                                                bytemuck::cast_slice(&[material_idx as u32]),
+                                            );
+                                            render_pass.draw(
+                                                sub_mesh.range.start..sub_mesh.range.end,
+                                                0..1,
+                                            )
+                                        }
                                     }
                                 }
-                            },
+                            }
                             Some(index_format) => {
                                 render_pass.set_index_buffer(
                                     buffer.slice(mesh.index_range.clone()),
@@ -384,82 +407,41 @@ impl RenderingPass for BlinnPhongShading {
                                 );
                                 match mesh.sub_meshes.as_ref() {
                                     None => {
-                                        let material = renderer
-                                            .materials
-                                            .get(renderer.default_material)
-                                            .unwrap();
-                                        // Update material.
-                                        queue.write_buffer(
-                                            &self.material_uniform_buffer,
-                                            0,
-                                            bytemuck::bytes_of(&MaterialUniform::from_material(
-                                                material,
-                                            )),
-                                        );
-                                        // Bind material.
-                                        render_pass.set_bind_group(
-                                            1,
-                                            &self.material_bind_group,
-                                            &[],
+                                        log::trace!("Draw mesh with index, no sub-meshes");
+                                        // No sub-meshes, use the default material.
+                                        // Update material index.
+                                        render_pass.set_push_constants(
+                                            wgpu::ShaderStages::FRAGMENT,
+                                            std::mem::size_of::<[f32; 16]>() as u32,
+                                            bytemuck::cast_slice(&[0u32]),
                                         );
                                         render_pass.draw_indexed(0..mesh.index_count, 0, 0..1);
                                     }
                                     Some(sub_meshes) => {
-                                        for sub_mesh in sub_meshes {
-                                            let material = {
-                                                let hdl = match sub_mesh.material {
-                                                    None => {
-                                                        // Use default material.
-                                                        renderer.default_material
-                                                    }
-                                                    Some(idx) => {
-                                                        *materials.0.get(idx as usize).unwrap()
-                                                    }
-                                                };
-                                                renderer.materials.get(hdl).unwrap()
-                                            };
-                                            // Update material.
-                                            queue.write_buffer(
-                                                &self.material_uniform_buffer,
-                                                0,
-                                                bytemuck::bytes_of(
-                                                    &MaterialUniform::from_material(material),
-                                                ),
+                                        log::trace!("Draw mesh with index, with sub-meshes");
+                                        for sm in sub_meshes {
+                                            log::trace!(
+                                                "Draw sub-mesh {}-{}",
+                                                sm.range.start,
+                                                sm.range.end
                                             );
-                                            // Bind material.
-                                            render_pass.set_bind_group(
-                                                1,
-                                                &self.material_bind_group,
-                                                &[],
+                                            let material_idx =
+                                                sm.material.unwrap_or(mtls.n_materials - 1);
+                                            // Update material index.
+                                            render_pass.set_push_constants(
+                                                wgpu::ShaderStages::FRAGMENT,
+                                                std::mem::size_of::<[f32; 16]>() as u32,
+                                                bytemuck::cast_slice(&[material_idx]),
                                             );
                                             // Draw the sub-mesh.
-                                            render_pass.draw_indexed(0..mesh.index_count, 0, 0..1);
+                                            render_pass.draw_indexed(
+                                                sm.range.start..sm.range.end,
+                                                0,
+                                                0..1,
+                                            );
                                         }
                                     }
                                 }
-                            }
-                        }
-                    }
-                    for sub_mesh in &mesh.sub_meshes {}
-
-                    let transform = scene.nodes.world(*node_idx).to_mat4();
-                    if let Some(pos_range) =
-                        mesh.get_vertex_attribute_range(VertexAttribute::POSITION)
-                    {
-                        render_pass.set_vertex_buffer(0, buffer.slice(pos_range.clone()));
-                        render_pass.set_push_constants(
-                            wgpu::ShaderStages::VERTEX,
-                            0,
-                            bytemuck::cast_slice(&transform.to_cols_array()),
-                        );
-                        match mesh.index_format {
-                            None => render_pass.draw(0..mesh.vertex_count, 0..1),
-                            Some(index_format) => {
-                                render_pass.set_index_buffer(
-                                    buffer.slice(mesh.index_range.clone()),
-                                    index_format,
-                                );
-                                render_pass.draw_indexed(0..mesh.index_count, 0, 0..1);
                             }
                         }
                     }
