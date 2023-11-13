@@ -1,17 +1,29 @@
 use crate::core::assets::{Asset, Handle};
+use bytemuck::{Pod, Zeroable};
 use std::{
     ops::Deref,
     path::{Path, PathBuf},
 };
 use wgpu::util::DeviceExt;
 
-use crate::{
-    core::{SmlString, Texture},
-    render::rpass::MaterialUniform,
-};
+use crate::core::{FxHashMap, SmlString, Texture};
+
+/// Texture type.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum TextureType {
+    MapKa,    // ambient
+    MapKd,    // diffuse
+    MapKs,    // specular,
+    MapNs,    // shininess,
+    MapD,     // opacity,
+    MapBump,  // bump,
+    MapDisp,  // displacement,
+    MapDecal, // stencil decal,
+    MapNorm,  // normal,
+}
 
 /// Material description derived from a `MTL` file.
-// #[pyo3::pyclass]
+#[pyo3::pyclass]
 #[derive(Debug, Clone)]
 pub struct Material {
     /// Material name.
@@ -35,56 +47,83 @@ pub struct Material {
     /// 1.0 is completely opaque. `d` in the `MTL` spec. It is called `Tr` in
     /// the `OBJ` spec which is 1.0 - `d`.
     pub opacity: Option<f32>,
-    /// Texture for ambient color. `map_Ka` in the `MTL` spec.
-    pub map_ka: Option<PathBuf>,
-    /// Texture for diffuse color. `map_Kd` in the `MTL` spec.
-    pub map_kd: Option<PathBuf>,
-    /// Texture for specular color. `map_Ks` in the `MTL` spec.
-    pub map_ks: Option<PathBuf>,
-    /// Texture for specular exponent/shininess/glossiness. `map_Ns` in the
-    /// `MTL` spec.
-    pub map_ns: Option<PathBuf>,
-    /// Texture for alpha/opacity. `map_d` in the `MTL` spec.
-    pub map_d: Option<PathBuf>,
-    /// Texture for bump map. `map_bump`/`bump` in the `MTL` spec.
-    pub map_bump: Option<PathBuf>,
-    /// Texture for displacement map. `map_disp`/`disp` in the `MTL` spec.
-    pub map_disp: Option<PathBuf>,
-    /// Texture for stencil decal. `map_decal`/`decal` in the `MTL` spec.
-    pub map_decal: Option<PathBuf>,
-    /// Texture for normal map. `map_norm`/`norm` in the `MTL` spec.
-    pub map_norm: Option<PathBuf>,
     /// The illumnination model to use for this material. The different
     /// illumination models are specified in the [`MTL` spec](http://paulbourke.net/dataformats/mtl/).
     pub illumination_model: Option<u8>,
+    /// Textures for the material. The key is the texture type and the value
+    /// is the path to the texture.
+    pub textures: FxHashMap<TextureType, PathBuf>,
 }
 
 impl Asset for Material {}
 
 impl Material {
     pub fn from_tobj_material(mtl: tobj::Material, relative_to: &Path) -> Self {
-        let map_bump = match mtl.unknown_param.get("map_bump").map(AsRef::<Path>::as_ref) {
-            None => mtl.unknown_param.get("bump").map(AsRef::<Path>::as_ref),
-            Some(v) => Some(v),
+        let mut textures = FxHashMap::default();
+
+        match mtl.unknown_param.get("map_bump") {
+            None => {
+                // Try with "bump" instead
+                if let Some(path) = mtl.unknown_param.get("bump").map(AsRef::<Path>::as_ref) {
+                    if let Some(resolved) = resolve_path(path, relative_to) {
+                        textures.insert(TextureType::MapBump, resolved);
+                    }
+                }
+            }
+            Some(path) => {
+                if let Some(resolved) = resolve_path(path.as_ref(), relative_to) {
+                    textures.insert(TextureType::MapBump, resolved);
+                }
+            }
         }
-        .map(|v| resolve_path(&v, relative_to))
-        .flatten();
-        let map_disp = match mtl.unknown_param.get("map_disp").map(AsRef::<Path>::as_ref) {
-            None => mtl.unknown_param.get("disp").map(AsRef::<Path>::as_ref),
-            Some(v) => Some(v),
+
+        if let Some(path) = mtl.unknown_param.get("map_disp") {
+            if let Some(resolved) = resolve_path(path.as_ref(), relative_to) {
+                textures.insert(TextureType::MapDisp, resolved);
+            }
         }
-        .map(|v| resolve_path(&v, relative_to))
-        .flatten();
-        let map_decal = match mtl
-            .unknown_param
-            .get("map_decal")
-            .map(AsRef::<Path>::as_ref)
-        {
-            None => mtl.unknown_param.get("decal").map(AsRef::<Path>::as_ref),
-            Some(v) => Some(v),
+
+        if let Some(path) = mtl.unknown_param.get("map_decal") {
+            if let Some(resolved) = resolve_path(path.as_ref(), relative_to) {
+                textures.insert(TextureType::MapDecal, resolved);
+            }
         }
-        .map(|v| resolve_path(&v, relative_to))
-        .flatten();
+
+        if let Some(path) = mtl.ambient_texture.as_ref() {
+            if let Some(resolved) = resolve_path(path.as_ref(), relative_to) {
+                textures.insert(TextureType::MapKa, resolved);
+            }
+        }
+
+        if let Some(path) = mtl.diffuse_texture.as_ref() {
+            if let Some(resolved) = resolve_path(path.as_ref(), relative_to) {
+                textures.insert(TextureType::MapKd, resolved);
+            }
+        }
+
+        if let Some(path) = mtl.specular_texture.as_ref() {
+            if let Some(resolved) = resolve_path(path.as_ref(), relative_to) {
+                textures.insert(TextureType::MapKs, resolved);
+            }
+        }
+
+        if let Some(path) = mtl.shininess_texture.as_ref() {
+            if let Some(resolved) = resolve_path(path.as_ref(), relative_to) {
+                textures.insert(TextureType::MapNs, resolved);
+            }
+        }
+
+        if let Some(path) = mtl.dissolve_texture.as_ref() {
+            if let Some(resolved) = resolve_path(path.as_ref(), relative_to) {
+                textures.insert(TextureType::MapD, resolved);
+            }
+        }
+
+        if let Some(path) = mtl.normal_texture.as_ref() {
+            if let Some(resolved) = resolve_path(path.as_ref(), relative_to) {
+                textures.insert(TextureType::MapNorm, resolved);
+            }
+        }
 
         Self {
             name: mtl.name.into(),
@@ -94,34 +133,8 @@ impl Material {
             ns: mtl.shininess,
             ni: mtl.optical_density,
             opacity: mtl.dissolve,
-            map_ka: mtl
-                .ambient_texture
-                .map(|v| resolve_path(v.as_ref(), relative_to))
-                .flatten(),
-            map_kd: mtl
-                .diffuse_texture
-                .map(|v| resolve_path(v.as_ref(), relative_to))
-                .flatten(),
-            map_ks: mtl
-                .specular_texture
-                .map(|v| resolve_path(v.as_ref(), relative_to))
-                .flatten(),
-            map_ns: mtl
-                .shininess_texture
-                .map(|v| resolve_path(v.as_ref(), relative_to))
-                .flatten(),
-            map_d: mtl
-                .dissolve_texture
-                .map(|v| resolve_path(v.as_ref(), relative_to))
-                .flatten(),
-            map_bump,
-            map_disp,
-            map_decal,
-            map_norm: mtl
-                .normal_texture
-                .map(|v| resolve_path(v.as_ref(), relative_to))
-                .flatten(),
             illumination_model: mtl.illumination_model,
+            textures,
         }
     }
 }
@@ -130,22 +143,73 @@ impl Default for Material {
     fn default() -> Self {
         Self {
             name: SmlString::from("material_default"),
-            ka: None,
-            kd: None,
-            ks: None,
-            ns: None,
-            ni: None,
-            opacity: None,
-            map_ka: None,
-            map_kd: None,
-            map_ks: None,
-            map_ns: None,
-            map_d: None,
-            map_bump: None,
-            map_disp: None,
-            map_decal: None,
-            map_norm: None,
-            illumination_model: None,
+            ka: Some([1.0, 1.0, 1.0]),
+            kd: Some([0.6, 0.8, 0.3]),
+            ks: Some([1.0, 0.0, 0.0]),
+            ns: Some(0.0),
+            ni: Some(0.0),
+            opacity: Some(1.0),
+            illumination_model: Some(0),
+            textures: FxHashMap::default(),
+        }
+    }
+}
+
+// TODO: renamed to GpuMaterial
+/// Material parameters that are uploaded to the GPU.
+#[repr(C)]
+#[derive(Debug, Clone, Copy, Pod, Zeroable)]
+pub struct MaterialUniform {
+    pub ka: [f32; 4],
+    pub kd: [f32; 4],
+    pub ks: [f32; 4],
+    pub ns: f32,
+    pub ni: f32,
+    pub d: f32,
+    pub illum: u32,
+
+    pub map_ka: u32,
+    pub map_kd: u32,
+    pub map_ks: u32,
+    pub map_ns: u32,
+
+    pub map_d: u32,
+    pub map_bump: u32,
+    pub map_disp: u32,
+    pub map_decal: u32,
+
+    pub map_norm: u32,
+    _padding: [u32; 3],
+}
+
+impl MaterialUniform {
+    pub const SIZE: wgpu::BufferAddress = std::mem::size_of::<Self>() as wgpu::BufferAddress;
+
+    /// Create a `MaterialUniform` from a `Material`.
+    ///
+    /// Note that the texture indices are not set.
+    pub fn from_material(mtl: &Material) -> Self {
+        let ka = mtl.ka.map(|c| [c[0], c[1], c[2], 0.0]).unwrap_or([0.0; 4]);
+        let kd = mtl.kd.map(|c| [c[0], c[1], c[2], 0.0]).unwrap_or([0.0; 4]);
+        let ks = mtl.ks.map(|c| [c[0], c[1], c[2], 0.0]).unwrap_or([0.0; 4]);
+        Self {
+            ka,
+            kd,
+            ks,
+            ns: mtl.ns.unwrap_or(0.0),
+            ni: mtl.ni.unwrap_or(0.0),
+            d: mtl.opacity.unwrap_or(1.0),
+            illum: mtl.illumination_model.unwrap_or(0) as u32,
+            map_ka: u32::MAX,
+            map_kd: u32::MAX,
+            map_ks: u32::MAX,
+            map_ns: u32::MAX,
+            map_d: u32::MAX,
+            map_bump: u32::MAX,
+            map_disp: u32::MAX,
+            map_decal: u32::MAX,
+            map_norm: u32::MAX,
+            _padding: [0; 3],
         }
     }
 }
@@ -186,9 +250,10 @@ impl MaterialBundle {
     }
 
     pub fn default(device: &wgpu::Device) -> Self {
+        let material = MaterialUniform::from_material(&Material::default());
         let material_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("default_material_bundle_buffer"),
-            contents: bytemuck::cast_slice(&[MaterialUniform::default()]),
+            contents: bytemuck::cast_slice(&[material]),
             usage: wgpu::BufferUsages::UNIFORM
                 | wgpu::BufferUsages::COPY_DST
                 | wgpu::BufferUsages::STORAGE,
@@ -234,12 +299,7 @@ impl MaterialBundle {
     }
 }
 
-/// A collection of textures that uploaded to the GPU.
-pub struct TextureBundle(wgpu::Buffer);
-
 impl Asset for MaterialBundle {}
-
-impl Asset for TextureBundle {}
 
 pub struct GpuMaterial {
     /// Material name.

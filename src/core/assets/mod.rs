@@ -5,7 +5,7 @@ use crate::core::{
     assets::storage::GpuMeshStorage,
     mesh::{GpuMesh, Mesh},
     texture::{Texture, TextureSampler},
-    GpuMaterial, Material, MaterialBundle, SmlString,
+    GpuMaterial, Material, MaterialBundle, SmlString, TextureBundle,
 };
 pub use handle::*;
 use std::path::Path;

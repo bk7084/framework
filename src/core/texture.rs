@@ -1,4 +1,7 @@
-use crate::core::{assets::Asset, SmlString};
+use crate::core::{
+    assets::{Asset, Handle},
+    SmlString,
+};
 use std::{ops::Deref, sync::Arc};
 
 /// Texture sampler.
@@ -36,3 +39,11 @@ impl Deref for Texture {
         &self.raw
     }
 }
+
+/// A collection of textures and samplers.
+pub struct TextureBundle<'a> {
+    pub textures: &'a [&'a wgpu::TextureView],
+    pub samplers: &'a [&'a wgpu::Sampler],
+}
+
+impl Asset for TextureBundle<'_> {}

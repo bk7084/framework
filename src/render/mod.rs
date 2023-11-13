@@ -17,9 +17,9 @@ use crate::{
     core::{
         assets::{GpuMeshAssets, Handle, MaterialAssets, MaterialBundleAssets, TextureAssets},
         mesh::{GpuMesh, Mesh},
-        FxHashMap, GpuMaterial, Material, MaterialBundle, SmlString, Texture,
+        FxHashMap, GpuMaterial, Material, MaterialBundle, MaterialUniform, SmlString, Texture,
     },
-    render::rpass::{MaterialUniform, RenderingPass},
+    render::rpass::RenderingPass,
     scene::Scene,
 };
 pub use context::*;
@@ -45,10 +45,8 @@ pub struct Renderer {
     limits: wgpu::Limits,
     pipelines: Pipelines,
     meshes: GpuMeshAssets,
-    materials: MaterialAssets,
-    material_bundles: MaterialBundleAssets,
     textures: TextureAssets,
-    default_material: Handle<GpuMaterial>,
+    material_bundles: MaterialBundleAssets,
     default_material_bundle: Handle<MaterialBundle>,
     samplers: FxHashMap<SmlString, wgpu::Sampler>,
     cmd_receiver: Receiver<Command>,
@@ -94,25 +92,6 @@ impl Renderer {
         });
         samplers.insert(SmlString::from("default"), default_sampler);
         samplers.insert(SmlString::from("default_depth"), depth_sampler);
-        let default_material = materials.add(GpuMaterial {
-            name: SmlString::from("default"),
-            ka: Some([0.0, 0.0, 0.0]),
-            kd: Some([0.8, 0.1, 0.8]),
-            ks: Some([0.0, 0.0, 0.0]),
-            ns: Some(0.0),
-            ni: None,
-            opacity: None,
-            map_ka: None,
-            map_kd: None,
-            map_ks: None,
-            map_ns: None,
-            map_d: None,
-            map_bump: None,
-            map_disp: None,
-            map_decal: None,
-            map_norm: None,
-            illumination_model: None,
-        });
         let mut material_bundles = MaterialBundleAssets::new();
         let default_material_bundle = MaterialBundle::default(&context.device);
         let default_material_bundle_handle = material_bundles.add(default_material_bundle);
@@ -123,10 +102,9 @@ impl Renderer {
             limits,
             pipelines: Pipelines::new(),
             meshes,
-            materials,
+            // materials,
             material_bundles,
             textures,
-            default_material,
             default_material_bundle: default_material_bundle_handle,
             samplers: Default::default(),
             cmd_receiver: receiver,
@@ -156,50 +134,33 @@ impl Renderer {
                 // default material).
                 let materials_data = materials
                     .iter()
-                    .map(|mtl| MaterialUniform::from_material_new(mtl))
-                    .chain(std::iter::once(MaterialUniform::default()))
+                    .chain(std::iter::once(&Material::default()))
+                    .map(|mtl| MaterialUniform::from_material(mtl))
                     .collect::<Vec<_>>();
                 let bundle = MaterialBundle::new(&self.device, &materials_data);
                 self.material_bundles.add(bundle)
             }
         };
 
-        material_bundle
+        // match materials {
+        //     None => {
+        //         // Mesh has no material, use default material.
+        //         self.default_material_bundle
+        //     }
+        //     Some(mtls) => {
+        //         let materials = mtls.iter().map(|mtl|
+        // mtl.clone()).collect::<Vec<_>>();
+        //
+        //         for mtl in mtls {
+        //             if let Some(texture) = &mtl.textures {
+        //                 let texture_handle = self.add_texture(&texture);
+        //                 mtl_textures_index.insert(mtl.name.clone(), texture_handle);
+        //             }
+        //         }
+        //     }
+        // }
 
-        // let gpu_material = GpuMaterial {
-        //     name: material.name.clone(),
-        //     ka: material.ka,
-        //     kd: material.kd,
-        //     ks: material.ks,
-        //     ns: material.ns,
-        //     ni: material.ni,
-        //     opacity: material.opacity,
-        //     map_ka: material.map_ka.as_ref().map(|path|
-        // self.add_texture(&path)),     map_kd:
-        // material.map_kd.as_ref().map(|path| self.add_texture(&path)),
-        //     map_ks: material.map_ks.as_ref().map(|path|
-        // self.add_texture(&path)),     map_ns:
-        // material.map_ns.as_ref().map(|path| self.add_texture(&path)),
-        //     map_d: material.map_d.as_ref().map(|path|
-        // self.add_texture(&path)),     map_bump: material
-        //         .map_bump
-        //         .as_ref()
-        //         .map(|path| self.add_texture(&path)),
-        //     map_disp: material
-        //         .map_disp
-        //         .as_ref()
-        //         .map(|path| self.add_texture(&path)),
-        //     map_decal: material
-        //         .map_decal
-        //         .as_ref()
-        //         .map(|path| self.add_texture(&path)),
-        //     map_norm: material
-        //         .map_norm
-        //         .as_ref()
-        //         .map(|path| self.add_texture(&path)),
-        //     illumination_model: material.illumination_model,
-        // };
-        // self.materials.add(gpu_material)
+        material_bundle
     }
 
     pub fn add_texture(&mut self, filepath: &Path) -> Handle<Texture> {

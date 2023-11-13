@@ -3,7 +3,7 @@ use crate::{
         assets::Handle,
         camera::Camera,
         mesh::{GpuMesh, SubMesh, VertexAttribute},
-        Color, GpuMaterial, Material, MaterialBundle,
+        Color, GpuMaterial, Material, MaterialBundle, MaterialUniform,
     },
     render::{rpass::RenderingPass, RenderTarget, Renderer},
     scene::{NodeIdx, Scene},
@@ -29,99 +29,6 @@ struct PushConstants {
 
 impl Globals {
     pub const SIZE: wgpu::BufferAddress = std::mem::size_of::<Self>() as wgpu::BufferAddress;
-}
-
-#[repr(C)]
-#[derive(Debug, Clone, Copy, Pod, Zeroable)]
-pub struct MaterialUniform {
-    pub ka: [f32; 4],
-    pub kd: [f32; 4],
-    pub ks: [f32; 4],
-    pub ns: f32,
-    pub ni: f32,
-    pub d: f32,
-    pub illum: i32,
-    // map_ka: i32,
-    // map_kd: i32,
-    // map_ks: i32,
-    // map_ns: i32,
-    // map_d: i32,
-    // map_bump: i32,
-    // map_disp: i32,
-    // map_decal: i32,
-    // map_norm: i32,
-    // vertex_color: u32,
-    // padding: [u32; 2],
-}
-
-impl Default for MaterialUniform {
-    fn default() -> Self {
-        MaterialUniform {
-            ka: [1.0, 1.0, 1.0, 0.0],
-            kd: [0.6, 0.8, 0.3, 0.0],
-            ks: [1.0, 0.0, 0.0, 0.0],
-            ns: 0.0,
-            ni: 0.0,
-            d: 0.0,
-            illum: 0,
-        }
-    }
-}
-
-impl MaterialUniform {
-    pub const SIZE: wgpu::BufferAddress = std::mem::size_of::<Self>() as wgpu::BufferAddress;
-
-    pub fn from_material(mtl: &GpuMaterial) -> Self {
-        let ka = mtl.ka.map(|c| [c[0], c[1], c[2], 0.0]).unwrap_or([0.0; 4]);
-        let kd = mtl.kd.map(|c| [c[0], c[1], c[2], 0.0]).unwrap_or([0.0; 4]);
-        let ks = mtl.ks.map(|c| [c[0], c[1], c[2], 0.0]).unwrap_or([0.0; 4]);
-        Self {
-            ka,
-            kd,
-            ks,
-            ns: mtl.ns.unwrap_or(0.0),
-            ni: mtl.ni.unwrap_or(0.0),
-            d: mtl.opacity.unwrap_or(1.0),
-            illum: mtl.illumination_model.unwrap_or(0) as i32,
-            // map_ka: value.map_ka.map(|_| 1).unwrap_or(0),
-            // map_kd: value.map_kd.map(|_| 1).unwrap_or(0),
-            // map_ks: value.map_ks.map(|_| 1).unwrap_or(0),
-            // map_ns: value.map_ns.map(|_| 1).unwrap_or(0),
-            // map_d: value.map_d.map(|_| 1).unwrap_or(0),
-            // map_bump: value.map_bump.map(|_| 1).unwrap_or(0),
-            // map_disp: value.map_disp.map(|_| 1).unwrap_or(0),
-            // map_decal: value.map_decal.map(|_| 1).unwrap_or(0),
-            // map_norm: value.map_norm.map(|_| 1).unwrap_or(0),
-            // vertex_color: value.vertex_color as u32,
-            // padding: [0; 2],
-        }
-    }
-
-    pub fn from_material_new(mtl: &Material) -> Self {
-        let ka = mtl.ka.map(|c| [c[0], c[1], c[2], 0.0]).unwrap_or([0.0; 4]);
-        let kd = mtl.kd.map(|c| [c[0], c[1], c[2], 0.0]).unwrap_or([0.0; 4]);
-        let ks = mtl.ks.map(|c| [c[0], c[1], c[2], 0.0]).unwrap_or([0.0; 4]);
-        Self {
-            ka,
-            kd,
-            ks,
-            ns: mtl.ns.unwrap_or(0.0),
-            ni: mtl.ni.unwrap_or(0.0),
-            d: mtl.opacity.unwrap_or(1.0),
-            illum: mtl.illumination_model.unwrap_or(0) as i32,
-            // map_ka: value.map_ka.map(|_| 1).unwrap_or(0),
-            // map_kd: value.map_kd.map(|_| 1).unwrap_or(0),
-            // map_ks: value.map_ks.map(|_| 1).unwrap_or(0),
-            // map_ns: value.map_ns.map(|_| 1).unwrap_or(0),
-            // map_d: value.map_d.map(|_| 1).unwrap_or(0),
-            // map_bump: value.map_bump.map(|_| 1).unwrap_or(0),
-            // map_disp: value.map_disp.map(|_| 1).unwrap_or(0),
-            // map_decal: value.map_decal.map(|_| 1).unwrap_or(0),
-            // map_norm: value.map_norm.map(|_| 1).unwrap_or(0),
-            // vertex_color: value.vertex_color as u32,
-            // padding: [0; 2],
-        }
-    }
 }
 
 const DEPTH_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth32Float;

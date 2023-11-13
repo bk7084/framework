@@ -5,7 +5,9 @@ struct Globals {
 }
 
 struct PushConstants {
+    /// Visible to the vertex shader.
     model: mat4x4<f32>,
+    /// Visible to the fragment shader.
     material_index: u32,
 }
 
@@ -27,29 +29,22 @@ struct DirectionalLightArray {
 
 struct Material {
     ka: vec3<f32>,
-    // -- 16 bytes --
     kd: vec3<f32>,
-    // -- 32 bytes --
     ks: vec3<f32>,
-    // -- 48 bytes --
     ns: f32,
     ni: f32,
     d: f32,
     illum: u32,
-//    // -- 64 bytes --
-//    map_ka: u32,
-//    map_kd: u32,
-//    map_ks: u32,
-//    map_ns: u32,
-//    // -- 80 bytes --
-    // map_d: u32,
-//    map_bump: u32,
-//    map_disp: u32,
-//    map_decal: u32,
-//    // -- 96 bytes --
-//    map_norm: u32,
-//    vertex_color: u32, // Whether to use vertex color directly.
-//    padding: vec2<u32>,
+    map_ka: u32, // Texture index. 0xFFFFFFFF if no texture.
+    map_kd: u32,
+    map_ks: u32,
+    map_ns: u32,
+    map_d: u32,
+    map_bump: u32,
+    map_disp: u32,
+    map_decal: u32,
+    map_norm: u32,
+    padding: vec3<u32>,
 }
 
 /// Vertex shader input.
@@ -73,11 +68,13 @@ struct VSOutput {
 var<uniform> globals: Globals;
 
 @group(1) @binding(0)
-// var<uniform> material: Material;
 var<storage> materials: array<Material>;
 
-//@group(2) @binding(0)
-//var textures: binding_array<texture_2d<f32>>;
+@group(2) @binding(0)
+var textures: binding_array<texture_2d<f32>>;
+
+@group(3) @binding(0)
+var samplers: binding_array<sampler>;
 
 var<push_constant> pconsts: PushConstants;
 
