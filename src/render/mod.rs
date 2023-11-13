@@ -1,6 +1,6 @@
 use crate::{color, core::Color};
 use crossbeam_channel::Receiver;
-use std::sync::Arc;
+use std::{path::Path, sync::Arc};
 
 mod context;
 mod pipeline;
@@ -16,7 +16,7 @@ use crate::{
     core::{
         assets::{GpuMeshAssets, Handle, MaterialAssets, TextureAssets},
         mesh::{GpuMesh, Mesh},
-        FxHashMap, SmlString,
+        FxHashMap, GpuMaterial, Material, SmlString, Texture,
     },
     render::rpass::RenderingPass,
     scene::Scene,
@@ -46,6 +46,7 @@ pub struct Renderer {
     meshes: GpuMeshAssets,
     materials: MaterialAssets,
     textures: TextureAssets,
+    default_material: Handle<GpuMaterial>,
     samplers: FxHashMap<SmlString, wgpu::Sampler>,
     cmd_receiver: Receiver<Command>,
 }
@@ -62,7 +63,7 @@ impl Renderer {
         let features = context.features;
         let limits = context.limits.clone();
         let meshes = GpuMeshAssets::new(&device);
-        let materials = MaterialAssets::new();
+        let mut materials = MaterialAssets::new();
         let textures = TextureAssets::new();
         let mut samplers = FxHashMap::default();
         let default_sampler = context.device.create_sampler(&wgpu::SamplerDescriptor {
@@ -90,6 +91,25 @@ impl Renderer {
         });
         samplers.insert(SmlString::from("default"), default_sampler);
         samplers.insert(SmlString::from("default_depth"), depth_sampler);
+        let default_material = materials.add(GpuMaterial {
+            name: SmlString::from("default"),
+            ka: Some([0.0, 0.0, 0.0]),
+            kd: Some([0.8, 0.1, 0.8]),
+            ks: Some([0.0, 0.0, 0.0]),
+            ns: Some(0.0),
+            ni: None,
+            opacity: None,
+            map_ka: None,
+            map_kd: None,
+            map_ks: None,
+            map_ns: None,
+            map_d: None,
+            map_bump: None,
+            map_disp: None,
+            map_decal: None,
+            map_norm: None,
+            illumination_model: None,
+        });
         Self {
             device,
             queue,
@@ -99,6 +119,7 @@ impl Renderer {
             meshes,
             materials,
             textures,
+            default_material,
             samplers: Default::default(),
             cmd_receiver: receiver,
         }
@@ -107,6 +128,47 @@ impl Renderer {
     /// Adds a mesh to the renderer (creates `GpuMesh`).
     pub fn add_mesh(&mut self, mesh: &Mesh) -> Handle<GpuMesh> {
         self.meshes.add(&self.device, &self.queue, mesh)
+    }
+
+    /// Adds a material to the renderer.
+    pub fn add_material(&mut self, material: &Material) -> Handle<GpuMaterial> {
+        let gpu_material = GpuMaterial {
+            name: material.name.clone(),
+            ka: material.ka,
+            kd: material.kd,
+            ks: material.ks,
+            ns: material.ns,
+            ni: material.ni,
+            opacity: material.opacity,
+            map_ka: material.map_ka.as_ref().map(|path| self.add_texture(&path)),
+            map_kd: material.map_kd.as_ref().map(|path| self.add_texture(&path)),
+            map_ks: material.map_ks.as_ref().map(|path| self.add_texture(&path)),
+            map_ns: material.map_ns.as_ref().map(|path| self.add_texture(&path)),
+            map_d: material.map_d.as_ref().map(|path| self.add_texture(&path)),
+            map_bump: material
+                .map_bump
+                .as_ref()
+                .map(|path| self.add_texture(&path)),
+            map_disp: material
+                .map_disp
+                .as_ref()
+                .map(|path| self.add_texture(&path)),
+            map_decal: material
+                .map_decal
+                .as_ref()
+                .map(|path| self.add_texture(&path)),
+            map_norm: material
+                .map_norm
+                .as_ref()
+                .map(|path| self.add_texture(&path)),
+            illumination_model: material.illumination_model,
+        };
+        self.materials.add(gpu_material)
+    }
+
+    pub fn add_texture(&mut self, filepath: &Path) -> Handle<Texture> {
+        self.textures
+            .load_from_file(&self.device, &self.queue, filepath)
     }
 
     /// Renders a frame.

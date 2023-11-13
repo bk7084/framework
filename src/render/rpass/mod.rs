@@ -1,10 +1,13 @@
+mod blinn_phong;
 mod clear;
 mod wireframe;
 
 use crate::{
+    core::{assets::Handle, GpuMaterial},
     render::{RenderTarget, Renderer},
     scene::Scene,
 };
+pub use blinn_phong::*;
 pub use clear::*;
 pub use wireframe::*;
 

@@ -5,10 +5,10 @@ use crate::core::{
     assets::storage::GpuMeshStorage,
     mesh::{GpuMesh, Mesh},
     texture::{Texture, TextureSampler},
-    Material, SmlString,
+    GpuMaterial, Material, SmlString,
 };
 pub use handle::*;
-use std::{path::Path, sync::Arc};
+use std::path::Path;
 use wgpu::TextureFormat;
 
 /// Trait for representing an asset.
@@ -63,6 +63,11 @@ impl<A: Asset> Assets<A, Vec<Option<A>>> {
         self.flush();
         self.storage[handle.index as usize] = Some(asset);
         handle
+    }
+
+    /// Returns the asset with the given handle.
+    pub fn get(&self, handle: Handle<A>) -> Option<&A> {
+        self.storage[handle.index as usize].as_ref()
     }
 
     /// Inserts a new asset into the storage at the given index.
@@ -185,9 +190,9 @@ impl Assets<GpuMesh, GpuMeshStorage> {
 }
 
 /// A collection of materials.
-pub type MaterialAssets = Assets<Material, Vec<Option<Material>>>;
+pub type MaterialAssets = Assets<GpuMaterial, Vec<Option<GpuMaterial>>>;
 
-impl Assets<Material, Vec<Option<Material>>> {
+impl Assets<GpuMaterial, Vec<Option<GpuMaterial>>> {
     pub fn new() -> Self {
         Self {
             storage: Vec::new(),

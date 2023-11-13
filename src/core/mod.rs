@@ -14,8 +14,8 @@ mod transform;
 pub use transform::*;
 
 mod texture;
+pub use texture::*;
 mod typedef;
-
 pub use typedef::*;
 
 /// The alignment of a plane.

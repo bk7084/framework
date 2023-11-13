@@ -1,7 +1,7 @@
-use crate::core::assets::Asset;
+use crate::core::assets::{Asset, Handle};
 use std::path::{Path, PathBuf};
 
-use crate::core::{FxHashMap, SmlString};
+use crate::core::{SmlString, Texture};
 
 /// Material description derived from a `MTL` file.
 #[pyo3::pyclass]
@@ -118,6 +118,87 @@ impl Material {
         }
     }
 }
+
+impl Default for Material {
+    fn default() -> Self {
+        Self {
+            name: SmlString::from("material_default"),
+            ka: None,
+            kd: None,
+            ks: None,
+            ns: None,
+            ni: None,
+            opacity: None,
+            map_ka: None,
+            map_kd: None,
+            map_ks: None,
+            map_ns: None,
+            map_d: None,
+            map_bump: None,
+            map_disp: None,
+            map_decal: None,
+            map_norm: None,
+            illumination_model: None,
+        }
+    }
+}
+
+/// A collection of materials.
+pub struct MaterialBundle(pub Vec<Handle<GpuMaterial>>);
+
+impl MaterialBundle {
+    pub fn empty() -> Self {
+        Self(Vec::new())
+    }
+}
+
+pub struct GpuMaterial {
+    /// Material name.
+    pub name: SmlString,
+    /// Ambient color. `Ka` in the `MTL` spec.
+    pub ka: Option<[f32; 3]>,
+    /// Diffuse color. `Kd` in the `MTL` spec.
+    pub kd: Option<[f32; 3]>,
+    /// Specular color. `Ks` in the `MTL` spec.
+    pub ks: Option<[f32; 3]>,
+    /// Shininess or glossiness. `Ns` in the `MTL` spec.
+    pub ns: Option<f32>,
+    /// Optical density also known as index of refraction. Called
+    /// `optical_density` in the `MTL` specc. Takes on a value between 0.001
+    /// and 10.0. 1.0 means light does not bend as it passes through
+    /// the object.
+    pub ni: Option<f32>,
+    /// Dissolve attribute is the alpha term for the material. Referred to as
+    /// dissolve since that's what the `MTL` file format docs refer to it as.
+    /// Takes on a value between 0.0 and 1.0. 0.0 is completely transparent,
+    /// 1.0 is completely opaque. `d` in the `MTL` spec. It is called `Tr` in
+    /// the `OBJ` spec which is 1.0 - `d`.
+    pub opacity: Option<f32>,
+    /// Texture for ambient color. `map_Ka` in the `MTL` spec.
+    pub map_ka: Option<Handle<Texture>>,
+    /// Texture for diffuse color. `map_Kd` in the `MTL` spec.
+    pub map_kd: Option<Handle<Texture>>,
+    /// Texture for specular color. `map_Ks` in the `MTL` spec.
+    pub map_ks: Option<Handle<Texture>>,
+    /// Texture for specular exponent/shininess/glossiness. `map_Ns` in the
+    /// `MTL` spec.
+    pub map_ns: Option<Handle<Texture>>,
+    /// Texture for alpha/opacity. `map_d` in the `MTL` spec.
+    pub map_d: Option<Handle<Texture>>,
+    /// Texture for bump map. `map_bump`/`bump` in the `MTL` spec.
+    pub map_bump: Option<Handle<Texture>>,
+    /// Texture for displacement map. `map_disp`/`disp` in the `MTL` spec.
+    pub map_disp: Option<Handle<Texture>>,
+    /// Texture for stencil decal. `map_decal`/`decal` in the `MTL` spec.
+    pub map_decal: Option<Handle<Texture>>,
+    /// Texture for normal map. `map_norm`/`norm` in the `MTL` spec.
+    pub map_norm: Option<Handle<Texture>>,
+    /// The illumnination model to use for this material. The different
+    /// illumination models are specified in the [`MTL` spec](http://paulbourke.net/dataformats/mtl/).
+    pub illumination_model: Option<u8>,
+}
+
+impl Asset for GpuMaterial {}
 
 fn resolve_path(path: &Path, base: &Path) -> Option<PathBuf> {
     let path = if path.is_absolute() {

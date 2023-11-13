@@ -11,9 +11,14 @@ use crate::{
     core::{
         camera::{Camera, Projection},
         mesh::Mesh,
-        Alignment, Color, ConcatOrder, FxHashMap, SmlString,
+        Alignment, Color, ConcatOrder, FxHashMap, MaterialBundle, SmlString,
     },
-    render::{rpass::Wireframe, surface::Surface, GpuContext, RenderTarget, Renderer},
+    render::{
+        rpass::{BlinnPhongShading, Wireframe},
+        surface::Surface,
+        GpuContext, RenderTarget, Renderer,
+        ShadingMode::BlinnPhong,
+    },
     scene::{Entity, NodeIdx, PyEntity, Scene, Transform},
 };
 use crossbeam_channel::Sender;
@@ -178,15 +183,20 @@ impl PyAppState {
             .map(|mut renderer| renderer.add_mesh(mesh))
             .unwrap();
 
-        // TODO: handle materials
-        let materials = match mesh.materials {
-            None => {}
-            Some(_) => {}
+        let materials = match &mesh.materials {
+            None => MaterialBundle::empty(),
+            Some(mtls) => self
+                .renderer
+                .write()
+                .map(|mut renderer| {
+                    MaterialBundle(mtls.iter().map(|mtl| renderer.add_material(mtl)).collect())
+                })
+                .expect("Failed to add materials to renderer!"),
         };
 
         self.scene
             .write()
-            .map(|mut scene| scene.spawn(parent, (gpu_mesh_handle,)))
+            .map(|mut scene| scene.spawn(parent, (gpu_mesh_handle, materials)))
             .unwrap()
     }
 
@@ -350,6 +360,7 @@ pub fn run_main_loop(mut app: PyAppState, builder: PyWindowBuilder) {
     let mut surface = Surface::new(&context, &window);
 
     let mut wireframe_rpass = Wireframe::new(&context.device, surface.format());
+    let mut blinn_phong_rpass = BlinnPhongShading::new(&context.device, surface.format());
     // let mut clear_rpass = ClearPass::new(Renderer::CLEAR_COLOR);
 
     app.create_main_camera(
@@ -361,18 +372,19 @@ pub fn run_main_loop(mut app: PyAppState, builder: PyWindowBuilder) {
     cube.compute_per_vertex_normals();
     let rect = Mesh::plane(0.5, Alignment::XY);
     let sphere = Mesh::sphere(1.0, 32, 16);
-    let obj_cube = Mesh::load_from_obj("./data/cube/cube.obj");
-    let obj_sibenik = Mesh::load_from_obj("./data/sibenik/sibenik.obj");
-    let obj_sponza = Mesh::load_from_obj("./data/sponza/sponza.obj");
+    // let obj_cube = Mesh::load_from_obj("./data/cube/cube.obj");
+    // let obj_sibenik = Mesh::load_from_obj("./data/sibenik/sibenik.obj");
+    // let obj_sponza = Mesh::load_from_obj("./data/sponza/sponza.obj");
 
     let (rect0_id, rect1_id, sphere_id) = {
         let cube_entity = app.spawn_object_with_mesh(NodeIdx::root(), &cube);
         let rect0_entity = app.spawn_object_with_mesh(NodeIdx::root(), &rect);
         let rect1_entity = app.spawn_object_with_mesh(rect0_entity.node, &rect);
         let sphere_entity = app.spawn_object_with_mesh(NodeIdx::root(), &sphere);
-        let obj_cube_entity = app.spawn_object_with_mesh(NodeIdx::root(), &obj_cube);
-        let obj_sibenik_entity = app.spawn_object_with_mesh(NodeIdx::root(), &obj_sibenik);
-        let obj_sponza_entity = app.spawn_object_with_mesh(NodeIdx::root(), &obj_sponza);
+        // let obj_cube_entity = app.spawn_object_with_mesh(NodeIdx::root(), &obj_cube);
+        // let obj_sibenik_entity = app.spawn_object_with_mesh(NodeIdx::root(),
+        // &obj_sibenik); let obj_sponza_entity =
+        // app.spawn_object_with_mesh(NodeIdx::root(), &obj_sponza);
 
         let mut scene = app.scene.write().unwrap();
         let cube_node = &mut scene.nodes[cube_entity.node];
@@ -392,9 +404,9 @@ pub fn run_main_loop(mut app: PyAppState, builder: PyWindowBuilder) {
         let sphere_transform = sphere_node.transform_mut();
         sphere_transform.translation = Vec3::new(-4.0, 0.0, 0.0);
 
-        let obj_cube_node = &mut scene.nodes[obj_cube_entity.node];
-        let obj_cube_transform = obj_cube_node.transform_mut();
-        obj_cube_transform.translation = Vec3::new(0.0, 0.0, -2.0);
+        // let obj_cube_node = &mut scene.nodes[obj_cube_entity.node];
+        // let obj_cube_transform = obj_cube_node.transform_mut();
+        // obj_cube_transform.translation = Vec3::new(0.0, 0.0, -2.0);
 
         // let obj_sibenik_node = &mut scene.nodes[obj_sibenik_entity.node];
         // let obj_sibenik_transform = obj_sibenik_node.transform_mut();
@@ -465,7 +477,7 @@ pub fn run_main_loop(mut app: PyAppState, builder: PyWindowBuilder) {
                     .renderer
                     .write()
                     .unwrap()
-                    .render(&scene, &mut wireframe_rpass, &target)
+                    .render(&scene, &mut blinn_phong_rpass, &target)
                 {
                     Ok(_) => {}
                     Err(wgpu::SurfaceError::Lost | wgpu::SurfaceError::Outdated) => {
