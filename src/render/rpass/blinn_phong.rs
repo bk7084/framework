@@ -3,13 +3,14 @@ use crate::{
         assets::Handle,
         camera::Camera,
         mesh::{GpuMesh, SubMesh, VertexAttribute},
-        Color, GpuMaterial, Material, MaterialBundle,
+        Color, GpuMaterial, Material, MaterialBundle, TextureBundle,
     },
-    render::{rpass::RenderingPass, RenderTarget, Renderer},
+    render::{rpass::RenderingPass, Pipelines, RenderTarget, Renderer},
     scene::{NodeIdx, Scene},
 };
 use bytemuck::{Pod, Zeroable};
 use legion::IntoQuery;
+use std::num::NonZeroU32;
 
 #[repr(C)]
 #[derive(Debug, Clone, Copy, Pod, Zeroable)]
@@ -18,14 +19,28 @@ struct Globals {
     proj: [f32; 16],
 }
 
+/// Push constants for the shading pipeline.
 #[repr(C)]
 #[derive(Debug, Clone, Copy, Pod, Zeroable)]
-struct PushConstants {
+struct PConsts {
     /// Model matrix.
     model: [f32; 16],
     /// Material index.
     material: u32,
 }
+
+impl PConsts {
+    pub const SIZE: wgpu::BufferAddress = std::mem::size_of::<Self>() as wgpu::BufferAddress;
+    pub const MODEL_OFFSET: wgpu::BufferAddress = 0;
+    pub const MODEL_SIZE: wgpu::BufferAddress =
+        std::mem::size_of::<[f32; 16]>() as wgpu::BufferAddress;
+    pub const MATERIAL_OFFSET: wgpu::BufferAddress = Self::MODEL_OFFSET + Self::MODEL_SIZE;
+    pub const MATERIAL_SIZE: wgpu::BufferAddress =
+        std::mem::size_of::<u32>() as wgpu::BufferAddress;
+}
+
+static_assertions::assert_eq_align!(PConsts, [f32; 17]);
+static_assertions::assert_eq_size!(PConsts, [f32; 17]);
 
 impl Globals {
     pub const SIZE: wgpu::BufferAddress = std::mem::size_of::<Self>() as wgpu::BufferAddress;
@@ -40,9 +55,8 @@ pub struct BlinnPhongShading {
     pub globals_uniform_buffer: wgpu::Buffer,
     pub globals_bind_group_layout: wgpu::BindGroupLayout,
 
-    // pub materials_bind_group: wgpu::BindGroup,
-    // pub materials_uniform_buffer: wgpu::Buffer,
     pub materials_bind_group_layout: wgpu::BindGroupLayout,
+    pub textures_bind_group_layout: wgpu::BindGroupLayout,
 
     pub pipeline: wgpu::RenderPipeline,
 }
@@ -98,37 +112,72 @@ impl BlinnPhongShading {
                 }],
             });
 
-        let model_matrix_size = std::mem::size_of::<[f32; 16]>() as u32;
+        let textures_bind_group_layout = texture_bundle_bind_group_layout(device);
         let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-            label: Some("shading_pipeline_layout"),
-            bind_group_layouts: &[&globals_bind_group_layout, &materials_bind_group_layout],
+            label: Some("blinn_phong_shading_pipeline_layout"),
+            bind_group_layouts: &[
+                &globals_bind_group_layout,
+                &materials_bind_group_layout,
+                &textures_bind_group_layout,
+            ],
             push_constant_ranges: &[
                 wgpu::PushConstantRange {
                     stages: wgpu::ShaderStages::VERTEX,
-                    range: 0..model_matrix_size,
+                    range: PConsts::MODEL_OFFSET as u32
+                        ..PConsts::MODEL_OFFSET as u32 + PConsts::MODEL_SIZE as u32,
                 },
                 wgpu::PushConstantRange {
                     stages: wgpu::ShaderStages::FRAGMENT,
-                    range: model_matrix_size..model_matrix_size + 4,
+                    range: PConsts::MATERIAL_OFFSET as u32
+                        ..PConsts::MATERIAL_OFFSET as u32 + PConsts::MATERIAL_SIZE as u32,
                 },
             ],
         });
 
         let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            label: Some("shading_pipeline"),
+            label: Some("blinn_phong_shading_pipeline"),
             layout: Some(&pipeline_layout),
             vertex: wgpu::VertexState {
                 module: &shader_module,
                 entry_point: "vs_main",
-                buffers: &[wgpu::VertexBufferLayout {
-                    array_stride: std::mem::size_of::<[f32; 3]>() as wgpu::BufferAddress,
-                    step_mode: wgpu::VertexStepMode::Vertex,
-                    attributes: &[wgpu::VertexAttribute {
-                        offset: 0,
-                        shader_location: 0,
-                        format: wgpu::VertexFormat::Float32x3,
-                    }],
-                }],
+                buffers: &[
+                    wgpu::VertexBufferLayout {
+                        array_stride: std::mem::size_of::<[f32; 3]>() as wgpu::BufferAddress,
+                        step_mode: wgpu::VertexStepMode::Vertex,
+                        attributes: &[
+                            // Position.
+                            wgpu::VertexAttribute {
+                                offset: 0,
+                                shader_location: 0,
+                                format: wgpu::VertexFormat::Float32x3,
+                            },
+                        ],
+                    },
+                    wgpu::VertexBufferLayout {
+                        array_stride: std::mem::size_of::<[f32; 3]>() as wgpu::BufferAddress,
+                        step_mode: wgpu::VertexStepMode::Vertex,
+                        attributes: &[
+                            // Normal.
+                            wgpu::VertexAttribute {
+                                offset: 0,
+                                shader_location: 1,
+                                format: wgpu::VertexFormat::Float32x3,
+                            },
+                        ],
+                    },
+                    wgpu::VertexBufferLayout {
+                        array_stride: std::mem::size_of::<[f32; 2]>() as wgpu::BufferAddress,
+                        step_mode: wgpu::VertexStepMode::Vertex,
+                        attributes: &[
+                            // UV0.
+                            wgpu::VertexAttribute {
+                                offset: 0,
+                                shader_location: 2,
+                                format: wgpu::VertexFormat::Float32x2,
+                            },
+                        ],
+                    },
+                ],
             },
             fragment: Some(wgpu::FragmentState {
                 module: &shader_module,
@@ -142,7 +191,7 @@ impl BlinnPhongShading {
             primitive: wgpu::PrimitiveState {
                 topology: wgpu::PrimitiveTopology::TriangleList,
                 front_face: wgpu::FrontFace::Ccw,
-                cull_mode: Some(wgpu::Face::Back),
+                cull_mode: None,
                 polygon_mode: wgpu::PolygonMode::Fill,
                 ..Default::default()
             },
@@ -167,9 +216,37 @@ impl BlinnPhongShading {
             globals_uniform_buffer,
             globals_bind_group_layout,
             materials_bind_group_layout,
+            textures_bind_group_layout,
             pipeline,
         }
     }
+}
+
+/// Maximum number of textures in a texture array.
+pub const MAX_TEXTURE_ARRAY_LEN: u32 = 128;
+
+pub fn texture_bundle_bind_group_layout(device: &wgpu::Device) -> wgpu::BindGroupLayout {
+    device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+        label: Some("blinn_phong_textures_bind_group_layout"),
+        entries: &[
+            wgpu::BindGroupLayoutEntry {
+                binding: 0,
+                visibility: wgpu::ShaderStages::FRAGMENT,
+                ty: wgpu::BindingType::Texture {
+                    multisampled: false,
+                    sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                    view_dimension: wgpu::TextureViewDimension::D2,
+                },
+                count: NonZeroU32::new(MAX_TEXTURE_ARRAY_LEN),
+            },
+            wgpu::BindGroupLayoutEntry {
+                binding: 1,
+                visibility: wgpu::ShaderStages::FRAGMENT,
+                ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                count: NonZeroU32::new(MAX_TEXTURE_ARRAY_LEN),
+            },
+        ],
+    })
 }
 
 impl RenderingPass for BlinnPhongShading {
@@ -225,13 +302,12 @@ impl RenderingPass for BlinnPhongShading {
 
         // Create render pass.
         let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-            label: Some("wireframe_render_pass"),
+            label: Some("blinn_phong_render_pass"),
             color_attachments: &[Some(wgpu::RenderPassColorAttachment {
                 view: &target.view,
                 resolve_target: None,
                 ops: wgpu::Operations {
-                    // load: wgpu::LoadOp::Clear(*Renderer::CLEAR_COLOR),
-                    load: wgpu::LoadOp::Clear(*Color::PURPLISH_GREY),
+                    load: wgpu::LoadOp::Clear(*Color::DARK_GREY),
                     store: wgpu::StoreOp::Store,
                 },
             })],
@@ -250,10 +326,16 @@ impl RenderingPass for BlinnPhongShading {
         render_pass.set_pipeline(&self.pipeline);
         render_pass.set_bind_group(0, &self.globals_bind_group, &[]);
 
-        let mut mesh_query = <(&Handle<GpuMesh>, &NodeIdx, &Handle<MaterialBundle>)>::query();
+        let mut mesh_query = <(
+            &Handle<GpuMesh>,
+            &NodeIdx,
+            &Handle<MaterialBundle>,
+            &Handle<TextureBundle>,
+        )>::query();
         let buffer = renderer.meshes.buffer();
-        for (mesh_hdl, node_idx, mtls_hdl) in mesh_query.iter(&scene.world) {
-            let mtls = renderer.material_bundles.get(*mtls_hdl).unwrap();
+        for (mesh_hdl, node_idx, materials_hdl, textures_hdl) in mesh_query.iter(&scene.world) {
+            let mtls = renderer.material_bundles.get(*materials_hdl).unwrap();
+            let texture_bundle = renderer.texture_bundles.get(*textures_hdl).unwrap();
             let transform = scene.nodes.world(*node_idx).to_mat4();
             match renderer.meshes.get(*mesh_hdl) {
                 None => {
@@ -264,16 +346,34 @@ impl RenderingPass for BlinnPhongShading {
                     if let Some(pos_range) =
                         mesh.get_vertex_attribute_range(VertexAttribute::POSITION)
                     {
-                        // Bind vertex buffer.
+                        // Bind vertex buffer - position.
                         render_pass.set_vertex_buffer(0, buffer.slice(pos_range.clone()));
+
+                        // Bind vertex buffer - normal.
+                        if let (normals_range) =
+                            mesh.get_vertex_attribute_range(VertexAttribute::NORMAL)
+                        {
+                            render_pass.set_vertex_buffer(1, buffer.slice(pos_range.clone()));
+                        }
+                        // Bind vertex buffer - uv0.
+                        if let (uv0_range) = mesh.get_vertex_attribute_range(VertexAttribute::UV0) {
+                            render_pass.set_vertex_buffer(2, buffer.slice(pos_range.clone()));
+                        }
+
                         // Set push constants.
                         render_pass.set_push_constants(
                             wgpu::ShaderStages::VERTEX,
-                            0,
+                            PConsts::MODEL_OFFSET as u32,
                             bytemuck::cast_slice(&transform.to_cols_array()),
                         );
                         // Bind material.
                         render_pass.set_bind_group(1, &mtls.bind_group, &[]);
+                        // Bind textures.
+                        render_pass.set_bind_group(
+                            2,
+                            texture_bundle.bind_group.as_ref().unwrap(),
+                            &[],
+                        );
                         match mesh.index_format {
                             None => {
                                 // No index buffer, draw directly.
@@ -283,8 +383,8 @@ impl RenderingPass for BlinnPhongShading {
                                         // Update material index.
                                         render_pass.set_push_constants(
                                             wgpu::ShaderStages::FRAGMENT,
-                                            std::mem::size_of::<[f32; 16]>() as u32,
-                                            bytemuck::cast_slice(&[0u32]),
+                                            PConsts::MATERIAL_OFFSET as u32,
+                                            bytemuck::bytes_of(&0u32),
                                         );
                                         render_pass.draw(0..mesh.vertex_count, 0..1);
                                     }
@@ -296,8 +396,8 @@ impl RenderingPass for BlinnPhongShading {
                                             // Update material index.
                                             render_pass.set_push_constants(
                                                 wgpu::ShaderStages::FRAGMENT,
-                                                std::mem::size_of::<[f32; 16]>() as u32,
-                                                bytemuck::cast_slice(&[material_idx as u32]),
+                                                PConsts::MATERIAL_OFFSET as u32,
+                                                bytemuck::bytes_of(&material_idx),
                                             );
                                             render_pass.draw(
                                                 sub_mesh.range.start..sub_mesh.range.end,
@@ -319,8 +419,8 @@ impl RenderingPass for BlinnPhongShading {
                                         // Update material index.
                                         render_pass.set_push_constants(
                                             wgpu::ShaderStages::FRAGMENT,
-                                            std::mem::size_of::<[f32; 16]>() as u32,
-                                            bytemuck::cast_slice(&[0u32]),
+                                            PConsts::MATERIAL_OFFSET as u32,
+                                            bytemuck::bytes_of(&0u32),
                                         );
                                         render_pass.draw_indexed(0..mesh.index_count, 0, 0..1);
                                     }
@@ -337,8 +437,8 @@ impl RenderingPass for BlinnPhongShading {
                                             // Update material index.
                                             render_pass.set_push_constants(
                                                 wgpu::ShaderStages::FRAGMENT,
-                                                std::mem::size_of::<[f32; 16]>() as u32,
-                                                bytemuck::cast_slice(&[material_idx]),
+                                                PConsts::MATERIAL_OFFSET as u32,
+                                                bytemuck::bytes_of(&material_idx),
                                             );
                                             // Draw the sub-mesh.
                                             render_pass.draw_indexed(

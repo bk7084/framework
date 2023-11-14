@@ -280,9 +280,24 @@ impl Mesh {
             16, 17, 18, 18, 19, 16, // top
             20, 21, 22, 22, 23, 20, // bottom */
         ];
-
+        // Vertex UVs for a unit cube centered at the origin.
+        let uvs: Vec<[f32; 2]> = vec![
+            // front
+            [0.0, 0.0], [1.0, 0.0], [1.0, 1.0], [0.0, 1.0],
+            // back
+            [0.0, 0.0], [1.0, 0.0], [1.0, 1.0], [0.0, 1.0],
+            // right
+            [0.0, 0.0], [1.0, 0.0], [1.0, 1.0], [0.0, 1.0],
+            // left
+            [0.0, 0.0], [1.0, 0.0], [1.0, 1.0], [0.0, 1.0],
+            // top
+            [0.0, 0.0], [1.0, 0.0], [1.0, 1.0], [0.0, 1.0],
+            // bottom
+            [0.0, 0.0], [1.0, 0.0], [1.0, 1.0], [0.0, 1.0],
+        ];
         attributes.insert(VertexAttribute::POSITION, AttribContainer::new(&vertices));
         attributes.insert(VertexAttribute::NORMAL, AttribContainer::new(&normals));
+        attributes.insert(VertexAttribute::UV0, AttribContainer::new(&uvs));
         Mesh {
             id: 0,
             topology: wgpu::PrimitiveTopology::TriangleList,
@@ -328,11 +343,14 @@ impl Mesh {
                 (vertices, normals)
             }
         };
-        // Vertex indices for a unit cube centered at the origin.
+        // Vertex indices for a unit quad centered at the origin.
         let indices: Vec<u16> = vec![0, 1, 2, 2, 3, 0];
+        // Vertex UVs for a unit quad centered at the origin.
+        let uvs: Vec<[f32; 2]> = vec![[0.0, 0.0], [1.0, 0.0], [1.0, 1.0], [0.0, 1.0]];
 
         attributes.insert(VertexAttribute::POSITION, AttribContainer::new(&vertices));
         attributes.insert(VertexAttribute::NORMAL, AttribContainer::new(&normals));
+        attributes.insert(VertexAttribute::UV0, AttribContainer::new(&uvs));
         Mesh {
             id: 1,
             topology: wgpu::PrimitiveTopology::TriangleList,
@@ -425,6 +443,7 @@ impl Mesh {
         let materials = materials.expect("Failed to load materials.");
         log::debug!("- Loaded {} models.", models.len());
         log::debug!("- Loaded {} materials.", materials.len());
+        log::debug!("-- Loaded materials: {:#?}", materials);
         let mut attributes = VertexAttributes::default();
         let mut vertices = Vec::new();
         let mut normals = Vec::new();
@@ -451,14 +470,15 @@ impl Mesh {
             for mesh in meshes.iter() {
                 let mut mesh_indices = mesh.indices.clone();
                 let index_offset = vertices.len() as u32 / 3;
-                for index in mesh_indices.iter_mut() {
-                    *index += index_offset;
+                for idx in mesh_indices.iter_mut() {
+                    *idx += index_offset;
                 }
+                let index_count = mesh_indices.len() as u32;
                 vertices.append(&mut mesh.positions.clone());
                 normals.append(&mut mesh.normals.clone());
                 uvs.append(&mut mesh.texcoords.clone());
                 indices.append(&mut mesh_indices);
-                index_start += mesh_indices.len() as u32;
+                index_start += index_count;
             }
             sub_mesh.range.end = index_start;
             sub_meshes.push(sub_mesh);
@@ -474,8 +494,20 @@ impl Mesh {
             attributes.insert(VertexAttribute::UV0, AttribContainer::new(&uvs));
         }
 
+        let id = MESH_ID.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+
+        log::debug!("- Loaded mesh with id: {}.", id);
+
+        let materials = materials
+            .iter()
+            .map(|m| Material::from_tobj_material(m.clone(), path.as_ref()))
+            .collect();
+
+        log::debug!("- Processed materials: {:#?}", materials);
+        log::debug!("- Loaded submeshes: {:#?}", sub_meshes);
+
         Mesh {
-            id: MESH_ID.fetch_add(1, std::sync::atomic::Ordering::Relaxed),
+            id,
             topology: wgpu::PrimitiveTopology::TriangleList,
             attributes,
             indices: if !indices.is_empty() {
@@ -485,12 +517,7 @@ impl Mesh {
             },
             sub_meshes: Some(sub_meshes),
             path: None,
-            materials: Some(
-                materials
-                    .iter()
-                    .map(|m| Material::from_tobj_material(m.clone(), path.as_ref()))
-                    .collect(),
-            ),
+            materials: Some(materials),
         }
     }
 }

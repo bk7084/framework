@@ -1,6 +1,9 @@
 use crate::{color, core::Color};
 use crossbeam_channel::Receiver;
-use std::{path::Path, sync::Arc};
+use std::{
+    path::Path,
+    sync::{Arc, RwLock},
+};
 use wgpu::util::DeviceExt;
 
 mod context;
@@ -20,7 +23,7 @@ use crate::{
         FxHashMap, GpuMaterial, Material, MaterialBundle, SmlString, Texture, TextureBundle,
         TextureType,
     },
-    render::rpass::RenderingPass,
+    render::rpass::{texture_bundle_bind_group_layout, RenderingPass},
     scene::Scene,
 };
 pub use context::*;
@@ -49,6 +52,7 @@ pub struct Renderer {
     textures: TextureAssets,
     material_bundles: MaterialBundleAssets,
     texture_bundles: TextureBundleAssets,
+    default_texture: Handle<Texture>,
     default_material_bundle: Handle<MaterialBundle>,
     default_texture_bundle: Handle<TextureBundle>,
     samplers: FxHashMap<SmlString, wgpu::Sampler>,
@@ -67,7 +71,12 @@ impl Renderer {
         let features = context.features;
         let limits = context.limits.clone();
         let meshes = GpuMeshAssets::new(&device);
-        let textures = TextureAssets::new();
+        let mut textures = TextureAssets::new();
+        let default_texture = textures.load_from_file(
+            &context.device,
+            &context.queue,
+            Path::new("data/textures/checker.png"),
+        );
         let mut samplers = FxHashMap::default();
         let default_sampler = context.device.create_sampler(&wgpu::SamplerDescriptor {
             label: Some("sampler_default"),
@@ -97,7 +106,11 @@ impl Renderer {
         let mut material_bundles = MaterialBundleAssets::new();
         let default_material_bundle =
             material_bundles.add(MaterialBundle::default(&context.device));
-        let default_texture_bundle = TextureBundleAssets::new().add(TextureBundle::default());
+        let default_texture_bundle = TextureBundleAssets::new().add(TextureBundle {
+            textures: vec![default_texture],
+            samplers: vec!["default".into()],
+            bind_group: None,
+        });
         Self {
             device,
             queue,
@@ -110,15 +123,17 @@ impl Renderer {
             textures,
             default_material_bundle,
             default_texture_bundle,
-            samplers: Default::default(),
+            samplers,
             cmd_receiver: receiver,
             texture_bundles: TextureBundleAssets::new(),
+            default_texture,
         }
     }
 
     /// Uploads a mesh to the GPU, creates `GpuMesh` from `Mesh` then adds it to
     /// the renderer.
     pub fn upload_mesh(&mut self, mesh: &Mesh) -> Handle<GpuMesh> {
+        log::debug!("Uploading mesh#{}", mesh.id);
         self.meshes.add(&self.device, &self.queue, mesh)
     }
 
@@ -128,25 +143,7 @@ impl Renderer {
         &mut self,
         materials: Option<&Vec<Material>>,
     ) -> (Handle<MaterialBundle>, Handle<TextureBundle>) {
-        // Temporarily omitting the texture loading.
-        let material_bundle = match materials {
-            None => {
-                // Mesh has no material, use default material.
-                self.default_material_bundle
-            }
-            Some(materials) => {
-                // Material bundle size is the number of materials + 1 (for the
-                // default material).
-                let materials_data = materials
-                    .iter()
-                    .chain(std::iter::once(&Material::default()))
-                    .map(|mtl| GpuMaterial::from_material(mtl))
-                    .collect::<Vec<_>>();
-                let bundle = MaterialBundle::new(&self.device, &materials_data);
-                self.material_bundles.add(bundle)
-            }
-        };
-
+        log::debug!("materials: {:#?}", materials);
         match materials {
             None => {
                 // Mesh has no material, use default material.
@@ -199,6 +196,9 @@ impl Renderer {
                         }
                     }
                 }
+                log::debug!("loaded textures: {:#?}", textures);
+                log::debug!("GpuMaterials to be uploaded: {:#?}", gpu_mtls);
+                textures.push(self.default_texture);
                 let bundle = MaterialBundle::new(&self.device, &gpu_mtls);
                 let material_bundle = self.material_bundles.add(bundle);
                 let samplers = textures
@@ -208,9 +208,11 @@ impl Renderer {
                         texture.sampler.clone()
                     })
                     .collect();
-                let texture_bundle = self
-                    .texture_bundles
-                    .add(TextureBundle { textures, samplers });
+                let texture_bundle = self.texture_bundles.add(TextureBundle {
+                    textures,
+                    samplers,
+                    bind_group: None,
+                });
                 (material_bundle, texture_bundle)
             }
         }
@@ -219,6 +221,48 @@ impl Renderer {
     pub fn add_texture(&mut self, filepath: &Path) -> Handle<Texture> {
         self.textures
             .load_from_file(&self.device, &self.queue, filepath)
+    }
+
+    /// Prepares the renderer for rendering.
+    pub fn prepare(&mut self) {
+        profiling::scope!("Renderer::prepare");
+        for bundle in self.texture_bundles.iter_mut() {
+            if bundle.textures.is_empty() || bundle.bind_group.is_some() {
+                continue;
+            }
+            let views = bundle
+                .textures
+                .iter()
+                .map(|t| {
+                    let texture = self.textures.get(*t).unwrap();
+                    &texture.view
+                })
+                .collect::<Vec<_>>();
+            let samplers = bundle
+                .samplers
+                .iter()
+                .map(|name| {
+                    log::debug!("sampler: {}", name);
+                    self.samplers.get(name).unwrap()
+                })
+                .collect::<Vec<_>>();
+            let bind_group_layout = texture_bundle_bind_group_layout(&self.device);
+            let bind_group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+                label: Some("shading_textures_bind_group"),
+                layout: &bind_group_layout,
+                entries: &[
+                    wgpu::BindGroupEntry {
+                        binding: 0,
+                        resource: wgpu::BindingResource::TextureViewArray(&views),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 1,
+                        resource: wgpu::BindingResource::SamplerArray(&samplers),
+                    },
+                ],
+            });
+            bundle.bind_group.replace(bind_group);
+        }
     }
 
     /// Renders a frame.

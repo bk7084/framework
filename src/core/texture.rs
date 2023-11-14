@@ -1,8 +1,12 @@
 use crate::core::{
-    assets::{Asset, Handle},
-    SmlString,
+    assets::{Asset, Handle, TextureAssets},
+    FxHashMap, SmlString,
 };
-use std::{ops::Deref, sync::Arc};
+use std::{
+    cell::Cell,
+    ops::Deref,
+    sync::{Arc, RwLock},
+};
 
 /// Texture sampler.
 #[derive(Debug)]
@@ -44,15 +48,17 @@ impl Deref for Texture {
 pub struct TextureBundle {
     pub textures: Vec<Handle<Texture>>,
     pub samplers: Vec<SmlString>,
+    pub bind_group: Option<wgpu::BindGroup>,
 }
+
+impl Asset for TextureBundle {}
 
 impl Default for TextureBundle {
     fn default() -> Self {
         Self {
             textures: Vec::new(),
             samplers: Vec::new(),
+            bind_group: None,
         }
     }
 }
-
-impl Asset for TextureBundle {}

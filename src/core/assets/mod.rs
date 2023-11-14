@@ -104,6 +104,14 @@ impl<A: Asset> Assets<A, Vec<Option<A>>> {
             self.storage[recycled.index as usize] = None;
         }
     }
+
+    pub fn iter(&self) -> impl Iterator<Item = &A> {
+        self.storage.iter().filter_map(|a| a.as_ref())
+    }
+
+    pub fn iter_mut(&mut self) -> impl Iterator<Item = &mut A> {
+        self.storage.iter_mut().filter_map(|a| a.as_mut())
+    }
 }
 
 /// A collection of GPU meshes.

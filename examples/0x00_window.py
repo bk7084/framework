@@ -8,6 +8,8 @@ win.set_resizable(True)
 app = bk.App()
 counter = 0
 
+mesh = bk.Mesh(bk.Topology.TriangleList)
+
 
 @app.event
 def on_update(dt, input):

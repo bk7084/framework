@@ -49,6 +49,20 @@ pub struct Material {
     pub opacity: Option<f32>,
     /// The illumnination model to use for this material. The different
     /// illumination models are specified in the [`MTL` spec](http://paulbourke.net/dataformats/mtl/).
+    ///
+    /// - 0: Color on and Ambient off
+    /// - 1: Color on and Ambient on
+    /// - 2: Highlight on
+    /// - 3: Reflection on and Ray trace on
+    /// - 4: Transparency: Glass on, Reflection: Ray trace on
+    /// - 5: Reflection: Fresnel on and Ray trace on
+    /// - 6: Transparency: Refraction on, Reflection: Fresnel off and Ray trace
+    ///   on
+    /// - 7: Transparency: Refraction on, Reflection: Fresnel on and Ray trace
+    ///   on
+    /// - 8: Reflection on and Ray trace off
+    /// - 9: Transparency: Glass on, Reflection: Ray trace off
+    /// - 10: Casts shadows onto invisible surfaces
     pub illumination_model: Option<u8>,
     /// Textures for the material. The key is the texture type and the value
     /// is the path to the texture.
@@ -58,69 +72,75 @@ pub struct Material {
 impl Asset for Material {}
 
 impl Material {
-    pub fn from_tobj_material(mtl: tobj::Material, relative_to: &Path) -> Self {
+    /// Creates a new material from a loaded `MTL` file.
+    ///
+    /// # Arguments
+    ///
+    /// * `mtl` - The loaded material.
+    /// * `filepath` - The path to the obj file.
+    pub fn from_tobj_material(mtl: tobj::Material, filepath: &Path) -> Self {
         let mut textures = FxHashMap::default();
-
+        let base = filepath.parent().unwrap_or_else(|| Path::new(""));
         match mtl.unknown_param.get("map_bump") {
             None => {
                 // Try with "bump" instead
                 if let Some(path) = mtl.unknown_param.get("bump").map(AsRef::<Path>::as_ref) {
-                    if let Some(resolved) = resolve_path(path, relative_to) {
+                    if let Some(resolved) = resolve_path(path, base) {
                         textures.insert(TextureType::MapBump, resolved);
                     }
                 }
             }
             Some(path) => {
-                if let Some(resolved) = resolve_path(path.as_ref(), relative_to) {
+                if let Some(resolved) = resolve_path(path.as_ref(), base) {
                     textures.insert(TextureType::MapBump, resolved);
                 }
             }
         }
 
         if let Some(path) = mtl.unknown_param.get("map_disp") {
-            if let Some(resolved) = resolve_path(path.as_ref(), relative_to) {
+            if let Some(resolved) = resolve_path(path.as_ref(), base) {
                 textures.insert(TextureType::MapDisp, resolved);
             }
         }
 
         if let Some(path) = mtl.unknown_param.get("map_decal") {
-            if let Some(resolved) = resolve_path(path.as_ref(), relative_to) {
+            if let Some(resolved) = resolve_path(path.as_ref(), base) {
                 textures.insert(TextureType::MapDecal, resolved);
             }
         }
 
         if let Some(path) = mtl.ambient_texture.as_ref() {
-            if let Some(resolved) = resolve_path(path.as_ref(), relative_to) {
+            if let Some(resolved) = resolve_path(path.as_ref(), base) {
                 textures.insert(TextureType::MapKa, resolved);
             }
         }
 
         if let Some(path) = mtl.diffuse_texture.as_ref() {
-            if let Some(resolved) = resolve_path(path.as_ref(), relative_to) {
+            if let Some(resolved) = resolve_path(path.as_ref(), base) {
                 textures.insert(TextureType::MapKd, resolved);
             }
         }
 
         if let Some(path) = mtl.specular_texture.as_ref() {
-            if let Some(resolved) = resolve_path(path.as_ref(), relative_to) {
+            if let Some(resolved) = resolve_path(path.as_ref(), base) {
                 textures.insert(TextureType::MapKs, resolved);
             }
         }
 
         if let Some(path) = mtl.shininess_texture.as_ref() {
-            if let Some(resolved) = resolve_path(path.as_ref(), relative_to) {
+            if let Some(resolved) = resolve_path(path.as_ref(), base) {
                 textures.insert(TextureType::MapNs, resolved);
             }
         }
 
         if let Some(path) = mtl.dissolve_texture.as_ref() {
-            if let Some(resolved) = resolve_path(path.as_ref(), relative_to) {
+            if let Some(resolved) = resolve_path(path.as_ref(), base) {
                 textures.insert(TextureType::MapD, resolved);
             }
         }
 
         if let Some(path) = mtl.normal_texture.as_ref() {
-            if let Some(resolved) = resolve_path(path.as_ref(), relative_to) {
+            if let Some(resolved) = resolve_path(path.as_ref(), base) {
                 textures.insert(TextureType::MapNorm, resolved);
             }
         }
@@ -157,7 +177,7 @@ impl Default for Material {
 
 // TODO: renamed to GpuMaterial
 /// Material parameters that are uploaded to the GPU.
-#[repr(C)]
+#[repr(C, align(16))]
 #[derive(Debug, Clone, Copy, Pod, Zeroable)]
 pub struct GpuMaterial {
     pub ka: [f32; 4],
@@ -181,6 +201,8 @@ pub struct GpuMaterial {
     pub map_norm: u32,
     _padding: [u32; 3],
 }
+
+static_assertions::assert_eq_size!(GpuMaterial, [u8; 112]);
 
 impl Asset for GpuMaterial {}
 
@@ -252,10 +274,9 @@ impl MaterialBundle {
     }
 
     pub fn default(device: &wgpu::Device) -> Self {
-        let material = GpuMaterial::from_material(&Material::default());
         let material_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("default_material_bundle_buffer"),
-            contents: bytemuck::cast_slice(&[material]),
+            contents: bytemuck::cast_slice(&[GpuMaterial::from_material(&Material::default())]),
             usage: wgpu::BufferUsages::UNIFORM
                 | wgpu::BufferUsages::COPY_DST
                 | wgpu::BufferUsages::STORAGE,
@@ -277,6 +298,11 @@ impl MaterialBundle {
     }
 
     pub fn new(device: &wgpu::Device, mtls: &[GpuMaterial]) -> Self {
+        log::debug!(
+            "Creating material bundle with {} materials: \n{:?}",
+            mtls.len(),
+            mtls
+        );
         let buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: None,
             contents: bytemuck::cast_slice(&mtls),
@@ -304,6 +330,7 @@ impl MaterialBundle {
 impl Asset for MaterialBundle {}
 
 fn resolve_path(path: &Path, base: &Path) -> Option<PathBuf> {
+    log::debug!("Resolving path: {:?} with base: {:?}", path, base);
     let path = if path.is_absolute() {
         path.to_path_buf()
     } else {
