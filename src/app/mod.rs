@@ -181,11 +181,13 @@ impl PyAppState {
 
         let gpu_mesh_handle = renderer.upload_mesh(mesh);
 
-        let material_bundle = renderer.upload_materials(mesh.materials.as_ref());
+        let (material_bundle, texture_bundle) = renderer.upload_materials(mesh.materials.as_ref());
 
         self.scene
             .write()
-            .map(|mut scene| scene.spawn(parent, (gpu_mesh_handle, material_bundle)))
+            .map(|mut scene| {
+                scene.spawn(parent, (gpu_mesh_handle, material_bundle, texture_bundle))
+            })
             .unwrap()
     }
 

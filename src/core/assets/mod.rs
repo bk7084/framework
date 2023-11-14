@@ -190,17 +190,6 @@ impl Assets<GpuMesh, GpuMeshStorage> {
 }
 
 /// A collection of materials.
-pub type MaterialAssets = Assets<GpuMaterial, Vec<Option<GpuMaterial>>>;
-
-impl Assets<GpuMaterial, Vec<Option<GpuMaterial>>> {
-    pub fn new() -> Self {
-        Self {
-            storage: Vec::new(),
-            allocator: HandleAllocator::new(),
-        }
-    }
-}
-
 pub type MaterialBundleAssets = Assets<MaterialBundle, Vec<Option<MaterialBundle>>>;
 
 impl Assets<MaterialBundle, Vec<Option<MaterialBundle>>> {
@@ -274,5 +263,16 @@ impl Assets<Texture, Vec<Option<Texture>>> {
             sampler: SmlString::from("default"),
         };
         self.add(texture)
+    }
+}
+
+pub type TextureBundleAssets = Assets<TextureBundle, Vec<Option<TextureBundle>>>;
+
+impl Assets<TextureBundle, Vec<Option<TextureBundle>>> {
+    pub fn new() -> Self {
+        Self {
+            storage: Vec::new(),
+            allocator: HandleAllocator::new(),
+        }
     }
 }

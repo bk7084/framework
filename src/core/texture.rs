@@ -41,9 +41,18 @@ impl Deref for Texture {
 }
 
 /// A collection of textures and samplers.
-pub struct TextureBundle<'a> {
-    pub textures: &'a [&'a wgpu::TextureView],
-    pub samplers: &'a [&'a wgpu::Sampler],
+pub struct TextureBundle {
+    pub textures: Vec<Handle<Texture>>,
+    pub samplers: Vec<SmlString>,
 }
 
-impl Asset for TextureBundle<'_> {}
+impl Default for TextureBundle {
+    fn default() -> Self {
+        Self {
+            textures: Vec::new(),
+            samplers: Vec::new(),
+        }
+    }
+}
+
+impl Asset for TextureBundle {}

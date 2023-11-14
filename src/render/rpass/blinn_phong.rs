@@ -3,7 +3,7 @@ use crate::{
         assets::Handle,
         camera::Camera,
         mesh::{GpuMesh, SubMesh, VertexAttribute},
-        Color, GpuMaterial, Material, MaterialBundle, MaterialUniform,
+        Color, GpuMaterial, Material, MaterialBundle,
     },
     render::{rpass::RenderingPass, RenderTarget, Renderer},
     scene::{NodeIdx, Scene},
@@ -92,7 +92,7 @@ impl BlinnPhongShading {
                     ty: wgpu::BindingType::Buffer {
                         ty: wgpu::BufferBindingType::Storage { read_only: true },
                         has_dynamic_offset: false,
-                        min_binding_size: wgpu::BufferSize::new(MaterialUniform::SIZE),
+                        min_binding_size: wgpu::BufferSize::new(GpuMaterial::SIZE),
                     },
                     count: None,
                 }],
