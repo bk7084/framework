@@ -404,20 +404,33 @@ pub fn run_main_loop(mut app: PyAppState, builder: PyWindowBuilder) {
         // },
     ]);
 
-    // let rect = Mesh::plane(0.5, Alignment::XY);
+    let mut rect = Mesh::plane(0.5, Alignment::XY);
+    let mut textures = FxHashMap::default();
+    textures.insert(TextureType::MapKd, "data/textures/checker.png".into());
+    textures.insert(TextureType::MapKa, "data/textures/checker_color.png".into());
+    rect.materials = Some(vec![Material {
+        kd: Some([1.0, 1.0, 1.0]),
+        textures,
+        ..Default::default()
+    }]);
+    rect.sub_meshes = Some(vec![SubMesh {
+        range: 0..6,
+        material: Some(0),
+    }]);
+
     // let sphere = Mesh::sphere(1.0, 32, 16);
-    let obj_cube = Mesh::load_from_obj("data/cube/cube.obj");
-    let obj_sibenik = Mesh::load_from_obj("./data/sibenik/sibenik.obj");
+    let obj_cube = Mesh::load_from_obj("data/blender_cube/cube.obj");
+    // let obj_sibenik = Mesh::load_from_obj("./data/sibenik/sibenik.obj");
     // let obj_sponza = Mesh::load_from_obj("./data/sponza/sponza.obj");
 
     let (rect0_id, rect1_id, sphere_id) = {
         let cube_entity = app.spawn_object_with_mesh(NodeIdx::root(), &cube);
-        // let rect0_entity = app.spawn_object_with_mesh(NodeIdx::root(), &rect);
-        // let rect1_entity = app.spawn_object_with_mesh(rect0_entity.node, &rect);
+        let rect0_entity = app.spawn_object_with_mesh(NodeIdx::root(), &rect);
+        let rect1_entity = app.spawn_object_with_mesh(rect0_entity.node, &rect);
         // let sphere_entity = app.spawn_object_with_mesh(NodeIdx::root(), &sphere);
         let obj_cube_entity = app.spawn_object_with_mesh(NodeIdx::root(), &obj_cube);
-        let obj_sibenik_entity = app.spawn_object_with_mesh(NodeIdx::root(), &obj_sibenik);
-        // let obj_sponza_entity =
+        // let obj_sibenik_entity = app.spawn_object_with_mesh(NodeIdx::root(),
+        // &obj_sibenik); let obj_sponza_entity =
         // app.spawn_object_with_mesh(NodeIdx::root(), &obj_sponza);
 
         let mut scene = app.scene.write().unwrap();
@@ -426,15 +439,15 @@ pub fn run_main_loop(mut app: PyAppState, builder: PyWindowBuilder) {
         cube_transform.rotation = Quat::from_rotation_y(45.0f32.to_radians());
         cube_transform.scale = Vec3::splat(1.5);
 
-        // let rect_node = &mut scene.nodes[rect0_entity.node];
-        // let rect_transform = rect_node.transform_mut();
+        let rect_node = &mut scene.nodes[rect0_entity.node];
+        let rect_transform = rect_node.transform_mut();
         // rect_node.set_position([2.0, 0.0, 0.0].into());
         // rect_transform.rotation =
         // Quat::from_rotation_z(45.0f32.to_radians());
-        // let tra = Transform::from_translation(Vec3::new(2.0, 0.0, 0.0));
-        // let rot = Transform::from_rotation(Quat::from_rotation_z(45.0f32.
-        // to_radians())); *rect_transform = tra * *rect_transform * rot;
-        //
+        let tra = Transform::from_translation(Vec3::new(2.0, 0.0, 0.0));
+        let rot = Transform::from_rotation(Quat::from_rotation_z(45.0f32.to_radians()));
+        *rect_transform = tra * *rect_transform * rot;
+
         // let sphere_node = &mut scene.nodes[sphere_entity.node];
         // let sphere_transform = sphere_node.transform_mut();
         // sphere_transform.translation = Vec3::new(-4.0, 0.0, 0.0);
@@ -443,12 +456,11 @@ pub fn run_main_loop(mut app: PyAppState, builder: PyWindowBuilder) {
         let obj_cube_transform = obj_cube_node.transform_mut();
         obj_cube_transform.translation = Vec3::new(0.0, 0.0, -2.0);
 
-        let obj_sibenik_node = &mut scene.nodes[obj_sibenik_entity.node];
-        let obj_sibenik_transform = obj_sibenik_node.transform_mut();
-        obj_sibenik_transform.translation = Vec3::new(0.0, 0.0, 0.0);
+        // let obj_sibenik_node = &mut scene.nodes[obj_sibenik_entity.node];
+        // let obj_sibenik_transform = obj_sibenik_node.transform_mut();
+        // obj_sibenik_transform.translation = Vec3::new(0.0, 0.0, 0.0);
 
-        // (rect0_entity.node, rect1_entity.node, cube_entity.node)
-        (cube_entity.node, cube_entity.node, cube_entity.node)
+        (rect0_entity.node, rect1_entity.node, cube_entity.node)
     };
 
     // Ready to present the window.

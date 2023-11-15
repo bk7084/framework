@@ -137,7 +137,7 @@ impl Assets<GpuMesh, GpuMeshStorage> {
         queue: &wgpu::Queue,
         mesh: &Mesh,
     ) -> Handle<GpuMesh> {
-        for (idx, gpu_mesh) in self.storage.data.iter().enumerate() {
+        for gpu_mesh in self.storage.data.iter() {
             if let Some((hdl, gpu_mesh)) = gpu_mesh {
                 if same_mesh(mesh, gpu_mesh) {
                     return *hdl;

@@ -445,9 +445,9 @@ impl Mesh {
         log::debug!("- Loaded {} materials.", materials.len());
         log::debug!("-- Loaded materials: {:#?}", materials);
         let mut attributes = VertexAttributes::default();
-        let mut vertices = Vec::new();
-        let mut normals = Vec::new();
-        let mut uvs = Vec::new();
+        let mut vertices: Vec<f32> = Vec::new();
+        let mut normals: Vec<f32> = Vec::new();
+        let mut uvs: Vec<f32> = Vec::new();
         let mut indices = Vec::new();
 
         // Classify the submeshes by material.

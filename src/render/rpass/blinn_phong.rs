@@ -350,14 +350,16 @@ impl RenderingPass for BlinnPhongShading {
                         render_pass.set_vertex_buffer(0, buffer.slice(pos_range.clone()));
 
                         // Bind vertex buffer - normal.
-                        if let (normals_range) =
+                        if let Some(normals_range) =
                             mesh.get_vertex_attribute_range(VertexAttribute::NORMAL)
                         {
-                            render_pass.set_vertex_buffer(1, buffer.slice(pos_range.clone()));
+                            render_pass.set_vertex_buffer(1, buffer.slice(normals_range.clone()));
                         }
                         // Bind vertex buffer - uv0.
-                        if let (uv0_range) = mesh.get_vertex_attribute_range(VertexAttribute::UV0) {
-                            render_pass.set_vertex_buffer(2, buffer.slice(pos_range.clone()));
+                        if let Some(uv0_range) =
+                            mesh.get_vertex_attribute_range(VertexAttribute::UV0)
+                        {
+                            render_pass.set_vertex_buffer(2, buffer.slice(uv0_range.clone()));
                         }
 
                         // Set push constants.

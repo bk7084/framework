@@ -31,22 +31,18 @@ struct Material {
     ka: vec4<f32>,
     kd: vec4<f32>,
     ks: vec4<f32>,
-
     ns: f32,
     ni: f32,
     d: f32,
     illum: u32,
-
     map_ka: u32, // Texture index. 0xFFFFFFFF if no texture.
     map_kd: u32,
     map_ks: u32,
     map_ns: u32,
-
     map_d: u32,
     map_bump: u32,
     map_disp: u32,
     map_decal: u32,
-
     map_norm: u32,
     // padding: vec3<u32>,
 }
