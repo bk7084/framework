@@ -9,6 +9,7 @@ use crate::{
     scene::{NodeIdx, Scene},
 };
 use bytemuck::{Pod, Zeroable};
+use glam::{Mat4, Vec3, Vec4};
 use legion::IntoQuery;
 use std::num::NonZeroU32;
 
@@ -46,7 +47,7 @@ impl Globals {
     pub const SIZE: wgpu::BufferAddress = std::mem::size_of::<Self>() as wgpu::BufferAddress;
 }
 
-const DEPTH_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth32Float;
+const DEPTH_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth24Plus;
 
 pub struct BlinnPhongShading {
     pub depth_texture: Option<(wgpu::Texture, wgpu::TextureView)>,
@@ -191,7 +192,7 @@ impl BlinnPhongShading {
             primitive: wgpu::PrimitiveState {
                 topology: wgpu::PrimitiveTopology::TriangleList,
                 front_face: wgpu::FrontFace::Ccw,
-                cull_mode: None,
+                cull_mode: Some(wgpu::Face::Back),
                 polygon_mode: wgpu::PolygonMode::Fill,
                 ..Default::default()
             },
@@ -273,7 +274,8 @@ impl RenderingPass for BlinnPhongShading {
                 sample_count: 1,
                 dimension: wgpu::TextureDimension::D2,
                 format: DEPTH_FORMAT,
-                usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
+                usage: wgpu::TextureUsages::RENDER_ATTACHMENT
+                    | wgpu::TextureUsages::TEXTURE_BINDING,
                 view_formats: &[],
             });
             let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
@@ -356,10 +358,10 @@ impl RenderingPass for BlinnPhongShading {
                             render_pass.set_vertex_buffer(1, buffer.slice(normals_range.clone()));
                         }
                         // Bind vertex buffer - uv0.
-                        if let Some(uv0_range) =
+                        if let Some(uv_range) =
                             mesh.get_vertex_attribute_range(VertexAttribute::UV0)
                         {
-                            render_pass.set_vertex_buffer(2, buffer.slice(uv0_range.clone()));
+                            render_pass.set_vertex_buffer(2, buffer.slice(uv_range.clone()));
                         }
 
                         // Set push constants.

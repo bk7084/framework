@@ -324,10 +324,15 @@ impl PyAppState {
 
         // Zoom in/out with the mouse wheel.
         if input.scroll_delta().is_normal() {
+            let scale = if input.is_key_pressed(KeyCode::LControl) {
+                10.0
+            } else {
+                1.0
+            };
             self.sender
                 .send(Command::Translate {
                     entity: self.main_camera.unwrap(),
-                    translation: Vec3::new(0.0, 0.0, input.scroll_delta() * dt),
+                    translation: Vec3::new(0.0, 0.0, input.scroll_delta() * dt * scale),
                     order: ConcatOrder::Post,
                 })
                 .unwrap();
@@ -354,7 +359,7 @@ pub fn run_main_loop(mut app: PyAppState, builder: PyWindowBuilder) {
     // let mut clear_rpass = ClearPass::new(Renderer::CLEAR_COLOR);
 
     app.create_main_camera(
-        Projection::perspective(45.0, 0.0001, f32::INFINITY),
+        Projection::perspective(45.0, 0.0001, 200.0),
         Vec3::new(5.0, 5.0, 5.0),
     );
 
@@ -368,40 +373,40 @@ pub fn run_main_loop(mut app: PyAppState, builder: PyWindowBuilder) {
             textures,
             ..Default::default()
         },
-        // Material {
-        //     kd: Some([0.0, 1.0, 0.0]),
-        //     ..Default::default()
-        // },
-        // Material {
-        //     kd: Some([0.0, 0.0, 1.0]),
-        //     ..Default::default()
-        // },
-        // Material {
-        //     kd: Some([1.0, 1.0, 0.0]),
-        //     ..Default::default()
-        // },
+        Material {
+            kd: Some([0.0, 1.0, 0.0]),
+            ..Default::default()
+        },
+        Material {
+            kd: Some([0.0, 0.0, 1.0]),
+            ..Default::default()
+        },
+        Material {
+            kd: Some([1.0, 1.0, 0.0]),
+            ..Default::default()
+        },
     ]);
     cube.sub_meshes = Some(vec![
         SubMesh {
-            range: 0..36,
+            range: 0..3,
             material: Some(0),
         },
-        // SubMesh {
-        //     range: 3..6,
-        //     material: Some(1),
-        // },
-        // SubMesh {
-        //     range: 6..9,
-        //     material: Some(2),
-        // },
-        // SubMesh {
-        //     range: 9..12,
-        //     material: Some(3),
-        // },
-        // SubMesh {
-        //     range: 12..36,
-        //     material: None,
-        // },
+        SubMesh {
+            range: 3..6,
+            material: Some(1),
+        },
+        SubMesh {
+            range: 6..9,
+            material: Some(2),
+        },
+        SubMesh {
+            range: 9..12,
+            material: Some(3),
+        },
+        SubMesh {
+            range: 12..36,
+            material: None,
+        },
     ]);
 
     let mut rect = Mesh::plane(0.5, Alignment::XY);
@@ -418,20 +423,20 @@ pub fn run_main_loop(mut app: PyAppState, builder: PyWindowBuilder) {
         material: Some(0),
     }]);
 
-    // let sphere = Mesh::sphere(1.0, 32, 16);
+    let sphere = Mesh::sphere(1.0, 32, 16);
     let obj_cube = Mesh::load_from_obj("data/blender_cube/cube.obj");
     // let obj_sibenik = Mesh::load_from_obj("./data/sibenik/sibenik.obj");
-    // let obj_sponza = Mesh::load_from_obj("./data/sponza/sponza.obj");
+    let obj_sponza = Mesh::load_from_obj("./data/sponza/sponza.obj");
 
     let (rect0_id, rect1_id, sphere_id) = {
         let cube_entity = app.spawn_object_with_mesh(NodeIdx::root(), &cube);
         let rect0_entity = app.spawn_object_with_mesh(NodeIdx::root(), &rect);
         let rect1_entity = app.spawn_object_with_mesh(rect0_entity.node, &rect);
-        // let sphere_entity = app.spawn_object_with_mesh(NodeIdx::root(), &sphere);
+        let sphere_entity = app.spawn_object_with_mesh(NodeIdx::root(), &sphere);
         let obj_cube_entity = app.spawn_object_with_mesh(NodeIdx::root(), &obj_cube);
         // let obj_sibenik_entity = app.spawn_object_with_mesh(NodeIdx::root(),
-        // &obj_sibenik); let obj_sponza_entity =
-        // app.spawn_object_with_mesh(NodeIdx::root(), &obj_sponza);
+        // &obj_sibenik);
+        let obj_sponza_entity = app.spawn_object_with_mesh(NodeIdx::root(), &obj_sponza);
 
         let mut scene = app.scene.write().unwrap();
         let cube_node = &mut scene.nodes[cube_entity.node];
@@ -448,9 +453,9 @@ pub fn run_main_loop(mut app: PyAppState, builder: PyWindowBuilder) {
         let rot = Transform::from_rotation(Quat::from_rotation_z(45.0f32.to_radians()));
         *rect_transform = tra * *rect_transform * rot;
 
-        // let sphere_node = &mut scene.nodes[sphere_entity.node];
-        // let sphere_transform = sphere_node.transform_mut();
-        // sphere_transform.translation = Vec3::new(-4.0, 0.0, 0.0);
+        let sphere_node = &mut scene.nodes[sphere_entity.node];
+        let sphere_transform = sphere_node.transform_mut();
+        sphere_transform.translation = Vec3::new(-4.0, 0.0, 0.0);
 
         let obj_cube_node = &mut scene.nodes[obj_cube_entity.node];
         let obj_cube_transform = obj_cube_node.transform_mut();
@@ -459,6 +464,10 @@ pub fn run_main_loop(mut app: PyAppState, builder: PyWindowBuilder) {
         // let obj_sibenik_node = &mut scene.nodes[obj_sibenik_entity.node];
         // let obj_sibenik_transform = obj_sibenik_node.transform_mut();
         // obj_sibenik_transform.translation = Vec3::new(0.0, 0.0, 0.0);
+
+        let obj_sponza_node = &mut scene.nodes[obj_sponza_entity.node];
+        let obj_sponza_transform = obj_sponza_node.transform_mut();
+        obj_sponza_transform.scale = Vec3::splat(0.01);
 
         (rect0_entity.node, rect1_entity.node, cube_entity.node)
     };

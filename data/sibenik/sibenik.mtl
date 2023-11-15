@@ -37,8 +37,8 @@ newmtl kamen_zid
 	Ke 0.000000 0.000000 0.000000
 	map_Ka kamen.png
 	map_Kd kamen.png
-        map_bump kamen-bump.png
-        bump kamen-bump.png
+    map_bump kamen-bump.png
+    bump kamen-bump.png
 
 newmtl stupovi
 	Ns 8.000000
@@ -95,8 +95,8 @@ newmtl pod_rub
 	Ke 0.000000 0.000000 0.000000
 	map_Ka kamen.png
 	map_Kd kamen.png
-        map_bump kamen-bump.png
-        bump kamen-bump.png
+    map_bump kamen-bump.png
+    bump kamen-bump.png
 
 newmtl kamen_zid_prozor
 	Ns 8.000000
@@ -111,8 +111,8 @@ newmtl kamen_zid_prozor
 	Ke 0.000000 0.000000 0.000000
 	map_Ka kamen.png
 	map_Kd kamen.png
-        map_bump kamen-bump.png
-        bump kamen-bump.png
+    map_bump kamen-bump.png
+    bump kamen-bump.png
 
 newmtl zid_vani
 	Ns 8.000000
@@ -127,8 +127,8 @@ newmtl zid_vani
 	Ke 0.000000 0.000000 0.000000
 	map_Ka kamen.png
 	map_Kd kamen.png
-        map_bump kamen-bump.png
-        bump kamen-bump.png
+    map_bump kamen-bump.png
+    bump kamen-bump.png
 
 newmtl kamen_zid_parapet
 	Ns 8.000000
