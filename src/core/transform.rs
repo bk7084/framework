@@ -103,8 +103,8 @@ impl Transform {
         self.rotation = rot;
     }
 
-    /// Concatenates the transform before the current one. The result is
-    /// equivalent to applying `self` and then `transform`.
+    /// Concatenates the transform before the current one (on the left). The
+    /// result is equivalent to applying `self` and then `transform`.
     pub fn pre_concat(&mut self, transform: &Transform) {
         self.translation =
             transform.scale * (transform.rotation * self.translation) + transform.translation;

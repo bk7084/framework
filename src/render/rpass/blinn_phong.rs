@@ -335,7 +335,10 @@ impl RenderingPass for BlinnPhongShading {
             &Handle<TextureBundle>,
         )>::query();
         let buffer = renderer.meshes.buffer();
-        for (mesh_hdl, node_idx, materials_hdl, textures_hdl) in mesh_query.iter(&scene.world) {
+        for (mesh_hdl, node_idx, materials_hdl, textures_hdl) in mesh_query
+            .iter(&scene.world)
+            .filter(|(_, node_idx, _, _)| scene.nodes[**node_idx].is_visible())
+        {
             let mtls = renderer.material_bundles.get(*materials_hdl).unwrap();
             let texture_bundle = renderer.texture_bundles.get(*textures_hdl).unwrap();
             let transform = scene.nodes.world(*node_idx).to_mat4();

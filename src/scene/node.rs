@@ -11,6 +11,8 @@ pub struct Node {
     local: Transform,
     /// Active state of this node.
     active: bool,
+    /// Visible state of this node.
+    visible: bool,
 }
 
 impl Node {
@@ -19,6 +21,7 @@ impl Node {
             parent,
             local: Transform::identity(),
             active: true,
+            visible: false,
         }
     }
 
@@ -28,11 +31,20 @@ impl Node {
             parent: None,
             local: Transform::identity(),
             active: true,
+            visible: false,
         }
     }
 
     pub fn set_active(&mut self, active: bool) {
         self.active = active;
+    }
+
+    pub fn set_visible(&mut self, visible: bool) {
+        self.visible = visible;
+    }
+
+    pub fn is_visible(&self) -> bool {
+        self.visible
     }
 
     pub fn is_active(&self) -> bool {

@@ -30,6 +30,8 @@ pub enum Command {
     },
     /// Sets if the entity is active or not.
     SetActive { entity: Entity, active: bool },
+    /// Sets if the entity is visible or not.
+    SetVisible { entity: Entity, visible: bool },
 }
 
 /// Receiver of commands.

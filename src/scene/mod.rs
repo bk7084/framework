@@ -28,6 +28,18 @@ pub struct PyEntity {
     pub cmd_sender: Sender<Command>,
 }
 
+#[pyo3::pymethods]
+impl PyEntity {
+    fn draw(&self) {
+        self.cmd_sender
+            .send(Command::SetVisible {
+                entity: self.entity,
+                visible: true,
+            })
+            .unwrap();
+    }
+}
+
 /// Scene graph.
 pub struct Scene {
     /// Legion world for storing entities and components.
@@ -181,6 +193,9 @@ impl Scene {
                 Command::SetActive { entity, active } => {
                     self.nodes[entity.node].set_active(active);
                 }
+                Command::SetVisible { entity, visible } => {
+                    self.nodes[entity.node].set_visible(visible);
+                }
                 Command::CameraOrbit {
                     entity,
                     rotation_x,
@@ -188,9 +203,8 @@ impl Scene {
                 } => {
                     let node = &mut self.nodes[entity.node];
                     let x = node.transform().to_mat4().x_axis;
-                    let y = node.transform().to_mat4().y_axis;
                     node.transform_mut().pre_concat(&Transform::from_rotation(
-                        Quat::from_axis_angle(y.truncate(), rotation_y)
+                        Quat::from_axis_angle(Vec3::Y, rotation_y)
                             * Quat::from_axis_angle(x.truncate(), rotation_x),
                     ));
                 }

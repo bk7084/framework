@@ -122,8 +122,8 @@ impl PyAppState {
     }
 
     /// Create a camera
-    #[pyo3(name = "create_camera")]
-    pub fn create_camera_py(&mut self, proj: Projection, pos: &np::PyArray2<f32>) -> PyEntity {
+    #[pyo3(name = "create_main_camera")]
+    pub fn create_main_camera_py(&mut self, proj: Projection, pos: &np::PyArray2<f32>) -> PyEntity {
         Python::with_gil(|_py| {
             let entity =
                 self.create_main_camera(proj, Vec3::from_slice(pos.readonly().as_slice().unwrap()));
@@ -135,7 +135,7 @@ impl PyAppState {
     }
 
     /// Adds a mesh to the scene.
-    pub fn add_mesh(&mut self, mesh: &Mesh) -> PyEntity {
+    pub fn add_mesh_py(&mut self, mesh: &Mesh) -> PyEntity {
         let entity = self.spawn_object_with_mesh(NodeIdx::root(), mesh);
         PyEntity {
             entity,
@@ -440,6 +440,7 @@ pub fn run_main_loop(mut app: PyAppState, builder: PyWindowBuilder) {
 
         let mut scene = app.scene.write().unwrap();
         let cube_node = &mut scene.nodes[cube_entity.node];
+        cube_node.set_visible(true);
         let cube_transform = cube_node.transform_mut();
         cube_transform.rotation = Quat::from_rotation_y(45.0f32.to_radians());
         cube_transform.scale = Vec3::splat(1.5);
@@ -467,7 +468,7 @@ pub fn run_main_loop(mut app: PyAppState, builder: PyWindowBuilder) {
 
         let obj_sponza_node = &mut scene.nodes[obj_sponza_entity.node];
         let obj_sponza_transform = obj_sponza_node.transform_mut();
-        obj_sponza_transform.scale = Vec3::splat(0.01);
+        obj_sponza_transform.scale = Vec3::splat(0.02);
 
         (rect0_entity.node, rect1_entity.node, cube_entity.node)
     };
