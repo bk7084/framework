@@ -143,3 +143,9 @@ cython_debug/
 
 # ImGUI config
 *.ini
+
+# User-specific files
+/data/blender_cube
+/data/blender_sphere
+/data/sibenik
+/data/sponza
