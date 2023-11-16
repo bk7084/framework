@@ -342,3 +342,15 @@ fn resolve_path(path: &Path, base: &Path) -> Option<PathBuf> {
         None
     }
 }
+
+#[pyo3::pymethods]
+impl Material {
+    #[new]
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn set_kd(&mut self, kd: [f32; 3]) {
+        self.kd = Some(kd);
+    }
+}

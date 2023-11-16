@@ -28,6 +28,13 @@ pub enum Command {
         scale: Vec3,
         order: ConcatOrder,
     },
+    /// Sets the transform of the entity.
+    SetTransform {
+        entity: Entity,
+        translation: Vec3,
+        rotation: Quat,
+        scale: Vec3,
+    },
     /// Sets if the entity is active or not.
     SetActive { entity: Entity, active: bool },
     /// Sets if the entity is visible or not.

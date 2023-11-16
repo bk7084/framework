@@ -64,7 +64,7 @@ check_python_toolchain
 
 # Check if the correct number of arguments is provided
 if [ "$#" -lt 1 ]; then
-  echo "Usage: $0 {run|build|pkg} [debug|trace]"
+  echo "Usage: $0 {run|build|pkg|pub-test} [debug|trace]"
   exit 1
 fi
 
@@ -107,7 +107,11 @@ case $command in
     ;;
   "pkg")
     echo "Packaging..."
-    maturin build --release --target aarch64-unknown-linux-gnu --zig
+    maturin build --release
+    ;;
+  "pub-test")
+    echo "Publishing to test.pypi.org..."
+    maturin publish --repository testpypi
     ;;
   *)
     echo "Invalid command: $command"

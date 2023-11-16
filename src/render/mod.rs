@@ -84,8 +84,8 @@ impl Renderer {
             address_mode_v: wgpu::AddressMode::Repeat,
             address_mode_w: wgpu::AddressMode::Repeat,
             mag_filter: wgpu::FilterMode::Linear,
-            min_filter: wgpu::FilterMode::Nearest,
-            mipmap_filter: wgpu::FilterMode::Nearest,
+            min_filter: wgpu::FilterMode::Linear,
+            mipmap_filter: wgpu::FilterMode::Linear,
             ..Default::default()
         });
         let depth_sampler = context.device.create_sampler(&wgpu::SamplerDescriptor {
@@ -239,10 +239,7 @@ impl Renderer {
             let samplers = bundle
                 .samplers
                 .iter()
-                .map(|name| {
-                    log::debug!("sampler: {}", name);
-                    self.samplers.get(name).unwrap()
-                })
+                .map(|name| self.samplers.get(name).unwrap())
                 .collect::<Vec<_>>();
             let bind_group_layout = texture_bundle_bind_group_layout(&self.device);
             let bind_group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {

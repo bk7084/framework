@@ -30,6 +30,8 @@ fn bkfw(_py: Python, module: &PyModule) -> PyResult<()> {
     module.add_class::<core::camera::Projection>()?;
     module.add_class::<core::camera::ProjectionKind>()?;
     module.add_class::<core::mesh::Mesh>()?;
+    module.add_class::<core::mesh::SubMesh>()?;
     module.add_class::<core::mesh::PyTopology>()?;
+    module.add_class::<core::Material>()?;
     Ok(())
 }

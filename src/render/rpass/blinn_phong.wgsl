@@ -1,3 +1,17 @@
+    // illum 0: Color on, ambient off
+    // illum 1: Color on, ambient on
+    // illum 2: Highlight on
+    // illum 3: Reflection on and ray trace on
+    // illum 4: Transparency: Glass on, Reflection: Ray trace on
+    // illum 5: Reflection: Fresnel on and Ray trace on
+    // illum 6: Transparency: Refraction on, Reflection: Fresnel off and Ray trace on
+    // illum 7: Transparency: Refraction on, Reflection: Fresnel on and Ray trace on
+    // illum 8: Reflection on and Ray trace off
+    // illum 9: Transparency: Glass on, Reflection: Ray trace off
+    // illum 10: Casts shadows onto invisible surfaces
+    // Self defined:
+    // - 11: kd as color, no lighting
+
 /// Camera data.
 struct Globals {
     view: mat4x4<f32>,
@@ -55,7 +69,6 @@ struct Material {
     map_disp: u32,
     map_decal: u32,
     map_norm: u32,
-    // padding: vec3<u32>,
 }
 
 /// Vertex shader input.
@@ -167,23 +180,24 @@ fn blinn_phong_shading(view_mat: mat4x4<f32>, pos_eye_space: vec3<f32>, n: vec3<
 
 @fragment
 fn fs_main(vout: VSOutput) -> @location(0) vec4<f32> {
-    let ia = vec3<f32>(0.01, 0.01, 0.01);
+    let ia = vec3<f32>(0.02, 0.02, 0.02);
 
     var materials_count: u32 = arrayLength(&materials);
     var default_material_index: u32 = materials_count - 1u;
 
     var material = materials[pconsts.material_index];
-    var color = materials[default_material_index].kd.rgb;
-
-    var ka = material.ka.rgb;
-        if (material.map_ka != INVALID_INDEX) {
-            ka = textureSample(textures[material.map_ka], samplers[material.map_ka], vout.uv).rgb;
-        }
 
     var kd = material.kd.rgb;
     if (material.map_kd != INVALID_INDEX) {
         kd = textureSample(textures[material.map_kd], samplers[material.map_kd], vout.uv).rgb;
     }
+
+    // Output kd as color.
+    if (material.illum == 11u) {
+        return vec4<f32>(kd, 1.0);
+    }
+
+    var color = materials[default_material_index].kd.rgb;
 
     var ks = material.ks.rgb;
     if (material.map_ks != INVALID_INDEX) {
@@ -199,24 +213,14 @@ fn fs_main(vout: VSOutput) -> @location(0) vec4<f32> {
 
     color = blinn_phong_shading(view_mat, vout.pos_eye_space, vout.normal_eye_space, kd, ks, ns);
 
-    // illum 0: Color on, ambient off
-    // illum 1: Color on, ambient on
-    // illum 2: Highlight on
-    // illum 3: Reflection on and ray trace on
-    // illum 4: Transparency: Glass on, Reflection: Ray trace on
-    // illum 5: Reflection: Fresnel on and Ray trace on
-    // illum 6: Transparency: Refraction on, Reflection: Fresnel off and Ray trace on
-    // illum 7: Transparency: Refraction on, Reflection: Fresnel on and Ray trace on
-    // illum 8: Reflection on and Ray trace off
-    // illum 9: Transparency: Glass on, Reflection: Ray trace off
-    // illum 10: Casts shadows onto invisible surfaces
-
-    // Ambient off
-    if (material.illum == 0u) {
-        ka = vec3<f32>(0.0, 0.0, 0.0);
+    // Ambient on.
+    if (material.illum != 0u) {
+        var ka = material.ka.rgb;
+        if (material.map_ka != INVALID_INDEX) {
+            ka = textureSample(textures[material.map_ka], samplers[material.map_ka], vout.uv).rgb;
+        }
+        color += ka * ia;
     }
-
-    color += ka * ia;
 
     // Output UV as color.
     // color = vec3<f32>(vout.uv, 0.0);

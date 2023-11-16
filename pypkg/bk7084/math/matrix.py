@@ -15,7 +15,7 @@ class Matrix(np.ndarray):
     _shape = None
 
     def __new__(cls, *args, **kwargs):
-        dtype = kwargs.get('dtype', float)
+        dtype = kwargs.get('dtype', np.float32)
 
         if len(args) == 0:
             return np.zeros(cls._shape, dtype=dtype).view(dtype)
@@ -141,7 +141,7 @@ class Matrix(np.ndarray):
         return self.transpose.conjugate()
 
     @classmethod
-    def identity(cls, dtype=float):
+    def identity(cls, dtype=np.float32):
         return np.identity(cls._shape[0], dtype=dtype).view(cls)
 
     @classmethod
@@ -151,7 +151,7 @@ class Matrix(np.ndarray):
             raise ValueError("Input matrix doesn't have shape of 2 x 2.")
         intype = dtype
         if dtype is None:
-            intype = float if mat.dtype is None else mat.dtype
+            intype = np.float32 if mat.dtype is None else mat.dtype
         m = cls.identity(intype)
         m[:2, :2] = mat[:, :]
         return m.view(cls)
@@ -163,7 +163,7 @@ class Matrix(np.ndarray):
             raise ValueError("Input matrix doesn't have shape of 3 x 3.")
         intype = dtype
         if dtype is None:
-            intype = float if mat.dtype is None else mat.dtype
+            intype = np.float32 if mat.dtype is None else mat.dtype
         m = cls.identity(intype)
         if cls._shape[0] <= 3:
             m[:, :] = mat[:cls._shape[0], :cls._shape[1]]
@@ -178,13 +178,13 @@ class Matrix(np.ndarray):
             raise ValueError("Input matrix doesn't have shape of 4 x 4.")
         intype = dtype
         if dtype is None:
-            intype = float if mat.dtype is None else mat.dtype
+            intype = np.float32 if mat.dtype is None else mat.dtype
         m = cls.identity(intype)
         m[:, :] = m[:cls._shape[0], :cls._shape[1]]
         return m.view(cls)
 
     @classmethod
-    def from_diagonal(cls, diagonal: np.ndarray, dtype=float):
+    def from_diagonal(cls, diagonal: np.ndarray, dtype=np.float32):
         """Creates a matrix from a vector."""
         m = np.zeros(cls._shape, dtype=dtype)
         np.fill_diagonal(m, diagonal)
@@ -218,7 +218,7 @@ class Mat2(Matrix):
         return cls([[x_axis[0], y_axis[0]], [x_axis[1], y_axis[1]]])
 
     @classmethod
-    def from_rotation(cls, angle: float, dtype=float):
+    def from_rotation(cls, angle: np.float32, dtype=np.float32):
         """Creates a 2x2 matrix containing a rotation of `angle` (in radians)."""
         cos = math.cos(angle)
         sin = math.sin(angle)
@@ -244,19 +244,19 @@ class Mat3(Matrix):
         return Vec3(self[:, i])
 
     @classmethod
-    def from_cols(cls, x_axis: Vec3, y_axis: Vec3, z_axis: Vec3, dtype=float):
+    def from_cols(cls, x_axis: Vec3, y_axis: Vec3, z_axis: Vec3, dtype=np.float32):
         """Creates a 3x3 matrix from three column vectors."""
         return cls([[x_axis[0], y_axis[0], z_axis[0]],
                     [x_axis[1], y_axis[1], z_axis[1]],
                     [x_axis[2], y_axis[2], z_axis[2]]], dtype=dtype)
 
     @classmethod
-    def from_rows(cls, x_axis: Vec3, y_axis: Vec3, z_axis: Vec3, dtype=float):
+    def from_rows(cls, x_axis: Vec3, y_axis: Vec3, z_axis: Vec3, dtype=np.float32):
         """Creates a 3x3 matrix from three row vectors."""
         return cls([x_axis, y_axis, z_axis], dtype=dtype)
 
     @classmethod
-    def from_euler_angles(cls, seq, angles, degrees=False, dtype=float):
+    def from_euler_angles(cls, seq, angles, degrees=False, dtype=np.float32):
         """Creates a Matrix from the specified Euler angles (more precisely, Tait-Bryan angles, in radians).
 
         Rotations in 3-D can be represented by a sequence of 3 rotations around sequence of axes.
@@ -265,7 +265,7 @@ class Mat3(Matrix):
             seq (str):
                 Specifies sequence of axes for rotations. Up to 3 characters belonging to the set {'x', 'y', 'z'}.
 
-            angles (float or array_like, shape (N,) or list):
+            angles (np.float32 or array_like, shape (N,) or list):
                 Euler angles specified in radians (`degrees` is False) or in degrees (`degrees` is True)
                 For a single character in `seq`, `angles` can be:
                   - a single value
@@ -309,7 +309,7 @@ class Mat3(Matrix):
         return m
 
     @classmethod
-    def from_axis_angle(cls, axis: Vec3, angle, degrees=False, dtype=float):
+    def from_axis_angle(cls, axis: Vec3, angle, degrees=False, dtype=np.float32):
         """Creates a 3D rotation matrix from a normalized rotation `axis` and `angle` (in radians)."""
         if axis == Vec3.unit_x(dtype):
             return cls.from_rotation_x(angle, degrees, dtype)
@@ -329,7 +329,7 @@ class Mat3(Matrix):
                         [uxz * a - uy * sin, uyz * a + ux * sin, cos + uzz * a]], dtype=dtype)
 
     @classmethod
-    def from_rotation_x(cls, angle, degrees=False, dtype=float):
+    def from_rotation_x(cls, angle, degrees=False, dtype=np.float32):
         """Creates a 3D rotation matrix from `angle` (in radians) around the x axis."""
         angle = angle if not degrees else math.radians(angle)
         cos = math.cos(angle)
@@ -339,7 +339,7 @@ class Mat3(Matrix):
                     [0., sin, cos]], dtype=dtype)
 
     @classmethod
-    def from_rotation_y(cls, angle, degrees=False, dtype=float):
+    def from_rotation_y(cls, angle, degrees=False, dtype=np.float32):
         """Creates a 3D rotation matrix from `angle` (in radians) around the y axis."""
         angle = angle if not degrees else math.radians(angle)
         cos = math.cos(angle)
@@ -349,7 +349,7 @@ class Mat3(Matrix):
                     [-sin, 0., cos]], dtype=dtype)
 
     @classmethod
-    def from_rotation_z(cls, angle, degrees=False, dtype=float):
+    def from_rotation_z(cls, angle, degrees=False, dtype=np.float32):
         """Creates a 3D rotation matrix from `angle` (in radians) around the z axis."""
         angle = angle if not degrees else math.radians(angle)
         cos = math.cos(angle)
@@ -359,13 +359,13 @@ class Mat3(Matrix):
                     [0., 0., 1.]], dtype=dtype)
 
     @classmethod
-    def from_scale(cls, scale: Vec3, dtype=float):
+    def from_scale(cls, scale: Vec3, dtype=np.float32):
         """Creates an affine transformation matrix from the given non-uniform 3D `scale`.
         The resulting matrix can be used to transform 3D points and vectors."""
         return cls.from_diagonal(scale, dtype)
 
     @classmethod
-    def from_translation(cls, translation: Vec2, dtype=float):
+    def from_translation(cls, translation: Vec2, dtype=np.float32):
         """Creates an affine transformation matrix from the given 2D `translation`.
         The resulting matrix can be used to transform 2D points and vectors."""
         m = cls.identity(dtype=dtype)
@@ -379,13 +379,13 @@ class Mat3(Matrix):
         assert (mat.shape == (4, 4))
         intype = dtype
         if dtype is None:
-            intype = float if mat.dtype is None else mat.dtype
+            intype = np.float32 if mat.dtype is None else mat.dtype
         m = np.zeros(cls._shape, dtype=intype)
         m[:3, :3] = mat[:3, :3]
         return m
 
     @classmethod
-    def from_quat(cls, quat: Quat, dtype=float):
+    def from_quat(cls, quat: Quat, dtype=np.float32):
         """Creates an affine transformation matrix from the given quaternion (unit, normalised)."""
         xx, yy, zz = quat.x * quat.x, quat.y * quat.y, quat.z * quat.z
         xy, xz, xw = quat.x * quat.y, quat.x * quat.z, quat.x * quat.w
@@ -426,7 +426,7 @@ class Mat4(Matrix):
                     [x_axis[3], y_axis[3], z_axis[3], w_axis[3]]])
 
     @classmethod
-    def from_euler_angles(cls, seq, angles, degrees=False, dtype=float):
+    def from_euler_angles(cls, seq, angles, degrees=False, dtype=np.float32):
         """Creates a Matrix from the specified Euler angles (more precisely, Tait-Bryan angles, in radians).
 
         Rotations in 3-D can be represented by a sequence of 3 rotations around sequence of axes.
@@ -435,7 +435,7 @@ class Mat4(Matrix):
             seq (str):
                 Specifies sequence of axes for rotations. Up to 3 characters belonging to the set {'x', 'y', 'z'}.
 
-            angles (float or array_like, shape (N,) or list):
+            angles (np.float32 or array_like, shape (N,) or list):
                 Euler angles specified in radians (`degrees` is False) or in degrees (`degrees` is True)
                 For a single character in `seq`, `angles` can be:
                     - a single value
@@ -464,46 +464,46 @@ class Mat4(Matrix):
         return cls.from_mat3(Mat3.from_euler_angles(seq, angles, degrees, dtype), dtype).view(cls)
 
     @classmethod
-    def from_axis_angle(cls, axis: Vec3, angle, degrees=False, dtype=float):
+    def from_axis_angle(cls, axis: Vec3, angle, degrees=False, dtype=np.float32):
         """Creates an affine transformation matrix containing a rotation around a normalized
         rotation `axis` and `angle` (in radians)."""
         return cls.from_mat3(Mat3.from_axis_angle(axis, angle, degrees, dtype), dtype)
 
     @classmethod
-    def from_rotation_x(cls, angle, degrees=False, dtype=float):
+    def from_rotation_x(cls, angle, degrees=False, dtype=np.float32):
         """Creates a 3D rotation matrix from `angle` (in radians) around the x axis."""
         return cls.from_mat3(Mat3.from_rotation_x(angle, degrees, dtype), dtype)
 
     @classmethod
-    def from_rotation_y(cls, angle, degrees=False, dtype=float):
+    def from_rotation_y(cls, angle, degrees=False, dtype=np.float32):
         """Creates a 3D rotation matrix from `angle` (in radians) around the y axis."""
         return cls.from_mat3(Mat3.from_rotation_y(angle, degrees, dtype), dtype)
 
     @classmethod
-    def from_rotation_z(cls, angle, degrees=False, dtype=float):
+    def from_rotation_z(cls, angle, degrees=False, dtype=np.float32):
         """Creates a 3D rotation matrix from `angle` (in radians) around the z axis."""
         return cls.from_mat3(Mat3.from_rotation_z(angle, degrees, dtype), dtype)
 
     @classmethod
-    def from_scale(cls, scale: Vec3, dtype=float):
+    def from_scale(cls, scale: Vec3, dtype=np.float32):
         """Creates an affine transformation matrix from the given non-uniform 2D `scale`.
         The resulting matrix can be used to transform 2D points and vectors."""
         return cls.from_diagonal(Vec4.from_vec3(scale, 1.), dtype=dtype)
 
     @classmethod
-    def from_translation(cls, translation: Vec3, dtype=float):
+    def from_translation(cls, translation: Vec3, dtype=np.float32):
         """Creates an affine transformation matrix from the given 3D `translation`."""
         m = cls.identity(dtype=dtype)
         m[:3, 3] = np.asarray(translation).reshape(3, )
         return m
 
     @classmethod
-    def from_quat(cls, quat, dtype=float):
+    def from_quat(cls, quat, dtype=np.float32):
         """Creates an affine transformation matrix from the given quaternion (normalised)."""
         return cls.from_mat3(Mat3.from_quat(quat, dtype=dtype))
 
     @classmethod
-    def look_at_gl(cls, eye: Vec3, center: Vec3, up: Vec3, dtype=float):
+    def look_at_gl(cls, eye: Vec3, center: Vec3, up: Vec3, dtype=np.float32):
         """Creates a right-handed view matrix using a camera position, and up direction, and a focal point.
         This is the same as the OpenGL `gluLookAt` function. See
         https://www.khronos.org/registry/OpenGL-Refpages/gl2.1/xhtml/gluLookAt.xml
@@ -511,7 +511,7 @@ class Mat4(Matrix):
         return cls.look_at_rh_y_up(eye, center, up, dtype)
 
     @classmethod
-    def look_at_rh_y_up(cls, eye: Vec3, center: Vec3, up: Vec3, dtype=float):
+    def look_at_rh_y_up(cls, eye: Vec3, center: Vec3, up: Vec3, dtype=np.float32):
         forward = (center - eye).normalised
         up = up.normalised
         u = cross(forward, up).normalised
@@ -523,7 +523,7 @@ class Mat4(Matrix):
                               Vec4(0., 0., 0., 1.))
 
     @classmethod
-    def perspective_gl(cls, fov_y, aspect_ratio, z_near, z_far, degrees=False, dtype=float):
+    def perspective_gl(cls, fov_y, aspect_ratio, z_near, z_far, degrees=False, dtype=np.float32):
         """Creates a right-handed perspective projection matrix with [-1, 1] depth range for a symmetric
         perspective-view frustum.
 
@@ -534,18 +534,18 @@ class Mat4(Matrix):
         https://www.khronos.org/registry/OpenGL-Refpages/gl2.1/xhtml/gluPerspective.xml
 
         Args:
-            fov_y (float):
+            fov_y (np.float32):
                 Specifies the field of view angle in the y-direction, in radians if `degrees` not set to True.
 
-            aspect_ratio (float):
+            aspect_ratio (np.float32):
                 Specifies the aspect ratio that determines the field of view in the x-direction. The aspect ratio is the
                 ratio of x (width) to y (height).
 
-            z_near (float):
+            z_near (np.float32):
                 Specifies the near distance from the viewer to the near clipping plane (not in the world frame,
                 always positive).
 
-            z_far (float):
+            z_far (np.float32):
                 Specifies the far distance from the viewer to the far clipping plane (not in the world frame,
                 always positive).
 
@@ -567,7 +567,7 @@ class Mat4(Matrix):
                     [0., 0., -1., 0.]], dtype=dtype)
 
     @classmethod
-    def orthographic_gl(cls, left, right, bottom, top, near, far, dtype=float):
+    def orthographic_gl(cls, left, right, bottom, top, near, far, dtype=np.float32):
         """Creates a right-handed orthographic projection matrix with [-1, 1] depth range.
 
         The source coordinate space is right-handed and y-up, the destination space is left-handed

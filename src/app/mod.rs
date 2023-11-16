@@ -65,6 +65,7 @@ pub struct PyAppState {
 impl PyAppState {
     #[new]
     pub fn new() -> PyResult<Self> {
+        env_logger::init();
         let now = std::time::Instant::now();
         let context = Arc::new(GpuContext::new(None));
         let scene = Scene::new();
@@ -122,11 +123,30 @@ impl PyAppState {
     }
 
     /// Create a camera
-    #[pyo3(name = "create_main_camera")]
-    pub fn create_main_camera_py(&mut self, proj: Projection, pos: &np::PyArray2<f32>) -> PyEntity {
+    ///
+    /// # Arguments
+    ///
+    /// * `pos` - The position of the camera.
+    /// * `target` - The target of the camera.
+    /// * `fov` - The field of view of the camera in degrees.
+    #[pyo3(name = "create_camera")]
+    pub fn create_camera_py(
+        &mut self,
+        pos: &np::PyArray2<f32>,
+        look_at: &np::PyArray2<f32>,
+        fov_v: f32,
+    ) -> PyEntity {
+        log::debug!(
+            "[Py] Creating camera at {:?} looking at {:?} with fov: {:?}",
+            pos,
+            look_at,
+            fov_v
+        );
+        let proj = Projection::perspective(fov_v, 0.1, 200.0);
         Python::with_gil(|_py| {
-            let entity =
-                self.create_main_camera(proj, Vec3::from_slice(pos.readonly().as_slice().unwrap()));
+            let pos = Vec3::from_slice(pos.readonly().as_slice().unwrap());
+            let target = Vec3::from_slice(look_at.readonly().as_slice().unwrap());
+            let entity = self.create_camera(proj, pos, target);
             PyEntity {
                 entity,
                 cmd_sender: self.sender.clone(),
@@ -135,6 +155,7 @@ impl PyAppState {
     }
 
     /// Adds a mesh to the scene.
+    #[pyo3(name = "add_mesh")]
     pub fn add_mesh_py(&mut self, mesh: &Mesh) -> PyEntity {
         let entity = self.spawn_object_with_mesh(NodeIdx::root(), mesh);
         PyEntity {
@@ -151,7 +172,6 @@ impl PyAppState {
         event_loop: &EventLoop<UserEvent>,
         builder: PyWindowBuilder,
     ) -> Window {
-        env_logger::init();
         let inner_size = builder.size.unwrap_or([800, 600]);
         let position = builder.position.unwrap_or([200, 200]);
         let window = winit::window::WindowBuilder::new()
@@ -204,7 +224,7 @@ impl PyAppState {
     }
 
     /// Creates the main camera.
-    pub fn create_main_camera(&mut self, proj: Projection, pos: Vec3) -> Entity {
+    pub fn create_camera(&mut self, proj: Projection, pos: Vec3, target: Vec3) -> Entity {
         let entity = self
             .scene
             .write()
@@ -213,7 +233,7 @@ impl PyAppState {
                 let entity = scene.spawn(NodeIdx::root(), (camera,));
                 let transform = scene.nodes[entity.node].transform_mut();
                 transform.translation = pos;
-                transform.looking_at(Vec3::ZERO, Vec3::Y);
+                transform.looking_at(target, Vec3::Y);
                 entity
             })
             .expect("Failed to create camera!");
@@ -283,19 +303,19 @@ impl PyAppState {
         .unwrap();
     }
 
-    fn dispatch_update_event(&self, input: Input, dt: f32) {
+    fn dispatch_update_event(&self, input: Input, dt: f32, t: f32) {
         Python::with_gil(|py| {
             self.dispatch_event(
                 py,
                 "on_update",
-                PyTuple::new(py, &[dt.into_py(py), input.into_py(py)]),
+                PyTuple::new(py, &[input.into_py(py), dt.into_py(py), t.into_py(py)]),
                 None,
             )
             .unwrap();
         });
     }
 
-    fn update(&mut self, win_size: (u32, u32), dt: f32, _t: f32) {
+    fn update(&mut self, win_size: (u32, u32), dt: f32, t: f32) {
         let input = self.input.take();
 
         // Rotate the camera with the middle mouse button.
@@ -346,7 +366,7 @@ impl PyAppState {
         }
 
         // Dispatch the update event, potentially run the user's update function.
-        self.dispatch_update_event(input, dt);
+        self.dispatch_update_event(input, dt, t);
     }
 }
 
@@ -363,157 +383,168 @@ pub fn run_main_loop(mut app: PyAppState, builder: PyWindowBuilder) {
     let mut surface = Surface::new(&context, &window);
 
     let mut blinn_phong_rpass = BlinnPhongShading::new(&context.device, surface.format());
-    // let mut clear_rpass = ClearPass::new(Renderer::CLEAR_COLOR);
 
-    app.create_main_camera(
-        Projection::perspective(45.0, 0.0001, 200.0),
-        Vec3::new(5.0, 5.0, 5.0),
-    );
-
-    let mut cube = Mesh::cube(1.0);
-    let mut textures = FxHashMap::default();
-    textures.insert(TextureType::MapKd, "data/textures/checker.png".into());
-    textures.insert(TextureType::MapKa, "data/textures/checker_color.png".into());
-    cube.materials = Some(vec![
-        Material {
-            kd: Some([1.0, 0.0, 0.0]),
-            textures,
-            ..Default::default()
-        },
-        Material {
-            kd: Some([0.0, 1.0, 0.0]),
-            ..Default::default()
-        },
-        Material {
-            kd: Some([0.0, 0.0, 1.0]),
-            ..Default::default()
-        },
-        Material {
-            kd: Some([1.0, 1.0, 0.0]),
-            ..Default::default()
-        },
-    ]);
-    cube.sub_meshes = Some(vec![
-        SubMesh {
-            range: 0..3,
-            material: Some(0),
-        },
-        SubMesh {
-            range: 3..6,
-            material: Some(1),
-        },
-        SubMesh {
-            range: 6..9,
-            material: Some(2),
-        },
-        SubMesh {
-            range: 9..12,
-            material: Some(3),
-        },
-        SubMesh {
-            range: 12..36,
-            material: None,
-        },
-    ]);
-
-    let mut rect = Mesh::plane(0.5, Alignment::XY);
-    let mut textures = FxHashMap::default();
-    textures.insert(TextureType::MapKd, "data/textures/checker.png".into());
-    textures.insert(TextureType::MapKa, "data/textures/checker_color.png".into());
-    rect.materials = Some(vec![Material {
-        kd: Some([1.0, 1.0, 1.0]),
-        textures,
-        ..Default::default()
-    }]);
-    rect.sub_meshes = Some(vec![SubMesh {
-        range: 0..6,
-        material: Some(0),
-    }]);
-
-    let sphere = Mesh::sphere(1.0, 32, 16);
-    let obj_cube = Mesh::load_from_obj("data/blender_cube/cube.obj");
-    // let obj_sibenik = Mesh::load_from_obj("./data/sibenik/sibenik.obj");
-    // let obj_sponza = Mesh::load_from_obj("./data/sponza/sponza.obj");
-    let obj_sphere = Mesh::load_from_obj("./data/blender_sphere/sphere.obj");
-
-    app.spawn_light(
-        NodeIdx::root(),
-        Light::Directional {
-            direction: Vec3::new(-1.0, -1.0, -1.0).normalize(),
-            color: Color::WHITE,
-        },
-    );
-    let point_light = app.spawn_light(
-        NodeIdx::root(),
-        Light::Point {
-            color: Color::WHITE,
-        },
-    );
-
-    let (rect0_id, rect1_id, cube_id) = {
-        let cube_entity = app.spawn_object_with_mesh(NodeIdx::root(), &cube);
-        let rect0_entity = app.spawn_object_with_mesh(NodeIdx::root(), &rect);
-        let rect1_entity = app.spawn_object_with_mesh(rect0_entity.node, &rect);
-        let sphere_entity = app.spawn_object_with_mesh(NodeIdx::root(), &sphere);
-        let obj_cube_entity = app.spawn_object_with_mesh(NodeIdx::root(), &obj_cube);
-        let obj_sphere_entity = app.spawn_object_with_mesh(NodeIdx::root(), &obj_sphere);
-        // let obj_sibenik_entity = app.spawn_object_with_mesh(NodeIdx::root(),
-        // &obj_sibenik);
-        // let obj_sponza_entity = app.spawn_object_with_mesh(NodeIdx::root(),
-        // &obj_sponza);
+    // let mut cube = Mesh::cube(1.0);
+    // let mut textures = FxHashMap::default();
+    // textures.insert(TextureType::MapKd, "data/textures/checker.png".into());
+    // textures.insert(TextureType::MapKa,
+    // "data/textures/checker_color.png".into()); cube.materials = Some(vec![
+    //     Material {
+    //         kd: Some([1.0, 0.0, 0.0]),
+    //         textures,
+    //         ..Default::default()
+    //     },
+    //     Material {
+    //         kd: Some([0.0, 1.0, 0.0]),
+    //         ..Default::default()
+    //     },
+    //     Material {
+    //         kd: Some([0.0, 0.0, 1.0]),
+    //         ..Default::default()
+    //     },
+    //     Material {
+    //         kd: Some([1.0, 1.0, 0.0]),
+    //         ..Default::default()
+    //     },
+    // ]);
+    // cube.sub_meshes = Some(vec![
+    //     SubMesh {
+    //         range: 0..3,
+    //         material: Some(0),
+    //     },
+    //     SubMesh {
+    //         range: 3..6,
+    //         material: Some(1),
+    //     },
+    //     SubMesh {
+    //         range: 6..9,
+    //         material: Some(2),
+    //     },
+    //     SubMesh {
+    //         range: 9..12,
+    //         material: Some(3),
+    //     },
+    //     SubMesh {
+    //         range: 12..36,
+    //         material: None,
+    //     },
+    // ]);
+    //
+    // let mut rect = Mesh::plane(0.5, Alignment::XY);
+    // let mut textures = FxHashMap::default();
+    // textures.insert(TextureType::MapKd, "data/textures/checker.png".into());
+    // textures.insert(TextureType::MapKa,
+    // "data/textures/checker_color.png".into()); rect.materials =
+    // Some(vec![Material {     kd: Some([1.0, 1.0, 1.0]),
+    //     textures,
+    //     ..Default::default()
+    // }]);
+    // rect.sub_meshes = Some(vec![SubMesh {
+    //     range: 0..6,
+    //     material: Some(0),
+    // }]);
+    //
+    // let sphere = Mesh::sphere(1.0, 32, 16);
+    // let obj_cube = Mesh::load_from_obj("data/blender_cube/cube.obj");
+    // // let obj_sibenik = Mesh::load_from_obj("./data/sibenik/sibenik.obj");
+    // // let obj_sponza = Mesh::load_from_obj("./data/sponza/sponza.obj");
+    // let obj_sphere = Mesh::load_from_obj("./data/blender_sphere/sphere.obj");
+    //
+    {
+        // Light settings.
+        app.spawn_light(
+            NodeIdx::root(),
+            Light::Directional {
+                direction: Vec3::new(-1.0, -1.0, -1.0).normalize(),
+                color: Color::WHITE,
+            },
+        );
+        let point_light = app.spawn_light(
+            NodeIdx::root(),
+            Light::Point {
+                color: Color::WHITE,
+            },
+        );
 
         let mut scene = app.scene.write().unwrap();
-
-        let cube_node = &mut scene.nodes[cube_entity.node];
-        cube_node.set_visible(true);
-        let cube_transform = cube_node.transform_mut();
-        cube_transform.rotation = Quat::from_rotation_y(45.0f32.to_radians());
-        cube_transform.translation = Vec3::new(2.0, 2.0, 0.0);
-        cube_transform.scale = Vec3::splat(0.5);
-
-        let rect_node = &mut scene.nodes[rect0_entity.node];
-        let rect_transform = rect_node.transform_mut();
-        // rect_node.set_position([2.0, 0.0, 0.0].into());
-        // rect_transform.rotation =
-        // Quat::from_rotation_z(45.0f32.to_radians());
-        let tra = Transform::from_translation(Vec3::new(2.0, 0.0, 0.0));
-        let rot = Transform::from_rotation(Quat::from_rotation_z(45.0f32.to_radians()));
-        *rect_transform = tra * *rect_transform * rot;
-
-        let sphere_node = &mut scene.nodes[sphere_entity.node];
-        let sphere_transform = sphere_node.transform_mut();
-        sphere_transform.translation = Vec3::new(-4.0, 0.0, 0.0);
-        sphere_node.set_visible(true);
-
-        let obj_cube_node = &mut scene.nodes[obj_cube_entity.node];
-        let obj_cube_transform = obj_cube_node.transform_mut();
-        obj_cube_transform.translation = Vec3::new(0.0, 0.0, 0.0);
-        obj_cube_transform.rotation = Quat::from_rotation_y(45.0f32.to_radians());
-        obj_cube_transform.scale = Vec3::splat(0.3);
-        obj_cube_node.set_visible(true);
-
-        // let obj_sibenik_node = &mut scene.nodes[obj_sibenik_entity.node];
-        // let obj_sibenik_transform = obj_sibenik_node.transform_mut();
-        // obj_sibenik_transform.translation = Vec3::new(0.0, 0.0, 0.0);
-
-        // let obj_sponza_node = &mut scene.nodes[obj_sponza_entity.node];
-        // let obj_sponza_transform = obj_sponza_node.transform_mut();
-        // obj_sponza_transform.translation = Vec3::new(0.0, -1.0, 0.0);
-        // obj_sponza_transform.scale = Vec3::splat(0.02);
-        // obj_sponza_node.set_visible(true);
-
-        let obj_sphere_node = &mut scene.nodes[obj_sphere_entity.node];
-        let obj_sphere_transform = obj_sphere_node.transform_mut();
-        obj_sphere_transform.translation = Vec3::new(4.0, 0.0, 0.0);
-        obj_sphere_transform.scale = Vec3::splat(1.5);
-        obj_sphere_node.set_visible(true);
-
         let point_light_node = &mut scene.nodes[point_light.node];
         let point_light_transform = point_light_node.transform_mut();
         point_light_transform.translation = Vec3::new(1.0, 1.0, 0.0);
+    }
 
-        (rect0_entity.node, rect1_entity.node, cube_entity.node)
-    };
+    // let triangle = Mesh::triangle(&[
+    //     Vec3::new(0.0, 0.0, 0.0),
+    //     Vec3::new(1.0, 0.0, 0.0),
+    //     Vec3::new(0.0, 1.0, 0.0),
+    // ]);
+    //
+    // let (rect0_id, rect1_id, cube_id) = {
+    //     let cube_entity = app.spawn_object_with_mesh(NodeIdx::root(), &cube);
+    //     let rect0_entity = app.spawn_object_with_mesh(NodeIdx::root(), &rect);
+    //     let rect1_entity = app.spawn_object_with_mesh(rect0_entity.node, &rect);
+    //     let sphere_entity = app.spawn_object_with_mesh(NodeIdx::root(), &sphere);
+    //     let triangle_entity = app.spawn_object_with_mesh(NodeIdx::root(),
+    // &triangle);     let obj_cube_entity =
+    // app.spawn_object_with_mesh(NodeIdx::root(), &obj_cube);
+    //     let obj_sphere_entity = app.spawn_object_with_mesh(NodeIdx::root(),
+    // &obj_sphere);     // let obj_sibenik_entity =
+    // app.spawn_object_with_mesh(NodeIdx::root(),     // &obj_sibenik);
+    //     // let obj_sponza_entity = app.spawn_object_with_mesh(NodeIdx::root(),
+    //     // &obj_sponza);
+    //
+    //     let mut scene = app.scene.write().unwrap();
+    //
+    //     let cube_node = &mut scene.nodes[cube_entity.node];
+    //     cube_node.set_visible(true);
+    //     let cube_transform = cube_node.transform_mut();
+    //     cube_transform.rotation = Quat::from_rotation_y(45.0f32.to_radians());
+    //     cube_transform.translation = Vec3::new(2.0, 2.0, 0.0);
+    //     cube_transform.scale = Vec3::splat(0.5);
+    //
+    //     let rect_node = &mut scene.nodes[rect0_entity.node];
+    //     let rect_transform = rect_node.transform_mut();
+    //     // rect_node.set_position([2.0, 0.0, 0.0].into());
+    //     // rect_transform.rotation =
+    //     // Quat::from_rotation_z(45.0f32.to_radians());
+    //     let tra = Transform::from_translation(Vec3::new(2.0, 0.0, 0.0));
+    //     let rot =
+    // Transform::from_rotation(Quat::from_rotation_z(45.0f32.to_radians()));
+    //     *rect_transform = tra * *rect_transform * rot;
+    //
+    //     let sphere_node = &mut scene.nodes[sphere_entity.node];
+    //     let sphere_transform = sphere_node.transform_mut();
+    //     sphere_transform.translation = Vec3::new(-4.0, 0.0, 0.0);
+    //     sphere_node.set_visible(true);
+    //
+    //     let triangle_node = &mut scene.nodes[triangle_entity.node];
+    //     triangle_node.set_visible(true);
+    //
+    //     let obj_cube_node = &mut scene.nodes[obj_cube_entity.node];
+    //     let obj_cube_transform = obj_cube_node.transform_mut();
+    //     obj_cube_transform.translation = Vec3::new(0.0, 0.0, 0.0);
+    //     obj_cube_transform.rotation =
+    // Quat::from_rotation_y(45.0f32.to_radians());     obj_cube_transform.scale
+    // = Vec3::splat(0.3);     obj_cube_node.set_visible(true);
+    //
+    //     // let obj_sibenik_node = &mut scene.nodes[obj_sibenik_entity.node];
+    //     // let obj_sibenik_transform = obj_sibenik_node.transform_mut();
+    //     // obj_sibenik_transform.translation = Vec3::new(0.0, 0.0, 0.0);
+    //
+    //     // let obj_sponza_node = &mut scene.nodes[obj_sponza_entity.node];
+    //     // let obj_sponza_transform = obj_sponza_node.transform_mut();
+    //     // obj_sponza_transform.translation = Vec3::new(0.0, -1.0, 0.0);
+    //     // obj_sponza_transform.scale = Vec3::splat(0.02);
+    //     // obj_sponza_node.set_visible(true);
+    //
+    //     let obj_sphere_node = &mut scene.nodes[obj_sphere_entity.node];
+    //     let obj_sphere_transform = obj_sphere_node.transform_mut();
+    //     obj_sphere_transform.translation = Vec3::new(4.0, 0.0, 0.0);
+    //     obj_sphere_transform.scale = Vec3::splat(1.5);
+    //     obj_sphere_node.set_visible(true);
+    //
+    //
+    //     (rect0_entity.node, rect1_entity.node, cube_entity.node)
+    //};
 
     // Ready to present the window.
     window.set_visible(true);
@@ -599,17 +630,18 @@ pub fn run_main_loop(mut app: PyAppState, builder: PyWindowBuilder) {
                 app.prev_time = app.curr_time;
                 let t = app.start_time.elapsed().as_secs_f32();
                 {
-                    let mut scene = app.scene.write().unwrap();
+                    // let mut scene = app.scene.write().unwrap();
                     // let rect0 = &mut scene.nodes[rect0_id];
                     // let rect0_transform = rect0.transform_mut();
                     //
-                    // let tra = Transform::from_translation(Vec3::new(2.0, 0.0, 0.0));
-                    // let rot =
-                    //     Transform::from_rotation(Quat::from_rotation_z(45.0f32.to_radians() *
-                    // t));
+                    // let tra = Transform::from_translation(Vec3::new(2.0, 0.0,
+                    // 0.0)); let rot =
+                    //     Transform::from_rotation(Quat::from_rotation_z(45.
+                    // 0f32.to_radians() * t));
 
-                    let rot0 =
-                        Transform::from_rotation(Quat::from_rotation_z(60.0f32.to_radians() * dt));
+                    // let rot0 =
+                    //     Transform::from_rotation(Quat::from_rotation_z(60.
+                    // 0f32.to_radians() * dt));
 
                     //// *rect0_transform = rot * tra * rot0;
                     // *rect0_transform = tra * rot0;
@@ -618,10 +650,10 @@ pub fn run_main_loop(mut app: PyAppState, builder: PyWindowBuilder) {
                     // let rect1_transform = rect1.transform_mut();
                     // *rect1_transform = rot * tra;
 
-                    let cube = &mut scene.nodes[cube_id];
-                    cube.transform_mut().pre_concat(&rot0);
-                    let pl_node = &mut scene.nodes[point_light.node];
-                    pl_node.transform_mut().pre_concat(&rot0);
+                    // let cube = &mut scene.nodes[cube_id];
+                    // cube.transform_mut().pre_concat(&rot0);
+                    // let pl_node = &mut scene.nodes[point_light.node];
+                    // pl_node.transform_mut().pre_concat(&rot0);
                 }
                 app.update(surface.size(), dt, t);
                 app.prepare();

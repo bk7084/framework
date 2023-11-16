@@ -1,5 +1,13 @@
+use glam::Vec3;
+use numpy as np;
+use pyo3::Python;
 use rustc_hash::{FxHashMap, FxHashSet};
-use std::{fmt::Debug, ops::Range, path::PathBuf, sync::atomic::AtomicU64};
+use std::{
+    fmt::Debug,
+    ops::Range,
+    path::{Path, PathBuf},
+    sync::atomic::AtomicU64,
+};
 
 mod attribute;
 use crate::{
@@ -119,6 +127,17 @@ pub struct SubMesh {
     pub material: Option<u32>,
 }
 
+#[pyo3::pymethods]
+impl SubMesh {
+    #[new]
+    pub fn new(start: u32, end: u32, index: u32) -> Self {
+        Self {
+            range: start..end,
+            material: Some(index),
+        }
+    }
+}
+
 /// Mesh id counter. 0 and 1 are reserved for the default cube and quad.
 static MESH_ID: AtomicU64 = AtomicU64::new(2);
 
@@ -182,6 +201,47 @@ impl Mesh {
     #[pyo3(name = "create_quad")]
     pub fn new_quad_py(length: f32, align: Alignment) -> Self {
         Self::plane(length, align)
+    }
+
+    #[staticmethod]
+    #[pyo3(name = "create_sphere")]
+    pub fn new_sphere_py(radius: f32, segments: u32, rings: u32) -> Self {
+        Self::sphere(radius, segments, rings)
+    }
+
+    #[staticmethod]
+    #[pyo3(name = "create_triangle")]
+    pub fn new_triangle_py(
+        p0: &np::PyArray2<f32>,
+        p1: &np::PyArray2<f32>,
+        p2: &np::PyArray2<f32>,
+    ) -> Self {
+        Python::with_gil(|_py| {
+            let v0 = Vec3::from_slice(p0.readonly().as_slice().unwrap());
+            let v1 = Vec3::from_slice(p1.readonly().as_slice().unwrap());
+            let v2 = Vec3::from_slice(p2.readonly().as_slice().unwrap());
+            Self::triangle(&[v0, v1, v2])
+        })
+    }
+
+    #[staticmethod]
+    #[pyo3(name = "load_from")]
+    pub fn load_from_py(path: &str) -> Self {
+        let path = PathBuf::from(path);
+        Self::load_from_obj(&path)
+    }
+
+    /// Applies a single material to the whole mesh.
+    pub fn apply_material(&mut self, material: Material) {
+        if self.materials.is_none() {
+            self.materials = Some(Vec::new());
+        }
+        self.materials.as_mut().unwrap().push(material);
+        let material_index = self.materials.as_ref().unwrap().len() as u32 - 1;
+        self.sub_meshes = Some(vec![SubMesh {
+            range: 0..self.indices.as_ref().unwrap().len() as u32,
+            material: Some(material_index),
+        }]);
     }
 
     /// Computes per vertex normals for the mesh.
@@ -406,12 +466,12 @@ impl Mesh {
                 let next_ring = ring + 1;
 
                 indices.push(ring * (segments + 1) + segment);
-                indices.push(next_ring * (segments + 1) + segment);
                 indices.push(next_ring * (segments + 1) + next_segment);
+                indices.push(next_ring * (segments + 1) + segment);
 
                 indices.push(ring * (segments + 1) + segment);
-                indices.push(next_ring * (segments + 1) + next_segment);
                 indices.push(ring * (segments + 1) + next_segment);
+                indices.push(next_ring * (segments + 1) + next_segment);
             }
         }
 
@@ -430,9 +490,42 @@ impl Mesh {
         }
     }
 
+    /// Creates a triangle with user defined vertices.
+    pub fn triangle(vertices: &[Vec3]) -> Mesh {
+        assert_eq!(vertices.len(), 3, "Triangle must have 3 vertices.");
+        let mut attributes = VertexAttributes::default();
+
+        // Create the normals.
+        let v0 = vertices[0];
+        let v1 = vertices[1];
+        let v2 = vertices[2];
+        let u = v1 - v0;
+        let v = v2 - v0;
+        let normal = u.cross(v).normalize();
+
+        let normals: Vec<[f32; 3]> = vec![normal.into(); 3];
+        let vertices: Vec<[f32; 3]> = vertices.iter().map(|v| (*v).into()).collect();
+        let indices = vec![0u32, 1, 2];
+        let uvs = vec![[0.0, 0.0], [1.0, 0.0], [0.5, 1.0]];
+
+        attributes.insert(VertexAttribute::POSITION, AttribContainer::new(&vertices));
+        attributes.insert(VertexAttribute::NORMAL, AttribContainer::new(&normals));
+        attributes.insert(VertexAttribute::UV0, AttribContainer::new(&uvs));
+
+        Mesh {
+            id: MESH_ID.fetch_add(1, std::sync::atomic::Ordering::Relaxed),
+            topology: wgpu::PrimitiveTopology::TriangleList,
+            attributes,
+            indices: Some(Indices::U32(indices)),
+            sub_meshes: None,
+            path: None,
+            materials: None,
+        }
+    }
+
     /// Loads a mesh from a wavefront obj file.
-    pub fn load_from_obj(path: &str) -> Self {
-        log::debug!("Loading mesh from {}.", path);
+    pub fn load_from_obj<P: AsRef<Path> + Debug + Copy>(path: P) -> Self {
+        log::debug!("Loading mesh from {}.", path.as_ref().display());
         let options = tobj::LoadOptions {
             single_index: true,
             triangulate: true,
@@ -500,7 +593,7 @@ impl Mesh {
 
         let materials = materials
             .iter()
-            .map(|m| Material::from_tobj_material(m.clone(), path.as_ref()))
+            .map(|m| Material::from_tobj_material(m.clone(), &path.as_ref()))
             .collect();
 
         log::debug!("- Processed materials: {:#?}", materials);
@@ -571,7 +664,7 @@ impl GpuMesh {
     }
 }
 
-mod icosphere {
+mod util {
     // Helper function to calculate the midpoint of two vertices
     pub fn midpoint(v1: &[f32; 3], v2: &[f32; 3]) -> [f32; 3] {
         [

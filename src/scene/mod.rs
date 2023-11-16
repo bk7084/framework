@@ -2,7 +2,7 @@ mod node;
 pub use node::*;
 
 use crossbeam_channel::Sender;
-use glam::{Quat, Vec3};
+use glam::{Mat4, Quat, Vec3};
 use std::fmt::{Debug, Formatter};
 
 use crate::{
@@ -10,6 +10,8 @@ use crate::{
     core::ConcatOrder,
 };
 use legion::{storage::IntoComponentSource, World};
+use numpy as np;
+use pyo3::Python;
 
 /// Entity in a scene.
 #[derive(Clone, Copy, Debug)]
@@ -30,13 +32,37 @@ pub struct PyEntity {
 
 #[pyo3::pymethods]
 impl PyEntity {
-    fn draw(&self) {
+    pub fn draw(&self) {
         self.cmd_sender
             .send(Command::SetVisible {
                 entity: self.entity,
                 visible: true,
             })
             .unwrap();
+    }
+
+    pub fn set_visible(&self, visible: bool) {
+        self.cmd_sender
+            .send(Command::SetVisible {
+                entity: self.entity,
+                visible,
+            })
+            .unwrap();
+    }
+
+    pub fn set_transform(&self, mat4: &np::PyArray2<f32>) {
+        Python::with_gil(|_py| {
+            let mat = Mat4::from_cols_slice(mat4.readonly().as_slice().unwrap()).transpose();
+            let (scale, rotation, translation) = mat.to_scale_rotation_translation();
+            self.cmd_sender
+                .send(Command::SetTransform {
+                    entity: self.entity,
+                    translation,
+                    rotation,
+                    scale,
+                })
+                .unwrap();
+        });
     }
 }
 
@@ -207,6 +233,17 @@ impl Scene {
                         Quat::from_axis_angle(Vec3::Y, rotation_y)
                             * Quat::from_axis_angle(x.truncate(), rotation_x),
                     ));
+                }
+                Command::SetTransform {
+                    entity,
+                    translation,
+                    rotation,
+                    scale,
+                } => {
+                    let node = &mut self.nodes[entity.node];
+                    node.transform_mut().translation = translation;
+                    node.transform_mut().rotation = rotation;
+                    node.transform_mut().scale = scale;
                 }
             }
         }
