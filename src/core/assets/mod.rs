@@ -4,8 +4,8 @@ pub mod storage;
 use crate::core::{
     assets::storage::GpuMeshStorage,
     mesh::{GpuMesh, Mesh},
-    texture::{Texture, TextureSampler},
-    GpuMaterial, Material, MaterialBundle, SmlString, TextureBundle,
+    texture::Texture,
+    MaterialBundle, SmlString, TextureBundle,
 };
 pub use handle::*;
 use std::path::Path;
@@ -72,8 +72,6 @@ impl<A: Asset> Assets<A, Vec<Option<A>>> {
 
     /// Returns the asset with the given handle.
     pub fn get(&self, handle: Handle<A>) -> Option<&A> {
-        log::debug!("get({:?})", std::any::type_name::<A>());
-        log::debug!("self len: {}", self.storage.len());
         self.storage[handle.index as usize].as_ref()
     }
 

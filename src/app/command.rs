@@ -39,6 +39,13 @@ pub enum Command {
     SetActive { entity: Entity, active: bool },
     /// Sets if the entity is visible or not.
     SetVisible { entity: Entity, visible: bool },
+    /// Sets by force the material to use. This will override the material
+    /// set by the submesh. If the material index is out of bounds of all
+    /// the materials of the entity, the command will set the material to
+    /// the first material of the entity.
+    SetMaterial { entity: Entity, material: u32 },
+    /// Clears the material override.
+    ClearMaterialOverride { entity: Entity },
 }
 
 /// Receiver of commands.

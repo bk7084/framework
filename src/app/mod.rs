@@ -10,16 +10,11 @@ use crate::{
     app::command::Command,
     core::{
         camera::{Camera, Projection},
-        mesh::{Mesh, SubMesh},
-        Alignment, Color, ConcatOrder, FxHashMap, Light, Material, MaterialBundle, SmlString,
-        TextureType,
+        mesh::Mesh,
+        Color, ConcatOrder, FxHashMap, Light, SmlString,
     },
-    render::{
-        rpass::{BlinnPhongShading, Wireframe},
-        surface::Surface,
-        GpuContext, RenderTarget, Renderer,
-    },
-    scene::{Entity, NodeIdx, PyEntity, Scene, Transform},
+    render::{rpass::BlinnPhongShading, surface::Surface, GpuContext, RenderTarget, Renderer},
+    scene::{Entity, NodeIdx, PyEntity, Scene},
 };
 use crossbeam_channel::Sender;
 use glam::{Mat4, Quat, Vec3};
@@ -130,11 +125,14 @@ impl PyAppState {
     /// * `target` - The target of the camera.
     /// * `fov` - The field of view of the camera in degrees.
     #[pyo3(name = "create_camera")]
+    #[pyo3(signature = (pos, look_at, fov_v, near=0.1, far=200.0))]
     pub fn create_camera_py(
         &mut self,
         pos: &np::PyArray2<f32>,
         look_at: &np::PyArray2<f32>,
         fov_v: f32,
+        near: f32,
+        far: f32,
     ) -> PyEntity {
         log::debug!(
             "[Py] Creating camera at {:?} looking at {:?} with fov: {:?}",
@@ -142,7 +140,7 @@ impl PyAppState {
             look_at,
             fov_v
         );
-        let proj = Projection::perspective(fov_v, 0.1, 200.0);
+        let proj = Projection::perspective(fov_v, near, far);
         Python::with_gil(|_py| {
             let pos = Vec3::from_slice(pos.readonly().as_slice().unwrap());
             let target = Vec3::from_slice(look_at.readonly().as_slice().unwrap());
@@ -384,7 +382,7 @@ pub fn run_main_loop(mut app: PyAppState, builder: PyWindowBuilder) {
 
     let mut blinn_phong_rpass = BlinnPhongShading::new(&context.device, surface.format());
 
-    let mut cube = Mesh::cube(1.0);
+    // let cube = Mesh::cube(1.0);
     // let mut textures = FxHashMap::default();
     // textures.insert(TextureType::MapKd, "data/textures/checker.png".into());
     // textures.insert(TextureType::MapKa,
@@ -479,7 +477,7 @@ pub fn run_main_loop(mut app: PyAppState, builder: PyWindowBuilder) {
     //     Vec3::new(0.0, 1.0, 0.0),
     // ]);
     // let (rect0_id, rect1_id, cube_id) = {
-    let cube_entity = app.spawn_object_with_mesh(NodeIdx::root(), &cube);
+    // let _cube_entity = app.spawn_object_with_mesh(NodeIdx::root(), &cube);
     //     let rect0_entity = app.spawn_object_with_mesh(NodeIdx::root(), &rect);
     //     let rect1_entity = app.spawn_object_with_mesh(rect0_entity.node, &rect);
     //     let sphere_entity = app.spawn_object_with_mesh(NodeIdx::root(), &sphere);
@@ -576,13 +574,11 @@ pub fn run_main_loop(mut app: PyAppState, builder: PyWindowBuilder) {
                             }
                         }
                         WindowEvent::ScaleFactorChanged { new_inner_size, .. } => {
-                            if surface.resize(
+                            surface.resize(
                                 &context.device,
                                 new_inner_size.width,
                                 new_inner_size.height,
-                            ) {
-                                // TODO: update camera aspect ratio
-                            }
+                            );
                         }
                         _ => {}
                     }

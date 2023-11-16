@@ -1,3 +1,3 @@
-__all__ = ['Mesh', 'Topology']
+__all__ = ['Mesh', 'Topology', 'SubMesh', 'Material']
 
-from bk7084.bkfw import Mesh, Topology, SubMesh
+from bk7084.bkfw import Mesh, Topology, SubMesh, Material

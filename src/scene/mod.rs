@@ -64,6 +64,50 @@ impl PyEntity {
                 .unwrap();
         });
     }
+
+    pub fn rotate(&self, rotation: &np::PyArray2<f32>, order: ConcatOrder) {
+        Python::with_gil(|_py| {
+            let rot = Mat4::from_cols_slice(rotation.readonly().as_slice().unwrap()).transpose();
+            let rotation = Quat::from_mat4(&rot);
+            self.cmd_sender
+                .send(Command::Rotate {
+                    entity: self.entity,
+                    rotation,
+                    order,
+                })
+                .unwrap();
+        });
+    }
+
+    pub fn translate(&self, translation: &np::PyArray2<f32>, order: ConcatOrder) {
+        Python::with_gil(|_py| {
+            let translation = Vec3::from_slice(translation.readonly().as_slice().unwrap());
+            self.cmd_sender
+                .send(Command::Translate {
+                    entity: self.entity,
+                    translation,
+                    order,
+                })
+                .unwrap();
+        });
+    }
+
+    pub fn set_material(&self, material: u32) {
+        self.cmd_sender
+            .send(Command::SetMaterial {
+                entity: self.entity,
+                material,
+            })
+            .unwrap();
+    }
+
+    pub fn clear_material_override(&self) {
+        self.cmd_sender
+            .send(Command::ClearMaterialOverride {
+                entity: self.entity,
+            })
+            .unwrap();
+    }
 }
 
 /// Scene graph.
@@ -145,26 +189,6 @@ impl Scene {
     pub fn process_commands(&mut self) {
         while let Ok(cmd) = self.cmd_receiver.try_recv() {
             match cmd {
-                // Command::AddNode(parent) => {
-                //     let node_id = self.nodes.push(Node::new(parent));
-                //     self.world.entry(node_id).unwrap().add_component(node_id);
-                // }
-                // Command::RemoveNode(node) => {
-                //     self.nodes.remove(node);
-                //     self.world
-                //         .entry(node)
-                //         .unwrap()
-                //         .remove_component::<NodeIdx>();
-                // }
-                // Command::AddComponent(entity, component) => {
-                //     self.world.entry(entity).unwrap().add_component(component);
-                // }
-                // Command::RemoveComponent(entity, component) => {
-                //     self.world
-                //         .entry(entity)
-                //         .unwrap()
-                //         .remove_component::<NodeIdx>();
-                // }
                 Command::Translate {
                     entity,
                     translation,
@@ -244,6 +268,14 @@ impl Scene {
                     node.transform_mut().translation = translation;
                     node.transform_mut().rotation = rotation;
                     node.transform_mut().scale = scale;
+                }
+                Command::SetMaterial { entity, material } => {
+                    let node = &mut self.nodes[entity.node];
+                    node.material_override = Some(material);
+                }
+                Command::ClearMaterialOverride { entity } => {
+                    let node = &mut self.nodes[entity.node];
+                    node.material_override = None;
                 }
             }
         }

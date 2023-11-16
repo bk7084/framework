@@ -1,4 +1,4 @@
-use crate::core::assets::{Asset, Handle};
+use crate::core::assets::Asset;
 use bytemuck::{Pod, Zeroable};
 use std::{
     ops::Deref,
@@ -6,7 +6,7 @@ use std::{
 };
 use wgpu::util::DeviceExt;
 
-use crate::core::{FxHashMap, SmlString, Texture};
+use crate::core::{FxHashMap, SmlString};
 
 /// Texture type.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -350,6 +350,7 @@ impl Material {
         Self::default()
     }
 
+    #[setter]
     pub fn set_kd(&mut self, kd: [f32; 3]) {
         self.kd = Some(kd);
     }

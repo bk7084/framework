@@ -1,7 +1,7 @@
 use glam::Vec3;
 use numpy as np;
 use pyo3::Python;
-use rustc_hash::{FxHashMap, FxHashSet};
+use rustc_hash::FxHashMap;
 use std::{
     fmt::Debug,
     ops::Range,
@@ -10,13 +10,7 @@ use std::{
 };
 
 mod attribute;
-use crate::{
-    app::command::{Command, CommandSender},
-    core::{
-        assets::{Asset, Handle},
-        Alignment, ArrVec, Material,
-    },
-};
+use crate::core::{assets::Asset, Alignment, Material};
 pub use attribute::*;
 
 /// Topology of a mesh primitive.
@@ -243,6 +237,12 @@ impl Mesh {
             range: 0..self.indices.as_ref().unwrap().len() as u32,
             material: Some(material_index),
         }]);
+    }
+
+    /// Sets the materials of the mesh.
+    #[setter]
+    pub fn set_materials(&mut self, materials: Vec<Material>) {
+        self.materials = Some(materials);
     }
 
     // TODO: implement this.

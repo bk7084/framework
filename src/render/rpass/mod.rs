@@ -3,7 +3,6 @@ mod clear;
 mod wireframe;
 
 use crate::{
-    core::{assets::Handle, GpuMaterial},
     render::{RenderTarget, Renderer},
     scene::Scene,
 };

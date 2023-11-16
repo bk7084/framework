@@ -13,6 +13,8 @@ pub struct Node {
     active: bool,
     /// Visible state of this node.
     visible: bool,
+    /// Override for the material to use.
+    pub(crate) material_override: Option<u32>,
 }
 
 impl Node {
@@ -22,6 +24,7 @@ impl Node {
             local: Transform::identity(),
             active: true,
             visible: false,
+            material_override: None,
         }
     }
 
@@ -32,6 +35,7 @@ impl Node {
             local: Transform::identity(),
             active: true,
             visible: false,
+            material_override: None,
         }
     }
 

@@ -1,10 +1,6 @@
 use crate::{color, core::Color};
 use crossbeam_channel::Receiver;
-use std::{
-    path::Path,
-    sync::{Arc, RwLock},
-};
-use wgpu::util::DeviceExt;
+use std::{path::Path, sync::Arc};
 
 mod context;
 mod pipeline;
@@ -117,7 +113,6 @@ impl Renderer {
             limits,
             pipelines: Pipelines::new(),
             meshes,
-            // materials,
             material_bundles,
             textures,
             default_material_bundle,

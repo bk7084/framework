@@ -2,14 +2,14 @@ use crate::{
     core::{
         assets::Handle,
         camera::Camera,
-        mesh::{GpuMesh, SubMesh, VertexAttribute},
-        Color, GpuMaterial, Light, Material, MaterialBundle, TextureBundle,
+        mesh::{GpuMesh, VertexAttribute},
+        Color, GpuMaterial, Light, MaterialBundle, TextureBundle,
     },
-    render::{rpass::RenderingPass, Pipelines, RenderTarget, Renderer},
+    render::{rpass::RenderingPass, RenderTarget, Renderer},
     scene::{NodeIdx, Scene},
 };
 use bytemuck::{Pod, Zeroable};
-use glam::{Mat4, Vec4};
+use glam::Mat4;
 use legion::IntoQuery;
 use std::num::NonZeroU32;
 
@@ -532,6 +532,7 @@ impl RenderingPass for BlinnPhongShading {
             .iter(&scene.world)
             .filter(|(_, node_idx, _, _)| scene.nodes[**node_idx].is_visible())
         {
+            let node = &scene.nodes[*node_idx];
             let mtls = renderer.material_bundles.get(*materials_hdl).unwrap();
             let texture_bundle = renderer.texture_bundles.get(*textures_hdl).unwrap();
             let model_mat = scene.nodes.world(*node_idx).to_mat4();
@@ -578,6 +579,9 @@ impl RenderingPass for BlinnPhongShading {
                             texture_bundle.bind_group.as_ref().unwrap(),
                             &[],
                         );
+                        let override_material = node
+                            .material_override
+                            .map(|id| id.min(mtls.n_materials - 1));
                         match mesh.index_format {
                             None => {
                                 // No index buffer, draw directly.
@@ -585,23 +589,28 @@ impl RenderingPass for BlinnPhongShading {
                                     None => {
                                         // No sub-meshes, use the default material.
                                         // Update material index.
+                                        let material_id = override_material.unwrap_or(0);
                                         render_pass.set_push_constants(
                                             wgpu::ShaderStages::FRAGMENT,
                                             PConsts::MATERIAL_OFFSET as u32,
-                                            bytemuck::bytes_of(&0u32),
+                                            bytemuck::bytes_of(&material_id),
                                         );
                                         render_pass.draw(0..mesh.vertex_count, 0..1);
                                     }
                                     Some(sub_meshes) => {
                                         // Draw each sub-mesh.
                                         for sub_mesh in sub_meshes {
-                                            let material_idx =
-                                                sub_mesh.material.unwrap_or(mtls.n_materials - 1);
+                                            let material_id =
+                                                override_material.unwrap_or_else(|| {
+                                                    sub_mesh
+                                                        .material
+                                                        .unwrap_or(mtls.n_materials - 1)
+                                                });
                                             // Update material index.
                                             render_pass.set_push_constants(
                                                 wgpu::ShaderStages::FRAGMENT,
                                                 PConsts::MATERIAL_OFFSET as u32,
-                                                bytemuck::bytes_of(&material_idx),
+                                                bytemuck::bytes_of(&material_id),
                                             );
                                             render_pass.draw(
                                                 sub_mesh.range.start..sub_mesh.range.end,
@@ -621,10 +630,11 @@ impl RenderingPass for BlinnPhongShading {
                                         log::trace!("Draw mesh with index, no sub-meshes");
                                         // No sub-meshes, use the default material.
                                         // Update material index.
+                                        let material_id = override_material.unwrap_or(0);
                                         render_pass.set_push_constants(
                                             wgpu::ShaderStages::FRAGMENT,
                                             PConsts::MATERIAL_OFFSET as u32,
-                                            bytemuck::bytes_of(&0u32),
+                                            bytemuck::bytes_of(&material_id),
                                         );
                                         render_pass.draw_indexed(0..mesh.index_count, 0, 0..1);
                                     }
@@ -636,13 +646,15 @@ impl RenderingPass for BlinnPhongShading {
                                                 sm.range.start,
                                                 sm.range.end
                                             );
-                                            let material_idx =
-                                                sm.material.unwrap_or(mtls.n_materials - 1);
+                                            let material_id =
+                                                override_material.unwrap_or_else(|| {
+                                                    sm.material.unwrap_or(mtls.n_materials - 1)
+                                                });
                                             // Update material index.
                                             render_pass.set_push_constants(
                                                 wgpu::ShaderStages::FRAGMENT,
                                                 PConsts::MATERIAL_OFFSET as u32,
-                                                bytemuck::bytes_of(&material_idx),
+                                                bytemuck::bytes_of(&material_id),
                                             );
                                             // Draw the sub-mesh.
                                             render_pass.draw_indexed(

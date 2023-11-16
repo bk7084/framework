@@ -33,5 +33,7 @@ fn bkfw(_py: Python, module: &PyModule) -> PyResult<()> {
     module.add_class::<core::mesh::SubMesh>()?;
     module.add_class::<core::mesh::PyTopology>()?;
     module.add_class::<core::Material>()?;
+    module.add_class::<core::ConcatOrder>()?;
+    module.add_class::<core::Alignment>()?;
     Ok(())
 }

@@ -1,11 +1,8 @@
 use crate::core::{
-    assets::{Asset, Handle, TextureAssets},
-    FxHashMap, SmlString,
+    assets::{Asset, Handle}, SmlString,
 };
 use std::{
-    cell::Cell,
     ops::Deref,
-    sync::{Arc, RwLock},
 };
 
 /// Texture sampler.
