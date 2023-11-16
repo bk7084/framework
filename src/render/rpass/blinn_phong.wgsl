@@ -154,7 +154,7 @@ fn blinn_phong_shading(view_mat: mat4x4<f32>, pos_eye_space: vec3<f32>, n: vec3<
         var light_pos = (view_mat * vec4<f32>(light.position, 1.0)).xyz;
         var pos_to_light = light_pos - pos_eye_space;
 
-        var dist = length(pos_to_light) * 0.5;
+        var dist = length(pos_to_light) * 0.6;
         var light_color = light.color * (1.0 / pow(dist, 2.0));
 
         var wi = normalize(pos_to_light);
@@ -227,6 +227,5 @@ fn fs_main(vout: VSOutput) -> @location(0) vec4<f32> {
     // Output kd as color.
     // color = kd;
     // color = directional_lights.data[0].direction;
-app/mod
     return vec4<f32>(color, 1.0);
 }

@@ -23,7 +23,7 @@ legion = { git = "https://github.com/matthiascy/legion.git", branch = "master" }
 log = "0.4"
 numpy = "0.20"
 pollster = "0.3"
-pyo3 = { version = "0.20", features = ["extension-module"] }
+pyo3 = { version = "0.20", features = ["extension-module", "generate-import-lib"] }
 profiling = "1.0"
 range-alloc = "0.1"
 rustc-hash = "1"

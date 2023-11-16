@@ -28,7 +28,7 @@ is_valid_venv_path() {
 
 # Check if the Python toolchain is installed
 check_python_toolchain() {
- if [ -n "$VIRTUAL_ENV" ]; then
+  if [ -n "$VIRTUAL_ENV" ]; then
     echo "Already in a virtual environment."
   else
     read -p "You are not in a virtual environment. Do you want to load an existing one or create a new one? (load/create/n): " choice
@@ -107,7 +107,7 @@ case $command in
     ;;
   "pkg")
     echo "Packaging..."
-    # Add your packaging commands here
+    maturin build --release --target aarch64-unknown-linux-gnu --zig
     ;;
   *)
     echo "Invalid command: $command"
