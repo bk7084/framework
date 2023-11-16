@@ -64,9 +64,12 @@ impl GpuContext {
 
         let adapter = adapters.remove(0);
 
-        let features = adapter
+        let mut features = adapter
             .features
             .union(desired_features.unwrap_or_else(wgpu::Features::empty));
+        if features.contains(wgpu::Features::MAPPABLE_PRIMARY_BUFFERS) {
+            features.remove(wgpu::Features::MAPPABLE_PRIMARY_BUFFERS);
+        }
         let limits = adapter.limits;
 
         // Create the GPU device and queue.

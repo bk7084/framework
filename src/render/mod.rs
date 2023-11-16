@@ -104,7 +104,8 @@ impl Renderer {
         let mut material_bundles = MaterialBundleAssets::new();
         let default_material_bundle =
             material_bundles.add(MaterialBundle::default(&context.device));
-        let default_texture_bundle = TextureBundleAssets::new().add(TextureBundle {
+        let mut texture_bundles = TextureBundleAssets::new();
+        let default_texture_bundle = texture_bundles.add(TextureBundle {
             textures: vec![default_texture],
             samplers: vec!["default".into()],
             bind_group: None,
@@ -123,7 +124,7 @@ impl Renderer {
             default_texture_bundle,
             samplers,
             cmd_receiver: receiver,
-            texture_bundles: TextureBundleAssets::new(),
+            texture_bundles,
             default_texture,
         }
     }
@@ -145,6 +146,7 @@ impl Renderer {
         match materials {
             None => {
                 // Mesh has no material, use default material.
+                log::debug!("Using default material and texture bundles");
                 (self.default_material_bundle, self.default_texture_bundle)
             }
             Some(mtls) => {

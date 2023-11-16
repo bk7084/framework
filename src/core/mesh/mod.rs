@@ -216,6 +216,7 @@ impl Mesh {
         p1: &np::PyArray2<f32>,
         p2: &np::PyArray2<f32>,
     ) -> Self {
+        log::debug!("Creating triangle.");
         Python::with_gil(|_py| {
             let v0 = Vec3::from_slice(p0.readonly().as_slice().unwrap());
             let v1 = Vec3::from_slice(p1.readonly().as_slice().unwrap());
@@ -244,6 +245,7 @@ impl Mesh {
         }]);
     }
 
+    // TODO: implement this.
     /// Computes per vertex normals for the mesh.
     pub fn compute_per_vertex_normals(&mut self) {
         // If the mesh does not have positions, return.

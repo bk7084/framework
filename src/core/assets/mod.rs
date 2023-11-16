@@ -62,11 +62,18 @@ impl<A: Asset> Assets<A, Vec<Option<A>>> {
         let handle = self.allocator.reserve();
         self.flush();
         self.storage[handle.index as usize] = Some(asset);
+        log::debug!(
+            "add({:?}), len: {}",
+            std::any::type_name::<A>(),
+            self.storage.len()
+        );
         handle
     }
 
     /// Returns the asset with the given handle.
     pub fn get(&self, handle: Handle<A>) -> Option<&A> {
+        log::debug!("get({:?})", std::any::type_name::<A>());
+        log::debug!("self len: {}", self.storage.len());
         self.storage[handle.index as usize].as_ref()
     }
 
@@ -231,6 +238,7 @@ impl Assets<Texture, Vec<Option<Texture>>> {
         filepath: &Path,
     ) -> Handle<Texture> {
         let img = image::open(filepath).unwrap().to_rgba8();
+        log::debug!("---- Loaded image: {:?}", img.dimensions());
         let dims = img.dimensions();
         let size = wgpu::Extent3d {
             width: dims.0,
