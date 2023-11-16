@@ -25,11 +25,11 @@ pub struct Assets<A: Asset, S: AssetStorage> {
 }
 
 impl<A: Asset, S: AssetStorage> Assets<A, S> {
-    fn len(&self) -> usize {
+    pub fn len(&self) -> usize {
         self.storage.len()
     }
 
-    fn is_empty(&self) -> bool {
+    pub fn is_empty(&self) -> bool {
         self.storage.is_empty()
     }
 }

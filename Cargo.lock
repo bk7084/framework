@@ -183,7 +183,6 @@ dependencies = [
  "bytemuck",
  "cfg-if",
  "crossbeam-channel",
- "dolly",
  "env_logger",
  "glam",
  "image",
@@ -439,14 +438,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "330c60081dcc4c72131f8eb70510f1ac07223e5d4163db481a04a0befcffa412"
 dependencies = [
  "libloading 0.8.1",
-]
-
-[[package]]
-name = "dolly"
-version = "0.4.2"
-source = "git+https://github.com/matthiascy/dolly.git?branch=main#73501b8cc047065637290d8ccd0f5ede705abcb4"
-dependencies = [
- "glam",
 ]
 
 [[package]]

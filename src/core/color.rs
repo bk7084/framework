@@ -78,7 +78,7 @@ impl Color {
     ///
     /// The hex value should be in the format `0xRRGGBBAA`
     #[inline]
-    pub const fn from_hex(hex: u32) -> Self {
+    pub fn from_hex(hex: u32) -> Self {
         Self::new(
             ((hex >> 24) & 0xFF) as f64 / 255.0,
             ((hex >> 16) & 0xFF) as f64 / 255.0,

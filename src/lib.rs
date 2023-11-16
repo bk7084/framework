@@ -1,6 +1,3 @@
-#![feature(const_fn_floating_point_arithmetic)]
-#![feature(const_trait_impl)]
-
 pub mod app;
 pub mod core;
 pub mod render;
