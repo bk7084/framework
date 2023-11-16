@@ -65,6 +65,8 @@ impl Color {
     pub const VERY_LIGHT_BROWN: Self = COLORS[13];
     pub const BUFF: Self = COLORS[14];
     pub const OFF_WHITE: Self = COLORS[15];
+    pub const WHITE: Self = color!(1.0, 1.0, 1.0);
+    pub const BLACK: Self = color!(0.0, 0.0, 0.0);
 
     /// Creates a new color.
     #[inline]

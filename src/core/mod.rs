@@ -8,6 +8,7 @@ pub mod assets;
 mod material;
 pub use material::*;
 mod light;
+pub use light::*;
 pub mod mesh;
 
 mod transform;

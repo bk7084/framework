@@ -3,13 +3,13 @@ use crate::{
         assets::Handle,
         camera::Camera,
         mesh::{GpuMesh, SubMesh, VertexAttribute},
-        Color, GpuMaterial, Material, MaterialBundle, TextureBundle,
+        Color, GpuMaterial, Light, Material, MaterialBundle, TextureBundle,
     },
     render::{rpass::RenderingPass, Pipelines, RenderTarget, Renderer},
     scene::{NodeIdx, Scene},
 };
 use bytemuck::{Pod, Zeroable};
-use glam::{Mat4, Vec3, Vec4};
+use glam::{Mat4, Vec4};
 use legion::IntoQuery;
 use std::num::NonZeroU32;
 
@@ -26,25 +26,100 @@ struct Globals {
 struct PConsts {
     /// Model matrix.
     model: [f32; 16],
+    /// Inverse of the model view matrix (for transforming normals).
+    model_view_inv: [f32; 16],
     /// Material index.
     material: u32,
 }
 
 impl PConsts {
     pub const SIZE: wgpu::BufferAddress = std::mem::size_of::<Self>() as wgpu::BufferAddress;
-    pub const MODEL_OFFSET: wgpu::BufferAddress = 0;
-    pub const MODEL_SIZE: wgpu::BufferAddress =
-        std::mem::size_of::<[f32; 16]>() as wgpu::BufferAddress;
-    pub const MATERIAL_OFFSET: wgpu::BufferAddress = Self::MODEL_OFFSET + Self::MODEL_SIZE;
+    pub const MODEL_AND_MODEL_VIEW_INV_OFFSET: wgpu::BufferAddress = 0;
+    pub const MODEL_AND_MODEL_VIEW_INV_SIZE: wgpu::BufferAddress =
+        std::mem::size_of::<[f32; 16]>() as wgpu::BufferAddress * 2;
+
+    pub const MATERIAL_OFFSET: wgpu::BufferAddress =
+        Self::MODEL_AND_MODEL_VIEW_INV_SIZE + Self::MODEL_AND_MODEL_VIEW_INV_OFFSET;
     pub const MATERIAL_SIZE: wgpu::BufferAddress =
         std::mem::size_of::<u32>() as wgpu::BufferAddress;
 }
 
-static_assertions::assert_eq_align!(PConsts, [f32; 17]);
-static_assertions::assert_eq_size!(PConsts, [f32; 17]);
+pub const MAX_DIRECTIONAL_LIGHTS: usize = 256;
+pub const MAX_POINT_LIGHTS: usize = 256;
+
+static_assertions::assert_eq_align!(PConsts, [f32; 33]);
+static_assertions::assert_eq_size!(PConsts, [f32; 33]);
 
 impl Globals {
     pub const SIZE: wgpu::BufferAddress = std::mem::size_of::<Self>() as wgpu::BufferAddress;
+}
+
+#[repr(C)]
+#[derive(Debug, Clone, Copy, Pod, Zeroable)]
+pub struct DirectionalLight {
+    pub direction: [f32; 4],
+    pub color: [f32; 4],
+}
+
+#[repr(C)]
+#[derive(Debug, Clone, Copy, Pod, Zeroable)]
+pub struct DirectionalLightArray {
+    pub len: [u32; 4], // make sure the array is 16-byte aligned.
+    pub lights: [DirectionalLight; MAX_DIRECTIONAL_LIGHTS],
+}
+
+impl DirectionalLightArray {
+    pub const SIZE: usize = std::mem::size_of::<Self>();
+    pub fn empty() -> Self {
+        Self {
+            len: [0u32; 4],
+            lights: [DirectionalLight::empty(); MAX_DIRECTIONAL_LIGHTS],
+        }
+    }
+}
+
+#[repr(C)]
+#[derive(Debug, Clone, Copy, Pod, Zeroable)]
+pub struct PointLight {
+    pub position: [f32; 4],
+    pub color: [f32; 4],
+}
+
+#[repr(C)]
+#[derive(Debug, Clone, Copy, Pod, Zeroable)]
+pub struct PointLightArray {
+    pub len: [u32; 4],
+    pub lights: [PointLight; MAX_POINT_LIGHTS],
+}
+
+impl PointLightArray {
+    pub const SIZE: usize = std::mem::size_of::<Self>();
+    pub fn empty() -> Self {
+        Self {
+            len: [0u32; 4], // make sure the array is 16-byte aligned.
+            lights: [PointLight::empty(); MAX_POINT_LIGHTS],
+        }
+    }
+}
+
+impl DirectionalLight {
+    pub const SIZE: usize = std::mem::size_of::<Self>();
+    pub fn empty() -> Self {
+        Self {
+            direction: [0.0; 4],
+            color: [0.0; 4],
+        }
+    }
+}
+
+impl PointLight {
+    pub const SIZE: usize = std::mem::size_of::<Self>();
+    pub fn empty() -> Self {
+        Self {
+            position: [0.0; 4],
+            color: [0.0; 4],
+        }
+    }
 }
 
 const DEPTH_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth24Plus;
@@ -58,6 +133,11 @@ pub struct BlinnPhongShading {
 
     pub materials_bind_group_layout: wgpu::BindGroupLayout,
     pub textures_bind_group_layout: wgpu::BindGroupLayout,
+
+    pub lights_bind_group_layout: wgpu::BindGroupLayout,
+    pub lights_bind_group: wgpu::BindGroup,
+    pub directional_lights_storage_buffer: wgpu::Buffer,
+    pub point_lights_storage_buffer: wgpu::Buffer,
 
     pub pipeline: wgpu::RenderPipeline,
 }
@@ -114,18 +194,81 @@ impl BlinnPhongShading {
             });
 
         let textures_bind_group_layout = texture_bundle_bind_group_layout(device);
+
+        let lights_bind_group_layout =
+            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                label: Some("shading_lights_bind_group_layout"),
+                entries: &[
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 0,
+                        visibility: wgpu::ShaderStages::FRAGMENT,
+                        ty: wgpu::BindingType::Buffer {
+                            ty: wgpu::BufferBindingType::Storage { read_only: true },
+                            has_dynamic_offset: false,
+                            min_binding_size: wgpu::BufferSize::new(
+                                DirectionalLightArray::SIZE as u64,
+                            ),
+                        },
+                        count: None,
+                    },
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 1,
+                        visibility: wgpu::ShaderStages::FRAGMENT,
+                        ty: wgpu::BindingType::Buffer {
+                            ty: wgpu::BufferBindingType::Storage { read_only: true },
+                            has_dynamic_offset: false,
+                            min_binding_size: wgpu::BufferSize::new(PointLightArray::SIZE as u64),
+                        },
+                        count: None,
+                    },
+                ],
+            });
+
+        // Preallocate a buffer for directional lights.
+        let directional_lights_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("shading_directional_lights_buffer"),
+            size: std::mem::size_of::<DirectionalLightArray>() as wgpu::BufferAddress,
+            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+
+        // Preallocate a buffer for point lights.
+        let point_lights_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("shading_point_lights_buffer"),
+            size: std::mem::size_of::<PointLightArray>() as wgpu::BufferAddress,
+            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+
+        let lights_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("shading_lights_bind_group"),
+            layout: &lights_bind_group_layout,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: directional_lights_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: point_lights_buffer.as_entire_binding(),
+                },
+            ],
+        });
+
         let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("blinn_phong_shading_pipeline_layout"),
             bind_group_layouts: &[
                 &globals_bind_group_layout,
                 &materials_bind_group_layout,
                 &textures_bind_group_layout,
+                &lights_bind_group_layout,
             ],
             push_constant_ranges: &[
                 wgpu::PushConstantRange {
                     stages: wgpu::ShaderStages::VERTEX,
-                    range: PConsts::MODEL_OFFSET as u32
-                        ..PConsts::MODEL_OFFSET as u32 + PConsts::MODEL_SIZE as u32,
+                    range: PConsts::MODEL_AND_MODEL_VIEW_INV_OFFSET as u32
+                        ..PConsts::MODEL_AND_MODEL_VIEW_INV_OFFSET as u32
+                            + PConsts::MODEL_AND_MODEL_VIEW_INV_SIZE as u32,
                 },
                 wgpu::PushConstantRange {
                     stages: wgpu::ShaderStages::FRAGMENT,
@@ -185,7 +328,7 @@ impl BlinnPhongShading {
                 entry_point: "fs_main",
                 targets: &[Some(wgpu::ColorTargetState {
                     format,
-                    blend: None,
+                    blend: Some(wgpu::BlendState::ALPHA_BLENDING),
                     write_mask: wgpu::ColorWrites::ALL,
                 })],
             }),
@@ -194,6 +337,7 @@ impl BlinnPhongShading {
                 front_face: wgpu::FrontFace::Ccw,
                 cull_mode: Some(wgpu::Face::Back),
                 polygon_mode: wgpu::PolygonMode::Fill,
+                // unclipped_depth: false,
                 ..Default::default()
             },
             depth_stencil: Some(wgpu::DepthStencilState {
@@ -218,6 +362,10 @@ impl BlinnPhongShading {
             globals_bind_group_layout,
             materials_bind_group_layout,
             textures_bind_group_layout,
+            lights_bind_group_layout,
+            lights_bind_group,
+            directional_lights_storage_buffer: directional_lights_buffer,
+            point_lights_storage_buffer: point_lights_buffer,
             pipeline,
         }
     }
@@ -282,15 +430,17 @@ impl RenderingPass for BlinnPhongShading {
             self.depth_texture = Some((texture, view));
         }
 
+        let mut view_mat = Mat4::IDENTITY;
+
         // Update globals.
         let mut camera_query = <(&Camera, &NodeIdx)>::query();
         // TODO: support multiple cameras.
         for (camera, node_idx) in camera_query.iter(&scene.world) {
             if camera.is_main {
-                let view = scene.nodes.inverse_world(*node_idx).to_mat4();
+                view_mat = scene.nodes.inverse_world(*node_idx).to_mat4();
                 let proj = camera.proj_matrix(target.aspect_ratio());
                 let globals = Globals {
-                    view: view.to_cols_array(),
+                    view: view_mat.to_cols_array(),
                     proj: proj.to_cols_array(),
                 };
                 queue.write_buffer(
@@ -328,6 +478,49 @@ impl RenderingPass for BlinnPhongShading {
         render_pass.set_pipeline(&self.pipeline);
         render_pass.set_bind_group(0, &self.globals_bind_group, &[]);
 
+        // Update light buffers.
+        let mut light_query = <(&Light, &NodeIdx)>::query();
+        let mut pl_arr = PointLightArray::empty();
+        let mut dl_arr = DirectionalLightArray::empty();
+
+        let active_lights = light_query
+            .iter(&scene.world)
+            .filter(|(_, node_idx)| scene.nodes[**node_idx].is_active());
+        for (light, node_idx) in active_lights {
+            match light {
+                Light::Directional { direction, color } => {
+                    dl_arr.lights[dl_arr.len[0] as usize] = DirectionalLight {
+                        direction: [-direction.x, -direction.y, -direction.z, 0.0],
+                        color: [color.r as f32, color.g as f32, color.b as f32, 1.0],
+                    };
+                    dl_arr.len[0] += 1;
+                }
+                Light::Point { color } => {
+                    let transform = scene.nodes.world(*node_idx);
+                    let position = transform.translation;
+                    pl_arr.lights[pl_arr.len[0] as usize] = PointLight {
+                        position: [position.x, position.y, position.z, 1.0],
+                        color: [color.r as f32, color.g as f32, color.b as f32, 1.0],
+                    };
+                    pl_arr.len[0] += 1;
+                }
+            }
+        }
+        // Update light buffers.
+        queue.write_buffer(
+            &self.directional_lights_storage_buffer,
+            0,
+            bytemuck::bytes_of(&dl_arr),
+        );
+        queue.write_buffer(
+            &self.point_lights_storage_buffer,
+            0,
+            bytemuck::bytes_of(&pl_arr),
+        );
+
+        // Bind lights. TODO: maybe move lights to renderer?
+        render_pass.set_bind_group(3, &self.lights_bind_group, &[]);
+
         let mut mesh_query = <(
             &Handle<GpuMesh>,
             &NodeIdx,
@@ -341,7 +534,8 @@ impl RenderingPass for BlinnPhongShading {
         {
             let mtls = renderer.material_bundles.get(*materials_hdl).unwrap();
             let texture_bundle = renderer.texture_bundles.get(*textures_hdl).unwrap();
-            let transform = scene.nodes.world(*node_idx).to_mat4();
+            let model_mat = scene.nodes.world(*node_idx).to_mat4();
+            let model_view_inv = (view_mat * model_mat).inverse();
             match renderer.meshes.get(*mesh_hdl) {
                 None => {
                     log::error!("Missing mesh {:?}", mesh_hdl);
@@ -370,8 +564,11 @@ impl RenderingPass for BlinnPhongShading {
                         // Set push constants.
                         render_pass.set_push_constants(
                             wgpu::ShaderStages::VERTEX,
-                            PConsts::MODEL_OFFSET as u32,
-                            bytemuck::cast_slice(&transform.to_cols_array()),
+                            PConsts::MODEL_AND_MODEL_VIEW_INV_OFFSET as u32,
+                            bytemuck::cast_slice(&[
+                                model_mat.to_cols_array(),
+                                model_view_inv.to_cols_array(),
+                            ]),
                         );
                         // Bind material.
                         render_pass.set_bind_group(1, &mtls.bind_group, &[]);

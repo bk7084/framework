@@ -11,13 +11,13 @@ use crate::{
     core::{
         camera::{Camera, Projection},
         mesh::{Mesh, SubMesh},
-        Alignment, Color, ConcatOrder, FxHashMap, Material, MaterialBundle, SmlString, TextureType,
+        Alignment, Color, ConcatOrder, FxHashMap, Light, Material, MaterialBundle, SmlString,
+        TextureType,
     },
     render::{
         rpass::{BlinnPhongShading, Wireframe},
         surface::Surface,
         GpuContext, RenderTarget, Renderer,
-        ShadingMode::BlinnPhong,
     },
     scene::{Entity, NodeIdx, PyEntity, Scene, Transform},
 };
@@ -187,6 +187,13 @@ impl PyAppState {
             .map(|mut scene| {
                 scene.spawn(parent, (gpu_mesh_handle, material_bundle, texture_bundle))
             })
+            .unwrap()
+    }
+
+    pub fn spawn_light(&mut self, parent: NodeIdx, light: Light) -> Entity {
+        self.scene
+            .write()
+            .map(|mut scene| scene.spawn(parent, (light,)))
             .unwrap()
     }
 
@@ -426,24 +433,43 @@ pub fn run_main_loop(mut app: PyAppState, builder: PyWindowBuilder) {
     let sphere = Mesh::sphere(1.0, 32, 16);
     let obj_cube = Mesh::load_from_obj("data/blender_cube/cube.obj");
     // let obj_sibenik = Mesh::load_from_obj("./data/sibenik/sibenik.obj");
-    let obj_sponza = Mesh::load_from_obj("./data/sponza/sponza.obj");
+    // let obj_sponza = Mesh::load_from_obj("./data/sponza/sponza.obj");
+    let obj_sphere = Mesh::load_from_obj("./data/blender_sphere/sphere.obj");
 
-    let (rect0_id, rect1_id, sphere_id) = {
+    app.spawn_light(
+        NodeIdx::root(),
+        Light::Directional {
+            direction: Vec3::new(-1.0, -1.0, -1.0).normalize(),
+            color: Color::WHITE,
+        },
+    );
+    let point_light = app.spawn_light(
+        NodeIdx::root(),
+        Light::Point {
+            color: Color::WHITE,
+        },
+    );
+
+    let (rect0_id, rect1_id, cube_id) = {
         let cube_entity = app.spawn_object_with_mesh(NodeIdx::root(), &cube);
         let rect0_entity = app.spawn_object_with_mesh(NodeIdx::root(), &rect);
         let rect1_entity = app.spawn_object_with_mesh(rect0_entity.node, &rect);
         let sphere_entity = app.spawn_object_with_mesh(NodeIdx::root(), &sphere);
         let obj_cube_entity = app.spawn_object_with_mesh(NodeIdx::root(), &obj_cube);
+        let obj_sphere_entity = app.spawn_object_with_mesh(NodeIdx::root(), &obj_sphere);
         // let obj_sibenik_entity = app.spawn_object_with_mesh(NodeIdx::root(),
         // &obj_sibenik);
-        let obj_sponza_entity = app.spawn_object_with_mesh(NodeIdx::root(), &obj_sponza);
+        // let obj_sponza_entity = app.spawn_object_with_mesh(NodeIdx::root(),
+        // &obj_sponza);
 
         let mut scene = app.scene.write().unwrap();
+
         let cube_node = &mut scene.nodes[cube_entity.node];
         cube_node.set_visible(true);
         let cube_transform = cube_node.transform_mut();
         cube_transform.rotation = Quat::from_rotation_y(45.0f32.to_radians());
-        cube_transform.scale = Vec3::splat(1.5);
+        cube_transform.translation = Vec3::new(2.0, 2.0, 0.0);
+        cube_transform.scale = Vec3::splat(0.5);
 
         let rect_node = &mut scene.nodes[rect0_entity.node];
         let rect_transform = rect_node.transform_mut();
@@ -457,18 +483,34 @@ pub fn run_main_loop(mut app: PyAppState, builder: PyWindowBuilder) {
         let sphere_node = &mut scene.nodes[sphere_entity.node];
         let sphere_transform = sphere_node.transform_mut();
         sphere_transform.translation = Vec3::new(-4.0, 0.0, 0.0);
+        sphere_node.set_visible(true);
 
         let obj_cube_node = &mut scene.nodes[obj_cube_entity.node];
         let obj_cube_transform = obj_cube_node.transform_mut();
-        obj_cube_transform.translation = Vec3::new(0.0, 0.0, -2.0);
+        obj_cube_transform.translation = Vec3::new(0.0, 0.0, 0.0);
+        obj_cube_transform.rotation = Quat::from_rotation_y(45.0f32.to_radians());
+        obj_cube_transform.scale = Vec3::splat(0.3);
+        obj_cube_node.set_visible(true);
 
         // let obj_sibenik_node = &mut scene.nodes[obj_sibenik_entity.node];
         // let obj_sibenik_transform = obj_sibenik_node.transform_mut();
         // obj_sibenik_transform.translation = Vec3::new(0.0, 0.0, 0.0);
 
-        let obj_sponza_node = &mut scene.nodes[obj_sponza_entity.node];
-        let obj_sponza_transform = obj_sponza_node.transform_mut();
-        obj_sponza_transform.scale = Vec3::splat(0.02);
+        // let obj_sponza_node = &mut scene.nodes[obj_sponza_entity.node];
+        // let obj_sponza_transform = obj_sponza_node.transform_mut();
+        // obj_sponza_transform.translation = Vec3::new(0.0, -1.0, 0.0);
+        // obj_sponza_transform.scale = Vec3::splat(0.02);
+        // obj_sponza_node.set_visible(true);
+
+        let obj_sphere_node = &mut scene.nodes[obj_sphere_entity.node];
+        let obj_sphere_transform = obj_sphere_node.transform_mut();
+        obj_sphere_transform.translation = Vec3::new(4.0, 0.0, 0.0);
+        obj_sphere_transform.scale = Vec3::splat(1.5);
+        obj_sphere_node.set_visible(true);
+
+        let point_light_node = &mut scene.nodes[point_light.node];
+        let point_light_transform = point_light_node.transform_mut();
+        point_light_transform.translation = Vec3::new(1.0, 1.0, 0.0);
 
         (rect0_entity.node, rect1_entity.node, cube_entity.node)
     };
@@ -556,27 +598,31 @@ pub fn run_main_loop(mut app: PyAppState, builder: PyWindowBuilder) {
                 let dt = app.delta_time();
                 app.prev_time = app.curr_time;
                 let t = app.start_time.elapsed().as_secs_f32();
-                // {
-                //     let mut scene = app.scene.write().unwrap();
-                //     let rect0 = &mut scene.nodes[rect0_id];
-                //     let rect0_transform = rect0.transform_mut();
-                //
-                //     let tra = Transform::from_translation(Vec3::new(2.0, 0.0, 0.0));
-                //     let rot =
-                //         Transform::from_rotation(Quat::from_rotation_z(45.0f32.to_radians() *
-                // t));
-                //
-                //     let rot0 =
-                //         Transform::from_rotation(Quat::from_rotation_z(60.0f32.to_radians() *
-                // t));
-                //
-                //     // *rect0_transform = rot * tra * rot0;
-                //     *rect0_transform = tra * rot0;
-                //
-                //     let rect1 = &mut scene.nodes[rect1_id];
-                //     let rect1_transform = rect1.transform_mut();
-                //     *rect1_transform = rot * tra;
-                // }
+                {
+                    let mut scene = app.scene.write().unwrap();
+                    // let rect0 = &mut scene.nodes[rect0_id];
+                    // let rect0_transform = rect0.transform_mut();
+                    //
+                    // let tra = Transform::from_translation(Vec3::new(2.0, 0.0, 0.0));
+                    // let rot =
+                    //     Transform::from_rotation(Quat::from_rotation_z(45.0f32.to_radians() *
+                    // t));
+
+                    let rot0 =
+                        Transform::from_rotation(Quat::from_rotation_z(60.0f32.to_radians() * dt));
+
+                    //// *rect0_transform = rot * tra * rot0;
+                    // *rect0_transform = tra * rot0;
+                    //
+                    // let rect1 = &mut scene.nodes[rect1_id];
+                    // let rect1_transform = rect1.transform_mut();
+                    // *rect1_transform = rot * tra;
+
+                    let cube = &mut scene.nodes[cube_id];
+                    cube.transform_mut().pre_concat(&rot0);
+                    let pl_node = &mut scene.nodes[point_light.node];
+                    pl_node.transform_mut().pre_concat(&rot0);
+                }
                 app.update(surface.size(), dt, t);
                 app.prepare();
                 window.request_redraw();

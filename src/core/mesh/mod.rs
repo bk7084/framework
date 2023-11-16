@@ -371,9 +371,9 @@ impl Mesh {
     /// * `rings` - Number of rings from the top to the bottom of the sphere.
     pub fn sphere(radius: f32, segments: u32, rings: u32) -> Mesh {
         let mut attributes = VertexAttributes::default();
-        let mut vertices = Vec::new();
-        let mut normals = Vec::new();
-        let mut uvs = Vec::new();
+        let mut vertices: Vec<[f32; 3]> = Vec::new();
+        let mut normals: Vec<[f32; 3]> = Vec::new();
+        let mut uvs: Vec<[f32; 2]> = Vec::new();
         let mut indices = Vec::new();
 
         // Create the vertices.

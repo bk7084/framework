@@ -166,7 +166,7 @@ impl Default for Material {
             ka: Some([1.0, 1.0, 1.0]),
             kd: Some([0.6, 0.8, 0.3]),
             ks: Some([1.0, 0.0, 0.0]),
-            ns: Some(0.0),
+            ns: Some(1.0),
             ni: Some(0.0),
             opacity: Some(1.0),
             illumination_model: Some(0),
