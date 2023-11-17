@@ -20,34 +20,35 @@ permissions:
   id-token: write
 
 jobs:
-#  linux:
-#    runs-on: ubuntu-latest
-#    strategy:
-#      matrix:
-#        target: [x86_64, x86, aarch64, armv7, s390x, ppc64le]
-#    steps:
-#      - uses: actions/checkout@v3
-#      - uses: actions/setup-python@v4
-#        with:
-#          python-version: '3.10'
-#      - name: Build wheels
-#        uses: PyO3/maturin-action@v1
-#        with:
-#          target: ${{ matrix.target }}
-#          args: --release --out dist --find-interpreter
-#          sccache: 'true'
-#          manylinux: auto
-#      - name: Auditwheel repair
-#        run: |
-#          for wheel in dist/*.whl; do
-#            auditwheel repair "$wheel" --plat "${wheel##*-}" -w dist
-#          done
-#          mv dist/*-manylinux*.whl dist/manylinux/
-#      - name: Upload wheels
-#        uses: actions/upload-artifact@v3
-#        with:
-#          name: wheels
-#          path: dist
+  linux:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        target: [x86_64, x86, aarch64, armv7, s390x, ppc64le]
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+      - name: Build wheels
+        uses: PyO3/maturin-action@v1
+        with:
+          target: ${{ matrix.target }}
+          args: --release --out dist --find-interpreter
+          sccache: 'true'
+          manylinux: auto
+      - name: Auditwheel repair
+        run: |
+          for wheel in dist/*.whl; do
+            auditwheel repair "$wheel" -w dist
+          done
+          mkdir -p dist/manylinux
+          mv dist/*-manylinux*.whl dist/manylinux/
+      - name: Upload wheels
+        uses: actions/upload-artifact@v3
+        with:
+          name: wheels
+          path: dist/manylinux
 
   windows:
     runs-on: windows-latest
