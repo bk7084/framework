@@ -18,9 +18,11 @@ struct Globals {
     proj: mat4x4<f32>,
 }
 
-struct PushConstants {
-    /// Visible to the vertex shader.
+struct Locals {
     model: mat4x4<f32>,
+}
+
+struct PushConstants {
     model_view_inv: mat4x4<f32>, // Inverse of the product of model and view matrix.
     /// Visible to the fragment shader.
     material_index: u32,
@@ -99,16 +101,19 @@ struct VSOutput {
 var<uniform> globals: Globals;
 
 @group(1) @binding(0)
-var<storage> materials: array<Material>;
+var<uniform> locals: Locals;
 
 @group(2) @binding(0)
-var textures: binding_array<texture_2d<f32>>;
-@group(2) @binding(1)
-var samplers: binding_array<sampler>;
+var<storage> materials: array<Material>;
 
 @group(3) @binding(0)
-var<storage> directional_lights: DirectionalLightArray;
+var textures: binding_array<texture_2d<f32>>;
 @group(3) @binding(1)
+var samplers: binding_array<sampler>;
+
+@group(4) @binding(0)
+var<storage> directional_lights: DirectionalLightArray;
+@group(4) @binding(1)
 var<storage> point_lights: PointLightArray;
 
 var<push_constant> pconsts: PushConstants;
@@ -116,7 +121,7 @@ var<push_constant> pconsts: PushConstants;
 @vertex
 fn vs_main(vin: VSInput) -> VSOutput {
     var out: VSOutput;
-    let pos_eye_space = globals.view * pconsts.model * vec4<f32>(vin.position, 1.0);
+    let pos_eye_space = globals.view * locals.model * vec4<f32>(vin.position, 1.0);
 
     out.position = globals.proj * pos_eye_space;
     out.pos_eye_space = pos_eye_space.xyz / pos_eye_space.w;

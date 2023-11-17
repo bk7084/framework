@@ -20,12 +20,20 @@ struct Globals {
     proj: [f32; 16],
 }
 
+#[repr(C)]
+#[derive(Debug, Clone, Copy, Pod, Zeroable)]
+struct Locals {
+    model: [f32; 16],
+}
+
+impl Locals {
+    pub const SIZE: wgpu::BufferAddress = std::mem::size_of::<Self>() as wgpu::BufferAddress;
+}
+
 /// Push constants for the shading pipeline.
 #[repr(C)]
 #[derive(Debug, Clone, Copy, Pod, Zeroable)]
 struct PConsts {
-    /// Model matrix.
-    model: [f32; 16],
     /// Inverse of the model view matrix (for transforming normals).
     model_view_inv: [f32; 16],
     /// Material index.
@@ -34,12 +42,12 @@ struct PConsts {
 
 impl PConsts {
     pub const SIZE: wgpu::BufferAddress = std::mem::size_of::<Self>() as wgpu::BufferAddress;
-    pub const MODEL_AND_MODEL_VIEW_INV_OFFSET: wgpu::BufferAddress = 0;
-    pub const MODEL_AND_MODEL_VIEW_INV_SIZE: wgpu::BufferAddress =
-        std::mem::size_of::<[f32; 16]>() as wgpu::BufferAddress * 2;
+    pub const MODEL_VIEW_INV_OFFSET: wgpu::BufferAddress = 0;
+    pub const MODEL_VIEW_INV_SIZE: wgpu::BufferAddress =
+        std::mem::size_of::<[f32; 16]>() as wgpu::BufferAddress;
 
     pub const MATERIAL_OFFSET: wgpu::BufferAddress =
-        Self::MODEL_AND_MODEL_VIEW_INV_SIZE + Self::MODEL_AND_MODEL_VIEW_INV_OFFSET;
+        Self::MODEL_VIEW_INV_SIZE + Self::MODEL_VIEW_INV_OFFSET;
     pub const MATERIAL_SIZE: wgpu::BufferAddress =
         std::mem::size_of::<u32>() as wgpu::BufferAddress;
 }
@@ -47,8 +55,8 @@ impl PConsts {
 pub const MAX_DIRECTIONAL_LIGHTS: usize = 256;
 pub const MAX_POINT_LIGHTS: usize = 256;
 
-static_assertions::assert_eq_align!(PConsts, [f32; 33]);
-static_assertions::assert_eq_size!(PConsts, [f32; 33]);
+static_assertions::assert_eq_align!(PConsts, [f32; 17]);
+static_assertions::assert_eq_size!(PConsts, [f32; 17]);
 
 impl Globals {
     pub const SIZE: wgpu::BufferAddress = std::mem::size_of::<Self>() as wgpu::BufferAddress;
@@ -131,6 +139,10 @@ pub struct BlinnPhongShading {
     pub globals_uniform_buffer: wgpu::Buffer,
     pub globals_bind_group_layout: wgpu::BindGroupLayout,
 
+    pub locals_bind_group: wgpu::BindGroup,
+    pub locals_uniform_buffer: wgpu::Buffer,
+    pub locals_bind_group_layout: wgpu::BindGroupLayout,
+
     pub materials_bind_group_layout: wgpu::BindGroupLayout,
     pub textures_bind_group_layout: wgpu::BindGroupLayout,
 
@@ -175,6 +187,37 @@ impl BlinnPhongShading {
             entries: &[wgpu::BindGroupEntry {
                 binding: 0,
                 resource: globals_uniform_buffer.as_entire_binding(),
+            }],
+        });
+
+        let locals_bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("shading_locals_bind_group_layout"),
+            entries: &[
+                wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::VERTEX,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: wgpu::BufferSize::new(Locals::SIZE),
+                    },
+                    count: None,
+                }
+            ],
+        });
+
+        let locals_uniform_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("shading_locals_uniform_buffer"),
+            size: Locals::SIZE,
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        let locals_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("shading_locals_bind_group"),
+            layout: &locals_bind_group_layout,
+            entries: &[wgpu::BindGroupEntry {
+                binding: 0,
+                resource: locals_uniform_buffer.as_entire_binding(),
             }],
         });
 
@@ -259,6 +302,7 @@ impl BlinnPhongShading {
             label: Some("blinn_phong_shading_pipeline_layout"),
             bind_group_layouts: &[
                 &globals_bind_group_layout,
+                &locals_bind_group_layout,
                 &materials_bind_group_layout,
                 &textures_bind_group_layout,
                 &lights_bind_group_layout,
@@ -266,9 +310,9 @@ impl BlinnPhongShading {
             push_constant_ranges: &[
                 wgpu::PushConstantRange {
                     stages: wgpu::ShaderStages::VERTEX,
-                    range: PConsts::MODEL_AND_MODEL_VIEW_INV_OFFSET as u32
-                        ..PConsts::MODEL_AND_MODEL_VIEW_INV_OFFSET as u32
-                            + PConsts::MODEL_AND_MODEL_VIEW_INV_SIZE as u32,
+                    range: PConsts::MODEL_VIEW_INV_OFFSET as u32
+                        ..PConsts::MODEL_VIEW_INV_OFFSET as u32
+                            + PConsts::MODEL_VIEW_INV_SIZE as u32,
                 },
                 wgpu::PushConstantRange {
                     stages: wgpu::ShaderStages::FRAGMENT,
@@ -360,6 +404,9 @@ impl BlinnPhongShading {
             globals_bind_group,
             globals_uniform_buffer,
             globals_bind_group_layout,
+            locals_bind_group,
+            locals_uniform_buffer,
+            locals_bind_group_layout,
             materials_bind_group_layout,
             textures_bind_group_layout,
             lights_bind_group_layout,
@@ -519,7 +566,7 @@ impl RenderingPass for BlinnPhongShading {
         );
 
         // Bind lights. TODO: maybe move lights to renderer?
-        render_pass.set_bind_group(3, &self.lights_bind_group, &[]);
+        render_pass.set_bind_group(4, &self.lights_bind_group, &[]);
 
         let mut mesh_query = <(
             &Handle<GpuMesh>,
@@ -536,6 +583,15 @@ impl RenderingPass for BlinnPhongShading {
             let mtls = renderer.material_bundles.get(*materials_hdl).unwrap();
             let texture_bundle = renderer.texture_bundles.get(*textures_hdl).unwrap();
             let model_mat = scene.nodes.world(*node_idx).to_mat4();
+            queue.write_buffer(
+                &self.locals_uniform_buffer,
+                0,
+                bytemuck::cast_slice(&model_mat.to_cols_array()),
+            );
+
+            // Bind locals.
+            render_pass.set_bind_group(1, &self.locals_bind_group, &[]);
+
             let model_view_inv = (view_mat * model_mat).inverse();
             match renderer.meshes.get(*mesh_hdl) {
                 None => {
@@ -565,17 +621,16 @@ impl RenderingPass for BlinnPhongShading {
                         // Set push constants.
                         render_pass.set_push_constants(
                             wgpu::ShaderStages::VERTEX,
-                            PConsts::MODEL_AND_MODEL_VIEW_INV_OFFSET as u32,
+                            PConsts::MODEL_VIEW_INV_OFFSET as u32,
                             bytemuck::cast_slice(&[
-                                model_mat.to_cols_array(),
                                 model_view_inv.to_cols_array(),
                             ]),
                         );
                         // Bind material.
-                        render_pass.set_bind_group(1, &mtls.bind_group, &[]);
+                        render_pass.set_bind_group(2, &mtls.bind_group, &[]);
                         // Bind textures.
                         render_pass.set_bind_group(
-                            2,
+                            3,
                             texture_bundle.bind_group.as_ref().unwrap(),
                             &[],
                         );
