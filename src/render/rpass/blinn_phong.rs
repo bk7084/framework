@@ -11,7 +11,7 @@ use crate::{
 use bytemuck::{Pod, Zeroable};
 use glam::Mat4;
 use legion::IntoQuery;
-use std::num::NonZeroU32;
+use std::num::{NonZeroU32, NonZeroU64};
 
 #[repr(C)]
 #[derive(Debug, Clone, Copy, Pod, Zeroable)]
@@ -190,10 +190,10 @@ impl BlinnPhongShading {
             }],
         });
 
-        let locals_bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            label: Some("shading_locals_bind_group_layout"),
-            entries: &[
-                wgpu::BindGroupLayoutEntry {
+        let locals_bind_group_layout =
+            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                label: Some("shading_locals_bind_group_layout"),
+                entries: &[wgpu::BindGroupLayoutEntry {
                     binding: 0,
                     visibility: wgpu::ShaderStages::VERTEX,
                     ty: wgpu::BindingType::Buffer {
@@ -202,9 +202,8 @@ impl BlinnPhongShading {
                         min_binding_size: wgpu::BufferSize::new(Locals::SIZE),
                     },
                     count: None,
-                }
-            ],
-        });
+                }],
+            });
 
         let locals_uniform_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("shading_locals_uniform_buffer"),
@@ -420,6 +419,7 @@ impl BlinnPhongShading {
 
 /// Maximum number of textures in a texture array.
 pub const MAX_TEXTURE_ARRAY_LEN: u32 = 128;
+pub const MAX_SAMPLER_ARRAY_LEN: u32 = 16;
 
 pub fn texture_bundle_bind_group_layout(device: &wgpu::Device) -> wgpu::BindGroupLayout {
     device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
@@ -438,8 +438,20 @@ pub fn texture_bundle_bind_group_layout(device: &wgpu::Device) -> wgpu::BindGrou
             wgpu::BindGroupLayoutEntry {
                 binding: 1,
                 visibility: wgpu::ShaderStages::FRAGMENT,
+                ty: wgpu::BindingType::Buffer {
+                    ty: wgpu::BufferBindingType::Storage { read_only: true },
+                    has_dynamic_offset: false,
+                    min_binding_size: NonZeroU64::new(
+                        std::mem::size_of::<u32>() as u64 * MAX_TEXTURE_ARRAY_LEN as u64,
+                    ),
+                },
+                count: None,
+            },
+            wgpu::BindGroupLayoutEntry {
+                binding: 2,
+                visibility: wgpu::ShaderStages::FRAGMENT,
                 ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
-                count: NonZeroU32::new(MAX_TEXTURE_ARRAY_LEN),
+                count: NonZeroU32::new(MAX_SAMPLER_ARRAY_LEN),
             },
         ],
     })
@@ -622,9 +634,7 @@ impl RenderingPass for BlinnPhongShading {
                         render_pass.set_push_constants(
                             wgpu::ShaderStages::VERTEX,
                             PConsts::MODEL_VIEW_INV_OFFSET as u32,
-                            bytemuck::cast_slice(&[
-                                model_view_inv.to_cols_array(),
-                            ]),
+                            bytemuck::cast_slice(&[model_view_inv.to_cols_array()]),
                         );
                         // Bind material.
                         render_pass.set_bind_group(2, &mtls.bind_group, &[]);

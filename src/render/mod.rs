@@ -1,6 +1,7 @@
 use crate::{color, core::Color};
 use crossbeam_channel::Receiver;
 use std::{path::Path, sync::Arc};
+use wgpu::util::DeviceExt;
 
 mod context;
 mod pipeline;
@@ -16,10 +17,10 @@ use crate::{
     core::{
         assets::{GpuMeshAssets, Handle, MaterialBundleAssets, TextureAssets, TextureBundleAssets},
         mesh::{GpuMesh, Mesh},
-        FxHashMap, GpuMaterial, Material, MaterialBundle, SmlString, Texture, TextureBundle,
-        TextureType,
+        FxHashMap, FxHashSet, GpuMaterial, Material, MaterialBundle, SmlString, Texture,
+        TextureBundle, TextureType,
     },
-    render::rpass::{texture_bundle_bind_group_layout, RenderingPass},
+    render::rpass::{texture_bundle_bind_group_layout, RenderingPass, MAX_TEXTURE_ARRAY_LEN},
     scene::Scene,
 };
 pub use context::*;
@@ -102,6 +103,7 @@ impl Renderer {
             textures: vec![default_texture],
             samplers: vec!["default".into()],
             bind_group: None,
+            sampler_index_buffer: None,
         });
         Self {
             device,
@@ -204,6 +206,7 @@ impl Renderer {
                     textures,
                     samplers,
                     bind_group: None,
+                    sampler_index_buffer: None,
                 });
                 (material_bundle, texture_bundle)
             }
@@ -218,7 +221,9 @@ impl Renderer {
     /// Prepares the renderer for rendering.
     pub fn prepare(&mut self) {
         profiling::scope!("Renderer::prepare");
+        let mut sampler_indices = [0u32; MAX_TEXTURE_ARRAY_LEN as usize];
         for bundle in self.texture_bundles.iter_mut() {
+            sampler_indices.fill(0);
             if bundle.textures.is_empty() || bundle.bind_group.is_some() {
                 continue;
             }
@@ -230,11 +235,28 @@ impl Renderer {
                     &texture.view
                 })
                 .collect::<Vec<_>>();
-            let samplers = bundle
-                .samplers
+
+            let mut unique_samplers = vec![];
+            for (idx, sampler) in bundle.samplers.iter().enumerate() {
+                if !unique_samplers.contains(sampler) {
+                    sampler_indices[idx] = unique_samplers.len() as u32;
+                    unique_samplers.push(sampler.clone());
+                }
+            }
+
+            let samplers = unique_samplers
                 .iter()
-                .map(|name| self.samplers.get(name).unwrap())
+                .map(|s| self.samplers.get(s).unwrap())
                 .collect::<Vec<_>>();
+
+            bundle.sampler_index_buffer = Some(self.device.create_buffer_init(
+                &wgpu::util::BufferInitDescriptor {
+                    label: Some("sampler_index_buffer"),
+                    contents: bytemuck::cast_slice(&sampler_indices),
+                    usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+                },
+            ));
+
             let bind_group_layout = texture_bundle_bind_group_layout(&self.device);
             let bind_group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
                 label: Some("shading_textures_bind_group"),
@@ -246,6 +268,14 @@ impl Renderer {
                     },
                     wgpu::BindGroupEntry {
                         binding: 1,
+                        resource: bundle
+                            .sampler_index_buffer
+                            .as_ref()
+                            .unwrap()
+                            .as_entire_binding(),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 2,
                         resource: wgpu::BindingResource::SamplerArray(&samplers),
                     },
                 ],

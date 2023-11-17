@@ -1,9 +1,11 @@
-use crate::core::{
-    assets::{Asset, Handle}, SmlString,
+use crate::{
+    core::{
+        assets::{Asset, Handle},
+        SmlString,
+    },
+    render::rpass::MAX_SAMPLER_ARRAY_LEN,
 };
-use std::{
-    ops::Deref,
-};
+use std::ops::Deref;
 
 /// Texture sampler.
 #[derive(Debug)]
@@ -46,6 +48,7 @@ pub struct TextureBundle {
     pub textures: Vec<Handle<Texture>>,
     pub samplers: Vec<SmlString>,
     pub bind_group: Option<wgpu::BindGroup>,
+    pub sampler_index_buffer: Option<wgpu::Buffer>,
 }
 
 impl Asset for TextureBundle {}
@@ -56,6 +59,7 @@ impl Default for TextureBundle {
             textures: Vec::new(),
             samplers: Vec::new(),
             bind_group: None,
+            sampler_index_buffer: None,
         }
     }
 }

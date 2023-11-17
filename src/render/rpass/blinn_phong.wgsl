@@ -109,6 +109,8 @@ var<storage> materials: array<Material>;
 @group(3) @binding(0)
 var textures: binding_array<texture_2d<f32>>;
 @group(3) @binding(1)
+var<storage> texture_sampler_ids: array<u32>;
+@group(3) @binding(2)
 var samplers: binding_array<sampler>;
 
 @group(4) @binding(0)
@@ -194,7 +196,7 @@ fn fs_main(vout: VSOutput) -> @location(0) vec4<f32> {
 
     var kd = material.kd.rgb;
     if (material.map_kd != INVALID_INDEX) {
-        kd = textureSample(textures[material.map_kd], samplers[material.map_kd], vout.uv).rgb;
+        kd = textureSample(textures[material.map_kd], samplers[texture_sampler_ids[material.map_kd]], vout.uv).rgb;
     }
 
     // Output kd as color.
@@ -206,12 +208,12 @@ fn fs_main(vout: VSOutput) -> @location(0) vec4<f32> {
 
     var ks = material.ks.rgb;
     if (material.map_ks != INVALID_INDEX) {
-        ks = textureSample(textures[material.map_ks], samplers[material.map_ks], vout.uv).rgb;
+        ks = textureSample(textures[material.map_ks], samplers[texture_sampler_ids[material.map_ks]], vout.uv).rgb;
     }
 
     var ns = material.ns;
     if (material.map_ns != INVALID_INDEX) {
-        ns = textureSample(textures[material.map_ns], samplers[material.map_ns], vout.uv).r;
+        ns = textureSample(textures[material.map_ns], samplers[texture_sampler_ids[material.map_ns]], vout.uv).r;
     }
 
     let view_mat = mat4x4<f32>(vout.view_mat_x, vout.view_mat_y, vout.view_mat_z, vout.view_mat_w);
@@ -222,7 +224,7 @@ fn fs_main(vout: VSOutput) -> @location(0) vec4<f32> {
     if (material.illum != 0u) {
         var ka = material.ka.rgb;
         if (material.map_ka != INVALID_INDEX) {
-            ka = textureSample(textures[material.map_ka], samplers[material.map_ka], vout.uv).rgb;
+            ka = textureSample(textures[material.map_ka], samplers[texture_sampler_ids[material.map_ka]], vout.uv).rgb;
         }
         color += ka * ia;
     }
