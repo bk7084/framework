@@ -31,9 +31,9 @@ jobs:
       - name: Install Rust toolchain
         run: |
           curl https://sh.rustup.rs -sSf | sh -s -- -y --default-toolchain stable
-          export PATH="$HOME/.cargo/bin:$PATH"
       - name: Build wheels
         run: |
+          source $HOME/.cargo/env
           for PYBIN in /opt/python/cp3{9..10}*/bin; do
             "${PYBIN}/pip" install -U maturin
             "${PYBIN}/maturin" build --release --out dist -i "${PYBIN}/python" --manylinux 2014
