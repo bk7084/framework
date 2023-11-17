@@ -36,9 +36,10 @@ jobs:
           target: ${{ matrix.target }}
           args: --release --out dist --find-interpreter
           sccache: 'true'
-          manylinux: auto
+          manylinux: off
       - name: Auditwheel repair
         run: |
+          pip install auditwheel
           for wheel in dist/*.whl; do
             auditwheel repair "$wheel" -w dist
           done
@@ -137,7 +138,7 @@ jobs:
       contents: write
     runs-on: ubuntu-latest
     if: "startsWith(github.ref, 'refs/tags/')"
-    needs: [windows, macos]
+    needs: [linux, windows, macos]
     steps:
       - uses: actions/download-artifact@v3
         with:
