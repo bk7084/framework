@@ -53,8 +53,6 @@ pub struct PyAppState {
     main_camera: Option<Entity>,
 }
 
-// unsafe impl Send for PyAppState {}
-
 /// Python interface for AppState
 #[pymethods]
 impl PyAppState {

@@ -20,7 +20,7 @@ permissions:
   id-token: write
 
 jobs:
-  linux:
+  linux-native:
     runs-on: ubuntu-latest
     strategy:
       matrix:
@@ -40,7 +40,34 @@ jobs:
       - name: Upload wheels
         uses: actions/upload-artifact@v3
         with:
+          name: native-wheels
+          path: dist
+
+  many-linux:
+    name: Build manylinux wheels
+    runs-on: ubuntu-latest
+    container: quay.io/pypa/manylinux2014_x86_64
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+      - name: Build wheels
+        uses: PyO3/maturin-action@v1
+        with:
+          target: x86_64
+          args: --release --out dist --find-interpreter
+          sccache: 'true'
+          manylinux: manylinux2014
+      - name: Upload wheels
+        uses: actions/upload-artifact@v3
+        with:
           name: wheels
+          path: dist
+      - name: Upload native wheels
+        uses: actions/upload-artifact@v3
+        with:
+          name: native-wheels
           path: dist
 
   windows:
@@ -64,6 +91,11 @@ jobs:
         uses: actions/upload-artifact@v3
         with:
           name: wheels
+          path: dist
+      - name: Upload native wheels
+        uses: actions/upload-artifact@v3
+        with:
+          name: native-wheels
           path: dist
 
   macos:
@@ -104,10 +136,10 @@ jobs:
           path: dist
 
   release:
-    name: Release
+    name: Publish to PyPI
     runs-on: ubuntu-latest
     if: "startsWith(github.ref, 'refs/tags/')"
-    needs: [windows, macos, sdist]
+    needs: [many-linux, windows, macos, sdist]
     steps:
       - uses: actions/download-artifact@v3
         with:
@@ -119,17 +151,17 @@ jobs:
           args: --non-interactive --skip-existing *
           
   release-github:
+    name: Publish to GitHub releases
     permissions:
       id-token: write
       contents: write
-    name: Publish to GitHub releases
     runs-on: ubuntu-latest
     if: "startsWith(github.ref, 'refs/tags/')"
-    needs: [linux, windows, macos]
+    needs: [linux-native, windows, macos]
     steps:
       - uses: actions/download-artifact@v3
         with:
-          name: wheels
+          name: native-wheels
       - name: Sigstore Sign
         uses: sigstore/gh-action-sigstore-python@v2.1.0
         with:
