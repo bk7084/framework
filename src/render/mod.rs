@@ -68,11 +68,8 @@ impl Renderer {
         let limits = context.limits.clone();
         let meshes = GpuMeshAssets::new(&device);
         let mut textures = TextureAssets::new();
-        let default_texture = textures.load_from_file(
-            &context.device,
-            &context.queue,
-            Path::new("data/textures/checker.png"),
-        );
+        let bytes = include_bytes!("../../data/textures/checker.png");
+        let default_texture = textures.load_from_bytes(&context.device, &context.queue, bytes);
         let mut samplers = FxHashMap::default();
         let default_sampler = context.device.create_sampler(&wgpu::SamplerDescriptor {
             label: Some("sampler_default"),

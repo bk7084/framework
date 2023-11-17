@@ -228,14 +228,13 @@ impl Assets<Texture, Vec<Option<Texture>>> {
         }
     }
 
-    /// Creates a new texture by loading it from a file.
-    pub fn load_from_file(
+    pub fn load_from_bytes(
         &mut self,
         device: &wgpu::Device,
         queue: &wgpu::Queue,
-        filepath: &Path,
+        bytes: &[u8],
     ) -> Handle<Texture> {
-        let img = image::open(filepath).unwrap().to_rgba8();
+        let img = image::load_from_memory(bytes).unwrap().to_rgba8();
         log::debug!("---- Loaded image: {:?}", img.dimensions());
         let dims = img.dimensions();
         let size = wgpu::Extent3d {
@@ -277,6 +276,17 @@ impl Assets<Texture, Vec<Option<Texture>>> {
             sampler: SmlString::from("default"),
         };
         self.add(texture)
+    }
+
+    /// Creates a new texture by loading it from a file.
+    pub fn load_from_file(
+        &mut self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        filepath: &Path,
+    ) -> Handle<Texture> {
+        let bytes = std::fs::read(filepath).expect("Failed to read texture file!");
+        self.load_from_bytes(device, queue, &bytes)
     }
 }
 
