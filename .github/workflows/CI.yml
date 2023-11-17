@@ -34,7 +34,7 @@ jobs:
       - name: Build wheels
         run: |
           source $HOME/.cargo/env
-          for PYBIN in /opt/python/cp3{9..10}*/bin; do
+          for PYBIN in /opt/python/cp3{9..11}*/bin; do
             "${PYBIN}/pip" install -U maturin
             "${PYBIN}/maturin" build --release --out dist -i "${PYBIN}/python" --manylinux 2014
           done
