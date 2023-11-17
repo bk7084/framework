@@ -41,7 +41,7 @@ impl GpuContext {
             gles_minor_version: Default::default(),
         });
 
-        let mut adapters = ArrVec::<PotentialAdapter, 4>::new();
+        let mut adapters = ArrVec::<PotentialAdapter, 16>::new();
         for adapter in instance.enumerate_adapters(backends) {
             let limits = adapter.limits();
             let features = adapter.features();
