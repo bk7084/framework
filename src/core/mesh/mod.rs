@@ -534,7 +534,11 @@ impl Mesh {
             ignore_points: true,
             ignore_lines: true,
         };
-        let (models, materials) = tobj::load_obj(path, &options).unwrap();
+        let (models, materials) = tobj::load_obj(path, &options)
+            .map_err(|err| {
+                log::error!("Failed to load mesh from {:?}: {}", path, err);
+            })
+            .unwrap();
         let materials = materials.expect("Failed to load materials.");
         log::debug!("- Loaded {} models.", models.len());
         log::debug!("- Loaded {} materials.", materials.len());

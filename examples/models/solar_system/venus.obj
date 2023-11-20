@@ -1,6 +1,6 @@
 # Blender v3.0.1 OBJ File: ''
 # www.blender.org
-mtllib Venus.mtl
+mtllib venus.mtl
 o Venus
 v 2.599022 3.789522 -7.119423
 v 3.528133 2.628061 -7.231029

@@ -75,7 +75,8 @@ impl Renderer {
         let meshes = GpuMeshAssets::new(&device);
         let mut textures = TextureAssets::new();
         let bytes = include_bytes!("../../data/textures/checker.png");
-        let default_texture = textures.load_from_bytes(&context.device, &context.queue, bytes);
+        let default_texture =
+            textures.load_from_bytes(&context.device, &context.queue, bytes, None);
         let mut samplers = FxHashMap::default();
         let default_sampler = context.device.create_sampler(&wgpu::SamplerDescriptor {
             label: Some("sampler_default"),

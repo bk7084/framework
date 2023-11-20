@@ -33,6 +33,8 @@ impl Locals {
     pub const SIZE: wgpu::BufferAddress = std::mem::size_of::<Self>() as wgpu::BufferAddress;
 }
 
+pub const INIT_OBJECTS_CAPACITY: usize = 512;
+
 /// Push constants for the shading pipeline.
 #[repr(C)]
 #[derive(Debug, Clone, Copy, Pod, Zeroable)]
@@ -190,7 +192,7 @@ impl BlinnPhongShading {
                     visibility: wgpu::ShaderStages::VERTEX,
                     ty: wgpu::BindingType::Buffer {
                         ty: wgpu::BufferBindingType::Uniform,
-                        has_dynamic_offset: false,
+                        has_dynamic_offset: true,
                         min_binding_size: wgpu::BufferSize::new(Locals::SIZE),
                     },
                     count: None,
@@ -199,7 +201,7 @@ impl BlinnPhongShading {
 
         let locals_uniform_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("shading_locals_uniform_buffer"),
-            size: Locals::SIZE,
+            size: Locals::SIZE * INIT_OBJECTS_CAPACITY as u64,
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
@@ -208,7 +210,11 @@ impl BlinnPhongShading {
             layout: &locals_bind_group_layout,
             entries: &[wgpu::BindGroupEntry {
                 binding: 0,
-                resource: locals_uniform_buffer.as_entire_binding(),
+                resource: wgpu::BindingResource::Buffer(wgpu::BufferBinding {
+                    buffer: &locals_uniform_buffer,
+                    offset: 0,
+                    size: NonZeroU64::new(Locals::SIZE),
+                }),
             }],
         });
 
@@ -569,23 +575,56 @@ impl RenderingPass for BlinnPhongShading {
             &Handle<MaterialBundle>,
             &Handle<TextureBundle>,
         )>::query();
+
+        let mesh_count = mesh_query.iter(&scene.world).count();
+
+        if mesh_count == 0 {
+            return;
+        }
+
+        // Resize locals buffer if necessary.
+        if mesh_count > INIT_OBJECTS_CAPACITY {
+            log::warn!(
+                "Too many meshes to draw in one frame: {} > {}, enlarge locals buffer!",
+                mesh_count,
+                INIT_OBJECTS_CAPACITY
+            );
+            let mut new_locals_size = self.locals_uniform_buffer.size();
+            // Resize locals buffer if necessary.
+            while new_locals_size < mesh_count as u64 * Locals::SIZE as u64 {
+                new_locals_size += 256 * Locals::SIZE as u64;
+            }
+            log::info!("Resize locals buffer to {}", new_locals_size);
+            self.locals_uniform_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+                label: Some("shading_locals_uniform_buffer"),
+                size: new_locals_size,
+                usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+                mapped_at_creation: false,
+            });
+        }
+
+        // Get the mesh buffer, which contains all vertex attributes.
         let buffer = renderer.meshes.buffer();
-        for (mesh_hdl, node_idx, materials_hdl, textures_hdl) in mesh_query
+        for ((i, (mesh_hdl, node_idx, materials_hdl, textures_hdl))) in mesh_query
             .iter(&scene.world)
             .filter(|(_, node_idx, _, _)| scene.nodes[**node_idx].is_visible())
+            .enumerate()
         {
             let node = &scene.nodes[*node_idx];
             let mtls = renderer.material_bundles.get(*materials_hdl).unwrap();
             let texture_bundle = renderer.texture_bundles.get(*textures_hdl).unwrap();
             let model_mat = scene.nodes.world(*node_idx).to_mat4();
+
+            // Update locals.
+            let offset = i as u64 * Locals::SIZE;
             queue.write_buffer(
                 &self.locals_uniform_buffer,
-                0,
+                offset,
                 bytemuck::cast_slice(&model_mat.to_cols_array()),
             );
 
             // Bind locals.
-            render_pass.set_bind_group(1, &self.locals_bind_group, &[]);
+            render_pass.set_bind_group(1, &self.locals_bind_group, &[offset as u32]);
 
             let model_view_inv = (view_mat * model_mat).inverse();
             match renderer.meshes.get(*mesh_hdl) {

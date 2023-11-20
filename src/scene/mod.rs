@@ -52,6 +52,7 @@ impl PyEntity {
 
     pub fn set_transform(&self, mat4: &np::PyArray2<f32>) {
         Python::with_gil(|_py| {
+            log::debug!("Setting transform for entity {:?}", self.entity.entity);
             let mat = Mat4::from_cols_slice(mat4.readonly().as_slice().unwrap()).transpose();
             let (scale, rotation, translation) = mat.to_scale_rotation_translation();
             self.cmd_sender

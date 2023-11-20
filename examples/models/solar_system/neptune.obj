@@ -1,6 +1,6 @@
 # Blender v3.0.1 OBJ File: ''
 # www.blender.org
-mtllib Neptune.mtl
+mtllib neptune.mtl
 o Neptune
 v -4.016388 -6.013343 -4.484156
 v -5.021263 -6.150510 -2.905808

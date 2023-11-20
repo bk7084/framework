@@ -1,6 +1,6 @@
 # Blender v3.0.1 OBJ File: ''
 # www.blender.org
-mtllib Uranus.mtl
+mtllib uranus.mtl
 o Uranus
 v 7.035395 3.229936 3.404747
 v 7.042368 1.989230 4.232574

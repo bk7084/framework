@@ -1,6 +1,6 @@
 # Blender v3.0.1 OBJ File: ''
 # www.blender.org
-mtllib Saturn.mtl
+mtllib saturn.mtl
 o Saturn
 v 11.955652 -4.436887 -2.944908
 v 10.750795 -4.984151 -5.556499

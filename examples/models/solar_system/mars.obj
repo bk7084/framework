@@ -1,6 +1,6 @@
 # Blender v3.0.1 OBJ File: ''
 # www.blender.org
-mtllib Mars.mtl
+mtllib mars.mtl
 o Mars
 v -4.018668 -6.007978 -4.448979
 v -5.023544 -6.145145 -2.870632

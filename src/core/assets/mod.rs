@@ -234,8 +234,12 @@ impl AssetBundle<Texture, Vec<Option<Texture>>> {
         device: &wgpu::Device,
         queue: &wgpu::Queue,
         bytes: &[u8],
+        path: Option<&Path>,
     ) -> Handle<Texture> {
-        let img = image::load_from_memory(bytes).unwrap().to_rgba8();
+        let img = image::load_from_memory(bytes)
+            .map_err(|e| eprintln!("Failed to load texture: {:?} from {:?}", e, path))
+            .unwrap()
+            .to_rgba8();
         log::debug!("---- Loaded image: {:?}", img.dimensions());
         let dims = img.dimensions();
         let size = wgpu::Extent3d {
@@ -287,7 +291,7 @@ impl AssetBundle<Texture, Vec<Option<Texture>>> {
         filepath: &Path,
     ) -> Handle<Texture> {
         let bytes = std::fs::read(filepath).expect("Failed to read texture file!");
-        self.load_from_bytes(device, queue, &bytes)
+        self.load_from_bytes(device, queue, &bytes, Some(filepath))
     }
 }
 
