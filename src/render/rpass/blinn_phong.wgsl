@@ -22,9 +22,9 @@ struct Locals {
     model: mat4x4<f32>,
 }
 
-struct PushConstants {
-    model_view_inv: mat4x4<f32>, // Inverse of the product of model and view matrix.
-    /// Visible to the fragment shader.
+struct PConsts {
+    // Inverse of the product of model and view matrix.
+    model_view_inv: mat4x4<f32>,
     material_index: u32,
 }
 
@@ -118,7 +118,7 @@ var<storage> directional_lights: DirectionalLightArray;
 @group(4) @binding(1)
 var<storage> point_lights: PointLightArray;
 
-var<push_constant> pconsts: PushConstants;
+var<push_constant> pconsts: PConsts;
 
 @vertex
 fn vs_main(vin: VSInput) -> VSOutput {

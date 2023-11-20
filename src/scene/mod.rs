@@ -160,6 +160,12 @@ impl Scene {
     /// scene graph. The entity will be parented to the given parent node. If
     /// the parent node is `None`, the entity will be parented to the root
     /// node.
+    ///
+    /// # Arguments
+    ///
+    /// * `parent` - The parent node of the new node.
+    /// * `components` - The components to add to the entity.
+    /// * `instanced` - Whether the entity should be instanced.
     pub fn spawn<T>(&mut self, parent: NodeIdx, components: T) -> Entity
     where
         Option<T>: IntoComponentSource,

@@ -47,12 +47,14 @@ impl GpuContext {
             let features = adapter.features();
             let info = adapter.get_info();
             log::info!("{:?} Adapter: {:#?}", backends, info);
-            adapters.push(PotentialAdapter {
-                adapter,
-                info,
-                limits,
-                features,
-            });
+            if features.contains(wgpu::Features::PUSH_CONSTANTS) {
+                adapters.push(PotentialAdapter {
+                    adapter,
+                    info,
+                    limits,
+                    features,
+                });
+            }
         }
         adapters.sort_by_key(|adapter| match adapter.info.device_type {
             DeviceType::DiscreteGpu => 0,
@@ -61,6 +63,10 @@ impl GpuContext {
             DeviceType::Cpu => 3,
             DeviceType::Other => 4,
         });
+
+        if adapters.is_empty() {
+            panic!("No adapters found");
+        }
 
         let adapter = adapters.remove(0);
 

@@ -13,7 +13,9 @@ use crate::{
         mesh::Mesh,
         Color, ConcatOrder, FxHashMap, Light, SmlString,
     },
-    render::{rpass::BlinnPhongShading, surface::Surface, GpuContext, RenderTarget, Renderer},
+    render::{
+        rpass::BlinnPhongShading, surface::Surface, GpuContext, Instancing, RenderTarget, Renderer,
+    },
     scene::{Entity, NodeIdx, PyEntity, Scene},
 };
 use crossbeam_channel::Sender;
@@ -194,16 +196,28 @@ impl PyAppState {
     /// Returns the entity ID of the spawned object.
     pub fn spawn_object_with_mesh(&mut self, parent: NodeIdx, mesh: &Mesh) -> Entity {
         log::debug!("Spawning object with mesh#{}", mesh.id);
-        let mut renderer = self.renderer.write().unwrap();
-        let gpu_mesh_handle = renderer.upload_mesh(mesh);
-        log::debug!("Uploading materials for mesh#{}", mesh.id);
-        let (material_bundle, texture_bundle) = renderer.upload_materials(mesh.materials.as_ref());
-        self.scene
+        self.renderer
             .write()
-            .map(|mut scene| {
-                scene.spawn(parent, (gpu_mesh_handle, material_bundle, texture_bundle))
+            .map(|mut renderer| {
+                let (mesh_hdl, instanced) = renderer.upload_mesh(mesh);
+                log::debug!("Uploading materials for mesh#{}", mesh.id);
+                let (materials, textures) = renderer.upload_materials(mesh.materials.as_ref());
+                log::debug!(
+                    "Spawning object with mesh#{}, instanced: {}",
+                    mesh.id,
+                    instanced
+                );
+                let entity = self
+                    .scene
+                    .write()
+                    .map(|mut scene| scene.spawn(parent, (mesh_hdl, materials, textures)))
+                    .unwrap();
+                if instanced {
+                    renderer.add_instancing(mesh_hdl, &[entity.node]);
+                }
+                entity
             })
-            .unwrap()
+            .expect("Failed to spawn object with mesh!")
     }
 
     pub fn spawn_light(&mut self, parent: NodeIdx, light: Light) -> Entity {

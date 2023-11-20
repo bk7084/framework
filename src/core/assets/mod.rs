@@ -13,18 +13,19 @@ use wgpu::TextureFormat;
 
 /// Trait for representing an asset.
 pub trait Asset: Send + Sync {}
+
 pub trait AssetStorage {
     fn len(&self) -> usize;
     fn is_empty(&self) -> bool;
 }
 
 /// A collection of assets of the same type.
-pub struct Assets<A: Asset, S: AssetStorage> {
+pub struct AssetBundle<A: Asset, S: AssetStorage> {
     storage: S,
     allocator: HandleAllocator<A>,
 }
 
-impl<A: Asset, S: AssetStorage> Assets<A, S> {
+impl<A: Asset, S: AssetStorage> AssetBundle<A, S> {
     pub fn len(&self) -> usize {
         self.storage.len()
     }
@@ -34,7 +35,7 @@ impl<A: Asset, S: AssetStorage> Assets<A, S> {
     }
 }
 
-impl<A: Asset, S: AssetStorage> Default for Assets<A, S>
+impl<A: Asset, S: AssetStorage> Default for AssetBundle<A, S>
 where
     S: Default,
 {
@@ -56,7 +57,7 @@ impl<A: Asset> AssetStorage for Vec<Option<A>> {
     }
 }
 
-impl<A: Asset> Assets<A, Vec<Option<A>>> {
+impl<A: Asset> AssetBundle<A, Vec<Option<A>>> {
     /// Adds a new asset to the storage and returns its handle.
     pub fn add(&mut self, asset: A) -> Handle<A> {
         let handle = self.allocator.reserve();
@@ -120,7 +121,7 @@ impl<A: Asset> Assets<A, Vec<Option<A>>> {
 }
 
 /// A collection of GPU meshes.
-pub type GpuMeshAssets = Assets<GpuMesh, GpuMeshStorage>;
+pub type GpuMeshAssets = AssetBundle<GpuMesh, GpuMeshStorage>;
 
 /// Returns true if the given GPU mesh is created from the given mesh.
 fn same_mesh(a: &Mesh, b: &GpuMesh) -> bool {
@@ -128,7 +129,7 @@ fn same_mesh(a: &Mesh, b: &GpuMesh) -> bool {
 }
 
 // Specialize the `Assets` type for `GpuMesh` as it needs a custom storage.
-impl Assets<GpuMesh, GpuMeshStorage> {
+impl AssetBundle<GpuMesh, GpuMeshStorage> {
     pub fn new(device: &wgpu::Device) -> Self {
         Self {
             storage: GpuMeshStorage::new(device),
@@ -141,11 +142,11 @@ impl Assets<GpuMesh, GpuMeshStorage> {
         device: &wgpu::Device,
         queue: &wgpu::Queue,
         mesh: &Mesh,
-    ) -> Handle<GpuMesh> {
+    ) -> (Handle<GpuMesh>, bool) {
         for gpu_mesh in self.storage.data.iter() {
             if let Some((hdl, gpu_mesh)) = gpu_mesh {
                 if same_mesh(mesh, gpu_mesh) {
-                    return *hdl;
+                    return (*hdl, true);
                 }
             }
         }
@@ -161,7 +162,7 @@ impl Assets<GpuMesh, GpuMeshStorage> {
 
         queue.submit(std::iter::once(encoder.finish()));
 
-        handle
+        (handle, false)
     }
 
     pub fn get(&self, handle: Handle<GpuMesh>) -> Option<&GpuMesh> {
@@ -203,9 +204,9 @@ impl Assets<GpuMesh, GpuMeshStorage> {
 }
 
 /// A collection of materials.
-pub type MaterialBundleAssets = Assets<MaterialBundle, Vec<Option<MaterialBundle>>>;
+pub type MaterialBundleAssets = AssetBundle<MaterialBundle, Vec<Option<MaterialBundle>>>;
 
-impl Assets<MaterialBundle, Vec<Option<MaterialBundle>>> {
+impl AssetBundle<MaterialBundle, Vec<Option<MaterialBundle>>> {
     pub fn new() -> Self {
         Self {
             storage: Vec::new(),
@@ -215,12 +216,12 @@ impl Assets<MaterialBundle, Vec<Option<MaterialBundle>>> {
 }
 
 /// A collection of meshes (CPU-side).
-pub type MeshAssets = Assets<Mesh, Vec<Option<Mesh>>>;
+pub type MeshAssets = AssetBundle<Mesh, Vec<Option<Mesh>>>;
 
 /// A collection of textures.
-pub type TextureAssets = Assets<Texture, Vec<Option<Texture>>>;
+pub type TextureAssets = AssetBundle<Texture, Vec<Option<Texture>>>;
 
-impl Assets<Texture, Vec<Option<Texture>>> {
+impl AssetBundle<Texture, Vec<Option<Texture>>> {
     pub fn new() -> Self {
         Self {
             storage: Vec::new(),
@@ -290,9 +291,9 @@ impl Assets<Texture, Vec<Option<Texture>>> {
     }
 }
 
-pub type TextureBundleAssets = Assets<TextureBundle, Vec<Option<TextureBundle>>>;
+pub type TextureBundleAssets = AssetBundle<TextureBundle, Vec<Option<TextureBundle>>>;
 
-impl Assets<TextureBundle, Vec<Option<TextureBundle>>> {
+impl AssetBundle<TextureBundle, Vec<Option<TextureBundle>>> {
     pub fn new() -> Self {
         Self {
             storage: Vec::new(),

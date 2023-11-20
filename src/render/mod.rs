@@ -1,6 +1,6 @@
 use crate::{color, core::Color};
 use crossbeam_channel::Receiver;
-use std::{path::Path, sync::Arc};
+use std::{collections::hash_map::Entry, path::Path, sync::Arc};
 use wgpu::util::DeviceExt;
 
 mod context;
@@ -21,9 +21,13 @@ use crate::{
         TextureBundle, TextureType,
     },
     render::rpass::{texture_bundle_bind_group_layout, RenderingPass, MAX_TEXTURE_ARRAY_LEN},
-    scene::Scene,
+    scene::{NodeIdx, Scene},
 };
 pub use context::*;
+
+// TODO: render bundles enables us to create N uniform buffers and dispatch N
+// render calls, which is a bit slow if we iterate over all of them every frame,
+// but render bundles can speed this up.
 
 /// Shading mode.
 #[pyo3::pyclass]
@@ -52,6 +56,7 @@ pub struct Renderer {
     default_texture: Handle<Texture>,
     default_material_bundle: Handle<MaterialBundle>,
     default_texture_bundle: Handle<TextureBundle>,
+    instancing: FxHashMap<Handle<GpuMesh>, Instancing>,
     samplers: FxHashMap<SmlString, wgpu::Sampler>,
     cmd_receiver: Receiver<Command>,
 }
@@ -116,6 +121,7 @@ impl Renderer {
             textures,
             default_material_bundle,
             default_texture_bundle,
+            instancing: FxHashMap::default(),
             samplers,
             cmd_receiver: receiver,
             texture_bundles,
@@ -125,7 +131,7 @@ impl Renderer {
 
     /// Uploads a mesh to the GPU, creates `GpuMesh` from `Mesh` then adds it to
     /// the renderer.
-    pub fn upload_mesh(&mut self, mesh: &Mesh) -> Handle<GpuMesh> {
+    pub fn upload_mesh(&mut self, mesh: &Mesh) -> (Handle<GpuMesh>, bool) {
         log::debug!("Uploading mesh#{}", mesh.id);
         self.meshes.add(&self.device, &self.queue, mesh)
     }
@@ -210,6 +216,33 @@ impl Renderer {
                 });
                 (material_bundle, texture_bundle)
             }
+        }
+    }
+
+    /// Adds a new instancing data for a mesh.
+    pub fn add_instancing(&mut self, mesh: Handle<GpuMesh>, nodes: &[NodeIdx]) {
+        if nodes.is_empty() {
+            return;
+        }
+        match self.instancing.entry(mesh) {
+            Entry::Occupied(mut instancing) => {
+                instancing.get_mut().nodes.extend(nodes.iter());
+            }
+            Entry::Vacant(_) => {
+                self.instancing.insert(
+                    mesh,
+                    Instancing {
+                        nodes: nodes.to_vec(),
+                    },
+                );
+            }
+        }
+    }
+
+    /// Removes one instancing data for a mesh.
+    pub fn remove_instancing(&mut self, mesh: Handle<GpuMesh>, node: NodeIdx) {
+        if let Some(instancing) = self.instancing.get_mut(&mesh) {
+            instancing.nodes.retain(|n| *n != node);
         }
     }
 
@@ -303,4 +336,10 @@ impl Renderer {
         self.queue.submit(std::iter::once(encoder.finish()));
         Ok(())
     }
+}
+
+/// Instancing data for a mesh.
+#[derive(Clone, Debug, Default)]
+pub struct Instancing {
+    pub nodes: Vec<NodeIdx>,
 }
