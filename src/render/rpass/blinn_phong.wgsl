@@ -11,6 +11,8 @@
     // illum 10: Casts shadows onto invisible surfaces
     // Self defined:
     // - 11: kd as color, no lighting
+    // - 12: uv as color, no lighting
+    // - 13: normal as color, no lighting
 
 /// Camera data.
 struct Globals {
@@ -207,6 +209,14 @@ fn fs_main(vout: VSOutput) -> @location(0) vec4<f32> {
         return vec4<f32>(kd, 1.0);
     }
 
+    if (material.illum == 12u) {
+        return vec4<f32>(vout.uv, 0.0, 1.0);
+    }
+
+    if (material.illum == 13u) {
+        return vec4<f32>(vout.normal_eye_space, 1.0);
+    }
+
     var color = materials[default_material_index].kd.rgb;
 
     var ks = material.ks.rgb;
@@ -232,14 +242,5 @@ fn fs_main(vout: VSOutput) -> @location(0) vec4<f32> {
         color += ka * ia;
     }
 
-    // Output UV as color.
-    // color = vec3<f32>(vout.uv, 0.0);
-
-    // Output normal as color.
-    // color = vout.normal;
-
-    // Output kd as color.
-    // color = kd;
-    // color = directional_lights.data[0].direction;
     return vec4<f32>(color, 1.0);
 }

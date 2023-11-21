@@ -154,7 +154,8 @@ pub struct BlinnPhongShading {
     pub directional_lights_storage_buffer: wgpu::Buffer,
     pub point_lights_storage_buffer: wgpu::Buffer,
 
-    pub pipeline: wgpu::RenderPipeline,
+    /// The render pipeline for rendering entities.
+    pub entity_pipeline: wgpu::RenderPipeline,
 }
 
 impl BlinnPhongShading {
@@ -406,7 +407,7 @@ impl BlinnPhongShading {
             lights_bind_group,
             directional_lights_storage_buffer: directional_lights_buffer,
             point_lights_storage_buffer: point_lights_buffer,
-            pipeline,
+            entity_pipeline: pipeline,
         }
     }
 }
@@ -551,7 +552,7 @@ impl RenderingPass for BlinnPhongShading {
             occlusion_query_set: None,
         });
 
-        render_pass.set_pipeline(&self.pipeline);
+        render_pass.set_pipeline(&self.entity_pipeline);
         render_pass.set_bind_group(0, &self.globals_bind_group, &[]);
 
         // Update light buffers.

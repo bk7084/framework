@@ -1,5 +1,6 @@
 mod blinn_phong;
 mod clear;
+mod skybox;
 mod wireframe;
 
 use crate::{
