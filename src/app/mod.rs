@@ -243,7 +243,7 @@ impl PyAppState {
 
     /// Prepare the scene and renderer for rendering.
     pub fn prepare(&mut self) {
-        self.scene.write().unwrap().process_commands();
+        self.scene.write().unwrap().prepare(&mut self.main_camera);
         self.renderer.write().unwrap().prepare();
     }
 
@@ -253,7 +253,7 @@ impl PyAppState {
             .scene
             .write()
             .map(|mut scene| {
-                let camera = Camera::new(proj, Color::LIGHT_PERIWINKLE, true);
+                let camera = Camera::new(proj, Color::LIGHT_PERIWINKLE, false);
                 let entity = scene.spawn(NodeIdx::root(), (camera,));
                 let transform = scene.nodes[entity.node].transform_mut();
                 transform.translation = pos;
@@ -267,6 +267,7 @@ impl PyAppState {
 
     /// Returns true if an event has been fully processed.
     pub fn process_input(&mut self, event: &WindowEvent) -> bool {
+        profiling::scope!("process_input");
         match event {
             WindowEvent::ModifiersChanged(state) => {
                 self.input.update_modifier_states(*state);

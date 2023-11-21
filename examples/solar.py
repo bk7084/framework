@@ -11,6 +11,8 @@ app = bk.App()
 
 camera = app.create_camera(Vec3(-500.0, 50.0, 0.0), Vec3(0, 0, 0), 60.0, near=1.0, far=2000.0)
 
+camera.set_as_main_camera()
+
 planets = {
     'neptune': {
         'model': app.add_mesh(bk.Mesh.load_from(res_path('models/solar_system/neptune.obj'))),
@@ -71,9 +73,12 @@ mars = planets['mars']['model']
 # mars.set_visible(True)
 mars.set_transform(Mat4.from_scale(Vec3(2.5)))
 
+start = 0
 
 @app.event
 def on_update(input, dt, t):
+    global start
+    start += dt
 
     t = t * 0.5
 

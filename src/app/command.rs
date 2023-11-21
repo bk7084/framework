@@ -44,6 +44,8 @@ pub enum Command {
     /// the materials of the entity, the command will set the material to
     /// the first material of the entity.
     SetMaterial { entity: Entity, material: u32 },
+    /// Sets the entity as the main camera.
+    SetAsMainCamera { entity: Entity },
     /// Clears the material override.
     ClearMaterialOverride { entity: Entity },
 }

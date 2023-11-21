@@ -461,47 +461,70 @@ impl RenderingPass for BlinnPhongShading {
         renderer: &Renderer,
         scene: &Scene,
     ) {
-        // (Re-)create depth texture if necessary.
-        let need_recreate = match &self.depth_texture {
-            None => true,
-            Some(depth) => target.size != depth.0.size(),
+        profiling::scope!("BlinnPhongShading::record");
+
+        let view_mat = {
+            // Update camera globals.
+            let mut camera_query = <(&Camera, &NodeIdx)>::query();
+            let num_cameras = camera_query.iter(&scene.world).count();
+            if num_cameras == 0 {
+                log::error!("No camera found in the scene! Skip rendering!");
+                return;
+            }
+
+            let main_camera = camera_query
+                .iter(&scene.world)
+                .find(|(camera, _)| camera.is_main);
+
+            let (camera, node_idx) = match main_camera {
+                None => {
+                    // If there is no main camera, use the first camera.
+                    let camera = camera_query.iter(&scene.world).next().unwrap();
+                    log::warn!("No main camera found, use the first camera #{:?}", camera.1);
+                    camera
+                }
+                Some(camera) => {
+                    // If there is a main camera, use it.
+                    log::debug!("Use main camera {:?}", camera.1);
+                    camera
+                }
+            };
+
+            let view_mat = scene.nodes.inverse_world(*node_idx).to_mat4();
+            let proj = camera.proj_matrix(target.aspect_ratio());
+            let globals = Globals {
+                view: view_mat.to_cols_array(),
+                proj: proj.to_cols_array(),
+            };
+            queue.write_buffer(
+                &self.globals_uniform_buffer,
+                0,
+                bytemuck::bytes_of(&globals),
+            );
+            view_mat
         };
 
-        if need_recreate {
-            let texture = device.create_texture(&wgpu::TextureDescriptor {
-                label: Some("wireframe_depth_texture"),
-                size: target.size,
-                mip_level_count: 1,
-                sample_count: 1,
-                dimension: wgpu::TextureDimension::D2,
-                format: DEPTH_FORMAT,
-                usage: wgpu::TextureUsages::RENDER_ATTACHMENT
-                    | wgpu::TextureUsages::TEXTURE_BINDING,
-                view_formats: &[],
-            });
-            let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
-            self.depth_texture = Some((texture, view));
-        }
+        {
+            // (Re-)create depth texture if necessary.
+            let need_recreate = match &self.depth_texture {
+                None => true,
+                Some(depth) => target.size != depth.0.size(),
+            };
 
-        let mut view_mat = Mat4::IDENTITY;
-
-        // Update globals.
-        let mut camera_query = <(&Camera, &NodeIdx)>::query();
-        // TODO: support multiple cameras.
-        for (camera, node_idx) in camera_query.iter(&scene.world) {
-            if camera.is_main {
-                view_mat = scene.nodes.inverse_world(*node_idx).to_mat4();
-                let proj = camera.proj_matrix(target.aspect_ratio());
-                let globals = Globals {
-                    view: view_mat.to_cols_array(),
-                    proj: proj.to_cols_array(),
-                };
-                queue.write_buffer(
-                    &self.globals_uniform_buffer,
-                    0,
-                    bytemuck::bytes_of(&globals),
-                );
-                break;
+            if need_recreate {
+                let texture = device.create_texture(&wgpu::TextureDescriptor {
+                    label: Some("wireframe_depth_texture"),
+                    size: target.size,
+                    mip_level_count: 1,
+                    sample_count: 1,
+                    dimension: wgpu::TextureDimension::D2,
+                    format: DEPTH_FORMAT,
+                    usage: wgpu::TextureUsages::RENDER_ATTACHMENT
+                        | wgpu::TextureUsages::TEXTURE_BINDING,
+                    view_formats: &[],
+                });
+                let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
+                self.depth_texture = Some((texture, view));
             }
         }
 

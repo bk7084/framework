@@ -768,4 +768,16 @@ impl Input {
     pub fn is_mouse_released(&self, button: MouseButton) -> bool {
         !self.is_mouse_pressed(button)
     }
+
+    pub fn release_key(&mut self, key_code: KeyCode) {
+        self.keys.iter_mut().for_each(|k| {
+            if *k == Some(key_code) {
+                *k = None;
+            }
+        });
+    }
+
+    pub fn release_mouse_button(&mut self, button: MouseButton) {
+        self.btns &= !(1 << button as u32);
+    }
 }
