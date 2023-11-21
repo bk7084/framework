@@ -143,3 +143,7 @@ cython_debug/
 
 # ImGUI config
 *.ini
+
+# User-specific files
+/data/sibenik
+/data/sponza

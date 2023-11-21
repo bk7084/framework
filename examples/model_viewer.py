@@ -2,11 +2,18 @@ import tkinter.filedialog
 
 import imgui
 
+<<<<<<< HEAD
 from framework.bk7084 import Window, app, Camera
 from framework.bk7084.app import ui
 from framework.bk7084.app.input import KeyCode
 from framework.bk7084.graphics import draw
 from framework.bk7084.math import Vec3, Mat4
+=======
+from bk7084 import Window, app, Camera
+from bk7084 import ui, KeyCode
+from bk7084.graphics import draw
+from bk7084.math import Vec3, Mat4
+>>>>>>> master
 
 # Setup window and add camera
 from framework.bk7084.scene import Mesh, Scene
@@ -14,7 +21,7 @@ from framework.bk7084.scene import Mesh, Scene
 window = Window("BK7084: Simple Scene", width=600, height=600)
 
 scene = Scene(window, draw_light=True)
-model = scene.load_mesh_entity("./models/cube.obj")
+model = scene.load_mesh_entity("spot_cow", "./models/spot_cow.obj")
 
 scene.create_camera(Vec3(2, 1.0, 2.0), Vec3(0, 0, 0), Vec3.unit_y(), 60.0, zoom_enabled=True, safe_rotations=False)
 scene.create_camera(Vec3(-2, 1.0, 2.0), Vec3(0, 0, 0), Vec3.unit_y(), 60.0, zoom_enabled=True, safe_rotations=False)
@@ -40,7 +47,7 @@ def on_key_press(key, mods):
 def on_update(dt):
     if animate:
         pass
-        model.apply_transformation(Mat4.from_axis_angle(Vec3.unit_y(), 45.0 * dt, True))
+        model.apply_transform(Mat4.from_axis_angle(Vec3.unit_y(), 45.0 * dt, True))
 
 
 @window.event

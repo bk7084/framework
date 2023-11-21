@@ -1,10 +1,10 @@
-from bk7084 import Window, app
-from bk7084.math import Vec3, Mat4
-from bk7084.misc import PaletteDefault as Palette
+from framework.bk7084 import Window, app
+from framework.bk7084.math import Vec3, Mat4
+from framework.bk7084.misc import PaletteDefault as Palette
 
 # Setup window and add camera
-from bk7084.scene import Mesh, Building, Component, Scene
-from bk7084.scene.mesh import SubMesh
+from framework.bk7084.scene import Mesh, Building, Component, Scene
+from framework.bk7084.scene.mesh import SubMesh
 
 window = Window("BK7084: Construction", width=1024, height=1024)
 # window.create_camera(Vec3(4, 2.0, 4.0), Vec3(0, 0, 0), Vec3.unit_y(), 60.0, zoom_enabled=True)
@@ -14,12 +14,13 @@ class Wall(Component):
     def __init__(self, w, h):
         super().__init__()
         self._mesh = Mesh(
+            name='wall',
             vertices=[[-w / 2.0, -h / 2.0, 0.0], [w / 2.0, -h / 2.0, 0.0], [w / 2.0, h / 2.0, 0.0], [-w / 2.0, h / 2.0, 0.0],
                       [-w, -h, 0.0], [w, -h, 0.0], [w, h, 0.0], [-w, h, 0.0]],
             colors=[Palette.BlueA.as_color()],
             normals=[[0.0, 0.0, 1.0]],
             uvs=[[0.0, 0.0], [1.0, 0.0], [1.0, 1.0], [0.0, 1.0], [0.25, 0.25], [0.75, 0.25], [0.75, 0.75], [0.25, 0.75]],
-            triangles=[
+            faces=[
                 [(0, 1, 5, 4), (4, 5, 1, 0), (0, 0, 0, 0)],
                 [(1, 2, 6, 5), (5, 6, 2, 1), (0, 0, 0, 0)],
                 [(2, 3, 7, 6), (6, 7, 3, 2), (0, 0, 0, 0)],
@@ -28,9 +29,9 @@ class Wall(Component):
             vertex_shader='shaders/example.vert',
             pixel_shader='shaders/example.frag')
 
-        self._mesh.update_sub_mesh(0, SubMesh(name='body', triangles=[0, 1, 2, 3], normal_map_enabled=True),
+        self._mesh.update_sub_mesh(0, SubMesh(name='body', faces=[0, 1, 2, 3], enable_normal_map=True),
                                    texture='models/brick.jpg', normal_map='models/brick_normal_map.png')
-        self._mesh.append_sub_mesh(SubMesh(name='window', triangles=[4]), texture='models/window.jpg')
+        self._mesh.append_sub_mesh(SubMesh(name='window', faces=[4]), texture='models/window.jpg')
                                    # pixel_shader='shaders/example2.frag')
         self._mesh.texture_enabled = True
         # self._mesh.apply_transformation(Mat4.from_rotation_y(45, True))
