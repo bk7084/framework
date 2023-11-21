@@ -1,7 +1,5 @@
-import random
 import bk7084 as bk
 from bk7084.math import *
-import numpy as np
 
 win = bk.Window()
 win.set_title("BK7084 - 0x00: Window")
@@ -10,7 +8,7 @@ win.set_resizable(True)
 
 app = bk.App()
 print(type(Vec3(1, 2, 3)))
-camera = app.create_camera(pos=Vec3(0, 0, 32), look_at=Vec3(0, 0, 0), fov_v=60.0, near=0.1, far=200.0)
+camera = app.create_camera(pos=Vec3(0, 0, 90), look_at=Vec3(0, 0, 0), fov_v=60.0, near=0.1, far=200.0)
 
 cube_mesh = bk.Mesh.load_from(bk.res_path("../data/blender_cube/cube.obj"))
 sphere_mesh = bk.Mesh.load_from(bk.res_path("../data/blender_sphere/sphere.obj"))
@@ -43,9 +41,6 @@ def on_update(input, dt, t):
             rot = Mat4.from_rotation_y(angle)
         elif axis == 2:
             rot = Mat4.from_rotation_z(angle)
-        # x = (i % 16 - 8) * 4.0
-        # y = ((i // 16) % 16 - 8) * 4.0
-        # z = 0.0
 
         z = ((i // 256) - 8) * 4.0
         x = (((i % 256) // 16) - 8) * 4.0

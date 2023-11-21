@@ -20,16 +20,6 @@ tri_mesh = bk.Mesh.create_triangle(Vec3(-2, -2, 1), Vec3(2, -2, 1), Vec3(0, 2, 1
 tri = app.add_mesh(tri_mesh)
 tri.set_visible(True)
 
-# cube_mesh = bk.Mesh.create_cube()
-# cube = app.add_mesh(cube_mesh)
-#
-# cube.set_transform()
-
-# material = bk.Material()
-# material_handle = app.add_material(material)
-#
-# app.create_renderable(cube_handle, material_handle)
-
 i = 0
 space_pressed = False
 
