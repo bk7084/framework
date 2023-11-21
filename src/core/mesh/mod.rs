@@ -10,7 +10,10 @@ use std::{
 };
 
 mod attribute;
-use crate::core::{assets::Asset, Alignment, Material};
+use crate::core::{
+    assets::{Asset, Handle},
+    Alignment, Material, MaterialBundle, TextureBundle,
+};
 pub use attribute::*;
 
 /// Topology of a mesh primitive.
@@ -692,4 +695,11 @@ mod util {
         let v = 0.5 - (v[1].asin() / std::f32::consts::PI);
         [u, v]
     }
+}
+
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
+pub struct MeshBundle {
+    pub mesh: Handle<GpuMesh>,
+    pub textures: Handle<TextureBundle>,
+    pub materials: Handle<MaterialBundle>,
 }

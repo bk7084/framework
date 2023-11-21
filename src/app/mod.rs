@@ -10,7 +10,7 @@ use crate::{
     app::command::Command,
     core::{
         camera::{Camera, Projection},
-        mesh::{Mesh, SubMesh},
+        mesh::{Mesh, MeshBundle, SubMesh},
         Color, ConcatOrder, FxHashMap, Light, Material, SmlString, TextureType, Transform,
     },
     render::{rpass::BlinnPhongShading, surface::Surface, GpuContext, RenderTarget, Renderer},
@@ -203,21 +203,32 @@ impl PyAppState {
             .write()
             .map(|mut renderer| {
                 let (mesh_hdl, instanced) = renderer.upload_mesh(mesh);
-                log::debug!("Uploading materials for mesh#{}", mesh.id);
-                let (materials, textures) = renderer.upload_materials(mesh.materials.as_ref());
-                log::debug!(
-                    "Spawning object with mesh#{}, instanced: {}",
-                    mesh.id,
-                    instanced
-                );
-                let entity = self
-                    .scene
-                    .write()
-                    .map(|mut scene| scene.spawn(parent, (mesh_hdl, materials, textures)))
-                    .unwrap();
-                if instanced {
-                    renderer.add_instancing(mesh_hdl, &[entity.node]);
-                }
+
+                let entity = if instanced {
+                    log::debug!("Spawning instanced object with mesh#{}", mesh.id);
+                    let bundle = renderer.get_mesh_bundle(mesh_hdl).unwrap();
+                    self.scene
+                        .write()
+                        .map(|mut scene| scene.spawn(parent, (bundle,)))
+                        .unwrap()
+                } else {
+                    log::debug!("Spawning object with mesh#{}", mesh.id);
+                    log::debug!("Uploading materials for mesh#{}", mesh.id);
+                    let (materials, textures) = renderer.upload_materials(mesh.materials.as_ref());
+                    let bundle = MeshBundle {
+                        mesh: mesh_hdl,
+                        textures,
+                        materials,
+                    };
+                    renderer.insert_mesh_bundle(mesh_hdl, bundle);
+                    self.scene
+                        .write()
+                        .map(|mut scene| scene.spawn(parent, (bundle,)))
+                        .unwrap()
+                };
+
+                renderer.add_instancing(mesh_hdl, &[entity.node]);
+
                 entity
             })
             .expect("Failed to spawn object with mesh!")

@@ -20,4 +20,4 @@ def res_path(path: str) -> str:
     import traceback
     stack = traceback.extract_stack()
     dirname = osp.dirname(osp.abspath(stack[-2].filename))
-    return osp.join(dirname, path)
+    return osp.abspath(osp.join(dirname, path))

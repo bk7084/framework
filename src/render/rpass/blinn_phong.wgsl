@@ -20,11 +20,11 @@ struct Globals {
 
 struct Locals {
     model: mat4x4<f32>,
+    model_view_inv: mat4x4<f32>,
 }
 
 struct PConsts {
-    // Inverse of the product of model and view matrix.
-    model_view_inv: mat4x4<f32>,
+    instance_base_index: u32,
     material_index: u32,
 }
 
@@ -101,7 +101,7 @@ struct VSOutput {
 var<uniform> globals: Globals;
 
 @group(1) @binding(0)
-var<uniform> locals: Locals;
+var<storage> instances: array<Locals>;
 
 @group(2) @binding(0)
 var<storage> materials: array<Material>;
@@ -122,6 +122,9 @@ var<push_constant> pconsts: PConsts;
 
 @vertex
 fn vs_main(vin: VSInput) -> VSOutput {
+    // Model matrix.
+    let locals = instances[vin.instance_index + pconsts.instance_base_index];
+
     var out: VSOutput;
     let pos_eye_space = globals.view * locals.model * vec4<f32>(vin.position, 1.0);
 
@@ -129,7 +132,7 @@ fn vs_main(vin: VSInput) -> VSOutput {
     out.pos_eye_space = pos_eye_space.xyz / pos_eye_space.w;
 
     out.uv = vin.uv0;
-    var transformed_normal = transpose(pconsts.model_view_inv) * vec4<f32>(vin.normal, 0.0);
+    var transformed_normal = transpose(locals.model_view_inv) * vec4<f32>(vin.normal, 0.0);
     out.normal_eye_space = normalize(transformed_normal.xyz);
     out.view_mat_x = globals.view.x;
     out.view_mat_y = globals.view.y;

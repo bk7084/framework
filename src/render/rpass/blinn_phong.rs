@@ -2,8 +2,8 @@ use crate::{
     core::{
         assets::Handle,
         camera::Camera,
-        mesh::{GpuMesh, VertexAttribute},
-        Color, GpuMaterial, Light, MaterialBundle, TextureBundle,
+        mesh::{GpuMesh, MeshBundle, VertexAttribute},
+        Color, FxHashSet, GpuMaterial, Light, MaterialBundle, TextureBundle,
     },
     render::{rpass::RenderingPass, RenderTarget, Renderer},
     scene::{NodeIdx, Scene},
@@ -27,22 +27,31 @@ struct Globals {
 #[derive(Debug, Clone, Copy, Pod, Zeroable)]
 struct Locals {
     model: [f32; 16],
+    model_view_inv: [f32; 16],
 }
 
 impl Locals {
     pub const SIZE: wgpu::BufferAddress = std::mem::size_of::<Self>() as wgpu::BufferAddress;
+
+    pub const fn identity() -> Self {
+        Self {
+            model: Mat4::IDENTITY.to_cols_array(),
+            model_view_inv: Mat4::IDENTITY.to_cols_array(),
+        }
+    }
 }
 
-pub const INIT_OBJECTS_CAPACITY: usize = 512;
+/// Initial number of meshes of which the buffer can hold.
+pub const INITIAL_MESHES_COUNT: usize = 512;
 
 /// Push constants for the shading pipeline.
 #[repr(C)]
 #[derive(Debug, Clone, Copy, Pod, Zeroable)]
 struct PConsts {
-    /// Inverse of the model view matrix (for transforming normals).
-    model_view_inv: [f32; 16],
+    /// Index of the first instance in the instance buffer.
+    instance_base_index: u32,
     /// Material index.
-    material: u32,
+    material_index: u32,
 }
 
 impl PConsts {
@@ -134,7 +143,7 @@ pub struct BlinnPhongShading {
     pub globals_bind_group_layout: wgpu::BindGroupLayout,
 
     pub locals_bind_group: wgpu::BindGroup,
-    pub locals_uniform_buffer: wgpu::Buffer,
+    pub locals_storage_buffer: wgpu::Buffer,
     pub locals_bind_group_layout: wgpu::BindGroupLayout,
 
     pub materials_bind_group_layout: wgpu::BindGroupLayout,
@@ -191,18 +200,18 @@ impl BlinnPhongShading {
                     binding: 0,
                     visibility: wgpu::ShaderStages::VERTEX,
                     ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Uniform,
-                        has_dynamic_offset: true,
+                        ty: wgpu::BufferBindingType::Storage { read_only: true },
+                        has_dynamic_offset: false,
                         min_binding_size: wgpu::BufferSize::new(Locals::SIZE),
                     },
                     count: None,
                 }],
             });
 
-        let locals_uniform_buffer = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("shading_locals_uniform_buffer"),
-            size: Locals::SIZE * INIT_OBJECTS_CAPACITY as u64,
-            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+        let locals_storage_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("shading_locals_storage_buffer"),
+            size: Locals::SIZE * INITIAL_MESHES_COUNT as u64,
+            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
         let locals_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
@@ -210,11 +219,7 @@ impl BlinnPhongShading {
             layout: &locals_bind_group_layout,
             entries: &[wgpu::BindGroupEntry {
                 binding: 0,
-                resource: wgpu::BindingResource::Buffer(wgpu::BufferBinding {
-                    buffer: &locals_uniform_buffer,
-                    offset: 0,
-                    size: NonZeroU64::new(Locals::SIZE),
-                }),
+                resource: locals_storage_buffer.as_entire_binding(),
             }],
         });
 
@@ -393,7 +398,7 @@ impl BlinnPhongShading {
             globals_uniform_buffer,
             globals_bind_group_layout,
             locals_bind_group,
-            locals_uniform_buffer,
+            locals_storage_buffer,
             locals_bind_group_layout,
             materials_bind_group_layout,
             textures_bind_group_layout,
@@ -569,67 +574,104 @@ impl RenderingPass for BlinnPhongShading {
         // Bind lights. TODO: maybe move lights to renderer?
         render_pass.set_bind_group(4, &self.lights_bind_group, &[]);
 
-        let mut mesh_query = <(
-            &Handle<GpuMesh>,
-            &NodeIdx,
-            &Handle<MaterialBundle>,
-            &Handle<TextureBundle>,
-        )>::query();
+        let mut mesh_query = <(&NodeIdx, &MeshBundle)>::query();
+        let mut mesh_bundles = FxHashSet::default();
+        let mut total_inst_count = 0;
+        for (_, mesh) in mesh_query
+            .iter(&scene.world)
+            .filter(|(node_idx, _)| scene.nodes[**node_idx].is_visible())
+        {
+            mesh_bundles.insert(mesh);
+            total_inst_count += 1;
+        }
+        log::debug!(
+            "Draw {} meshes of {} instances",
+            mesh_bundles.len(),
+            total_inst_count
+        );
 
-        let mesh_count = mesh_query.iter(&scene.world).count();
-
-        if mesh_count == 0 {
+        if total_inst_count == 0 {
             return;
         }
 
         // Resize locals buffer if necessary.
-        if mesh_count > INIT_OBJECTS_CAPACITY {
+        if total_inst_count > self.locals_storage_buffer.size() / Locals::SIZE {
             log::warn!(
-                "Too many meshes to draw in one frame: {} > {}, enlarge locals buffer!",
-                mesh_count,
-                INIT_OBJECTS_CAPACITY
+                "Too many instances to draw in one frame: {} > {}, enlarge instance locals buffer!",
+                total_inst_count,
+                INITIAL_MESHES_COUNT
             );
-            let mut new_locals_size = self.locals_uniform_buffer.size();
-            // Resize locals buffer if necessary.
-            while new_locals_size < mesh_count as u64 * Locals::SIZE as u64 {
-                new_locals_size += 256 * Locals::SIZE as u64;
+            let mut new_size = self.locals_storage_buffer.size();
+            // Resize instance buffer if necessary.
+            while new_size < total_inst_count as u64 * Locals::SIZE {
+                new_size += 128 * Locals::SIZE;
             }
-            log::info!("Resize locals buffer to {}", new_locals_size);
-            self.locals_uniform_buffer = device.create_buffer(&wgpu::BufferDescriptor {
-                label: Some("shading_locals_uniform_buffer"),
-                size: new_locals_size,
-                usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+            log::info!("Resize instance locals buffer to {}", new_size);
+            self.locals_storage_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+                label: Some("shading_locals_storage_buffer"),
+                size: new_size,
+                usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
                 mapped_at_creation: false,
+            });
+            log::info!("Recreate locals bind group");
+            self.locals_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+                label: Some("shading_locals_bind_group"),
+                layout: &self.locals_bind_group_layout,
+                entries: &[wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: self.locals_storage_buffer.as_entire_binding(),
+                }],
             });
         }
 
+        // Bind locals.
+        render_pass.set_bind_group(1, &self.locals_bind_group, &[]);
+        // Preparing locals for each mesh.
+        let mut locals = vec![Locals::identity(); total_inst_count as usize];
+
         // Get the mesh buffer, which contains all vertex attributes.
         let buffer = renderer.meshes.buffer();
-        for ((i, (mesh_hdl, node_idx, materials_hdl, textures_hdl))) in mesh_query
-            .iter(&scene.world)
-            .filter(|(_, node_idx, _, _)| scene.nodes[**node_idx].is_visible())
-            .enumerate()
-        {
-            let node = &scene.nodes[*node_idx];
-            let mtls = renderer.material_bundles.get(*materials_hdl).unwrap();
-            let texture_bundle = renderer.texture_bundles.get(*textures_hdl).unwrap();
-            let model_mat = scene.nodes.world(*node_idx).to_mat4();
-
+        let mut locals_offset = 0u32;
+        for bundle in mesh_bundles {
             // Update locals.
-            let offset = i as u64 * Locals::SIZE;
-            queue.write_buffer(
-                &self.locals_uniform_buffer,
-                offset,
-                bytemuck::cast_slice(&model_mat.to_cols_array()),
+            let instancing = renderer
+                .instancing
+                .get(&bundle.mesh)
+                .expect("Unreachable! Instancing should be created for all meshes!");
+            let mut inst_count = 0;
+            for (i, node) in instancing.nodes.iter().enumerate() {
+                if !scene.nodes[*node].is_visible() {
+                    continue;
+                }
+                inst_count += 1;
+                let model_mat = scene.nodes.world(*node).to_mat4();
+                locals[locals_offset as usize + i] = Locals {
+                    model: model_mat.to_cols_array(),
+                    model_view_inv: (view_mat * model_mat).inverse().to_cols_array(),
+                };
+            }
+            debug_assert!(
+                inst_count > 0,
+                "Unreachable! Only visible nodes should be rendered!"
             );
 
-            // Bind locals.
-            render_pass.set_bind_group(1, &self.locals_bind_group, &[offset as u32]);
+            // Update push constants: instance base index.
+            render_pass.set_push_constants(
+                wgpu::ShaderStages::VERTEX_FRAGMENT,
+                0,
+                bytemuck::bytes_of(&(locals_offset as u32)),
+            );
+            locals_offset += inst_count;
+            let inst_range = 0..inst_count;
 
-            let model_view_inv = (view_mat * model_mat).inverse();
-            match renderer.meshes.get(*mesh_hdl) {
+            let mtls = renderer.material_bundles.get(bundle.materials).unwrap();
+            // let node = &scene.nodes[*node_idx];
+            let texs = renderer.texture_bundles.get(bundle.textures).unwrap();
+            // let model_mat = scene.nodes.world(*node_idx).to_mat4();
+
+            match renderer.meshes.get(bundle.mesh) {
                 None => {
-                    log::error!("Missing mesh {:?}", mesh_hdl);
+                    log::error!("Missing mesh {:?}", bundle.mesh);
                     continue;
                 }
                 Some(mesh) => {
@@ -652,23 +694,17 @@ impl RenderingPass for BlinnPhongShading {
                             render_pass.set_vertex_buffer(2, buffer.slice(uv_range.clone()));
                         }
 
-                        // Set push constants.
-                        render_pass.set_push_constants(
-                            wgpu::ShaderStages::VERTEX_FRAGMENT,
-                            0,
-                            bytemuck::cast_slice(&[model_view_inv.to_cols_array()]),
-                        );
                         // Bind material.
                         render_pass.set_bind_group(2, &mtls.bind_group, &[]);
                         // Bind textures.
-                        render_pass.set_bind_group(
-                            3,
-                            texture_bundle.bind_group.as_ref().unwrap(),
-                            &[],
-                        );
-                        let override_material = node
-                            .material_override
-                            .map(|id| id.min(mtls.n_materials - 1));
+                        render_pass.set_bind_group(3, texs.bind_group.as_ref().unwrap(), &[]);
+
+                        // TODO: support material override.
+                        // let override_material = node
+                        //     .material_override
+                        //     .map(|id| id.min(mtls.n_materials - 1));
+                        let override_material = None;
+
                         match mesh.index_format {
                             None => {
                                 // No index buffer, draw directly.
@@ -682,7 +718,7 @@ impl RenderingPass for BlinnPhongShading {
                                             64,
                                             bytemuck::bytes_of(&material_id),
                                         );
-                                        render_pass.draw(0..mesh.vertex_count, 0..1);
+                                        render_pass.draw(0..mesh.vertex_count, inst_range);
                                     }
                                     Some(sub_meshes) => {
                                         // Draw each sub-mesh.
@@ -701,7 +737,7 @@ impl RenderingPass for BlinnPhongShading {
                                             );
                                             render_pass.draw(
                                                 sub_mesh.range.start..sub_mesh.range.end,
-                                                0..1,
+                                                inst_range.clone(),
                                             )
                                         }
                                     }
@@ -720,10 +756,14 @@ impl RenderingPass for BlinnPhongShading {
                                         let material_id = override_material.unwrap_or(0);
                                         render_pass.set_push_constants(
                                             wgpu::ShaderStages::VERTEX_FRAGMENT,
-                                            64,
+                                            4,
                                             bytemuck::bytes_of(&material_id),
                                         );
-                                        render_pass.draw_indexed(0..mesh.index_count, 0, 0..1);
+                                        render_pass.draw_indexed(
+                                            0..mesh.index_count,
+                                            0,
+                                            inst_range,
+                                        );
                                     }
                                     Some(sub_meshes) => {
                                         log::trace!("Draw mesh with index, with sub-meshes");
@@ -740,14 +780,14 @@ impl RenderingPass for BlinnPhongShading {
                                             // Update material index.
                                             render_pass.set_push_constants(
                                                 wgpu::ShaderStages::VERTEX_FRAGMENT,
-                                                64,
+                                                4,
                                                 bytemuck::bytes_of(&material_id),
                                             );
                                             // Draw the sub-mesh.
                                             render_pass.draw_indexed(
                                                 sm.range.start..sm.range.end,
                                                 0,
-                                                0..1,
+                                                inst_range.clone(),
                                             );
                                         }
                                     }
@@ -758,5 +798,12 @@ impl RenderingPass for BlinnPhongShading {
                 }
             }
         }
+
+        // Update locals before submitting the render pass.
+        queue.write_buffer(
+            &self.locals_storage_buffer,
+            0,
+            bytemuck::cast_slice(&locals),
+        );
     }
 }
