@@ -5,7 +5,10 @@ use crate::{
         mesh::{GpuMesh, MeshBundle, VertexAttribute},
         Color, FxHashSet, GpuMaterial, Light, MaterialBundle, TextureBundle,
     },
-    render::{rpass::RenderingPass, RenderTarget, Renderer},
+    render::{
+        rpass::{Globals, RenderingPass},
+        RenderTarget, Renderer,
+    },
     scene::{NodeIdx, Scene},
 };
 use bytemuck::{Pod, Zeroable};
@@ -15,13 +18,6 @@ use std::{
     num::{NonZeroU32, NonZeroU64},
     ops::Range,
 };
-
-#[repr(C)]
-#[derive(Debug, Clone, Copy, Pod, Zeroable)]
-struct Globals {
-    view: [f32; 16],
-    proj: [f32; 16],
-}
 
 #[repr(C)]
 #[derive(Debug, Clone, Copy, Pod, Zeroable)]
@@ -60,10 +56,6 @@ impl PConsts {
 
 pub const MAX_DIRECTIONAL_LIGHTS: usize = 256;
 pub const MAX_POINT_LIGHTS: usize = 256;
-
-impl Globals {
-    pub const SIZE: wgpu::BufferAddress = std::mem::size_of::<Self>() as wgpu::BufferAddress;
-}
 
 #[repr(C)]
 #[derive(Debug, Clone, Copy, Pod, Zeroable)]

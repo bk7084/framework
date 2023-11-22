@@ -7,8 +7,8 @@ win.set_size(800, 600)
 win.set_resizable(True)
 
 app = bk.App()
-print(type(Vec3(1, 2, 3)))
 camera = app.create_camera(pos=Vec3(0, 0, 90), look_at=Vec3(0, 0, 0), fov_v=60.0, near=0.1, far=200.0)
+camera.set_as_main_camera()
 
 cube_mesh = bk.Mesh.load_from(bk.res_path("../data/blender_cube/cube.obj"))
 sphere_mesh = bk.Mesh.load_from(bk.res_path("../data/blender_sphere/sphere.obj"))
