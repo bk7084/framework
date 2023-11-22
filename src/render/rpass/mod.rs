@@ -130,6 +130,12 @@ impl Default for DirLightArray {
     }
 }
 
+impl DirLightArray {
+    pub fn clear(&mut self) {
+        self.len = [0, 0, 0, 0];
+    }
+}
+
 /// Point light information in the shader.
 #[repr(C)]
 #[derive(Debug, Clone, Copy, Default, Pod, Zeroable)]
@@ -155,6 +161,38 @@ impl Default for PntLightArray {
     }
 }
 
+impl PntLightArray {
+    pub fn clear(&mut self) {
+        self.len = [0, 0, 0, 0];
+    }
+}
+
+/// The binding group for the lights.
+pub struct LightsBindGroup {
+    /// The bind group.
+    pub group: wgpu::BindGroup,
+    /// The layout of the bind group.
+    pub layout: wgpu::BindGroupLayout,
+    /// The storage buffer containing the directional lights.
+    /// See [`DirLightArray`].
+    pub dir_lights_buffer: wgpu::Buffer,
+    /// The storage buffer containing the point lights.
+    /// See [`PntLightArray`].
+    pub pnt_lights_buffer: wgpu::Buffer,
+    /// Cached directional lights of each frame to avoid unnecessary allocation.
+    dir_lights: DirLightArray,
+    /// Cached point lights of each frame to avoid unnecessary allocation.
+    pnt_lights: PntLightArray,
+}
+
+impl Deref for LightsBindGroup {
+    type Target = wgpu::BindGroup;
+
+    fn deref(&self) -> &Self::Target {
+        &self.group
+    }
+}
+
 /// The render pass for the blinn-phong shading.
 pub struct BlinnPhongRenderPass {
     /// The depth attachment.
@@ -163,15 +201,10 @@ pub struct BlinnPhongRenderPass {
     pub globals_bind_group: GlobalsBindGroup,
     /// The local information (per entity/instance) bind group.
     pub locals_bind_group: LocalsBindGroup,
-
     pub materials_bind_group_layout: wgpu::BindGroupLayout,
     pub textures_bind_group_layout: wgpu::BindGroupLayout,
-
-    pub lights_bind_group_layout: wgpu::BindGroupLayout,
-    pub lights_bind_group: wgpu::BindGroup,
-    pub directional_lights_storage_buffer: wgpu::Buffer,
-    pub point_lights_storage_buffer: wgpu::Buffer,
-
+    /// The lights bind group.
+    pub lights_bind_group: LightsBindGroup,
     /// The render pipeline for rendering entities.
     pub entity_pipeline: wgpu::RenderPipeline,
 }

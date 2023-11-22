@@ -6,12 +6,13 @@ use crate::{
     },
     render::{
         rpass::{
-            BlinnPhongRenderPass, DirLight, DirLightArray, Globals, GlobalsBindGroup, Locals,
-            LocalsBindGroup, PConsts, PntLight, PntLightArray, DEPTH_FORMAT,
+            BlinnPhongRenderPass, DirLight, DirLightArray, Globals, GlobalsBindGroup,
+            LightsBindGroup, Locals, LocalsBindGroup, PConsts, PntLight, PntLightArray,
+            DEPTH_FORMAT,
         },
         RenderTarget, Renderer,
     },
-    scene::{NodeIdx, Scene},
+    scene::{NodeIdx, Nodes, Scene},
 };
 use legion::IntoQuery;
 use std::num::{NonZeroU32, NonZeroU64};
@@ -124,7 +125,123 @@ impl LocalsBindGroup {
     }
 }
 
+impl LightsBindGroup {
+    /// Creates a new lights bind group.
+    pub fn new(device: &wgpu::Device) -> Self {
+        let layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("blph_lights_bg_layout"),
+            entries: &[
+                wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Storage { read_only: true },
+                        has_dynamic_offset: false,
+                        min_binding_size: DirLightArray::BUFFER_SIZE,
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 1,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Storage { read_only: true },
+                        has_dynamic_offset: false,
+                        min_binding_size: PntLightArray::BUFFER_SIZE,
+                    },
+                    count: None,
+                },
+            ],
+        });
+
+        // Preallocate a buffer for directional lights.
+        let dir_lights_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("blph_dir_lights_buffer"),
+            size: DirLightArray::SIZE as u64,
+            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+
+        // Preallocate a buffer for point lights.
+        let pnt_lights_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("blph_pnt_lights_buffer"),
+            size: PntLightArray::SIZE as u64,
+            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+
+        let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("shading_lights_bind_group"),
+            layout: &layout,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: dir_lights_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: pnt_lights_buffer.as_entire_binding(),
+                },
+            ],
+        });
+
+        Self {
+            group: bind_group,
+            layout,
+            dir_lights_buffer,
+            pnt_lights_buffer,
+            dir_lights: DirLightArray::default(),
+            pnt_lights: PntLightArray::default(),
+        }
+    }
+
+    /// Updates the cached light data in the bind group,
+    /// and updates the light buffers.
+    pub fn update_lights<'a, L>(&mut self, lights: L, nodes: &Nodes, queue: &wgpu::Queue)
+    where
+        L: Iterator<Item = (&'a Light, &'a NodeIdx)>,
+    {
+        self.dir_lights.clear();
+        self.pnt_lights.clear();
+
+        for (light, node_idx) in lights {
+            match light {
+                Light::Directional { direction, color } => {
+                    let len = self.dir_lights.len[0] as usize;
+                    self.dir_lights.lights[len] = DirLight {
+                        direction: [-direction.x, -direction.y, -direction.z, 0.0],
+                        color: [color.r as f32, color.g as f32, color.b as f32, 1.0],
+                    };
+                    self.dir_lights.len[0] += 1;
+                }
+                Light::Point { color } => {
+                    let transform = nodes.world(*node_idx);
+                    let position = transform.translation;
+                    let len = self.pnt_lights.len[0] as usize;
+                    self.pnt_lights.lights[len] = PntLight {
+                        position: [position.x, position.y, position.z, 1.0],
+                        color: [color.r as f32, color.g as f32, color.b as f32, 1.0],
+                    };
+                    self.pnt_lights.len[0] += 1;
+                }
+            }
+        }
+        // Update light buffers.
+        queue.write_buffer(
+            &self.dir_lights_buffer,
+            0,
+            bytemuck::bytes_of(&self.dir_lights),
+        );
+        queue.write_buffer(
+            &self.pnt_lights_buffer,
+            0,
+            bytemuck::bytes_of(&self.pnt_lights),
+        );
+    }
+}
+
 impl BlinnPhongRenderPass {
+    /// Creates a new blinn-phong shading render pass.
     pub fn new(device: &wgpu::Device, format: wgpu::TextureFormat) -> Self {
         let shader_module = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("shading_shader_module"),
@@ -151,63 +268,7 @@ impl BlinnPhongRenderPass {
 
         let textures_bind_group_layout = texture_bundle_bind_group_layout(device);
 
-        let lights_bind_group_layout =
-            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-                label: Some("shading_lights_bind_group_layout"),
-                entries: &[
-                    wgpu::BindGroupLayoutEntry {
-                        binding: 0,
-                        visibility: wgpu::ShaderStages::FRAGMENT,
-                        ty: wgpu::BindingType::Buffer {
-                            ty: wgpu::BufferBindingType::Storage { read_only: true },
-                            has_dynamic_offset: false,
-                            min_binding_size: DirLightArray::BUFFER_SIZE,
-                        },
-                        count: None,
-                    },
-                    wgpu::BindGroupLayoutEntry {
-                        binding: 1,
-                        visibility: wgpu::ShaderStages::FRAGMENT,
-                        ty: wgpu::BindingType::Buffer {
-                            ty: wgpu::BufferBindingType::Storage { read_only: true },
-                            has_dynamic_offset: false,
-                            min_binding_size: PntLightArray::BUFFER_SIZE,
-                        },
-                        count: None,
-                    },
-                ],
-            });
-
-        // Preallocate a buffer for directional lights.
-        let directional_lights_buffer = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("shading_directional_lights_buffer"),
-            size: DirLightArray::SIZE as u64,
-            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
-            mapped_at_creation: false,
-        });
-
-        // Preallocate a buffer for point lights.
-        let point_lights_buffer = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("shading_point_lights_buffer"),
-            size: PntLightArray::SIZE as u64,
-            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
-            mapped_at_creation: false,
-        });
-
-        let lights_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("shading_lights_bind_group"),
-            layout: &lights_bind_group_layout,
-            entries: &[
-                wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: directional_lights_buffer.as_entire_binding(),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 1,
-                    resource: point_lights_buffer.as_entire_binding(),
-                },
-            ],
-        });
+        let lights_bind_group = LightsBindGroup::new(device);
 
         let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("blinn_phong_shading_pipeline_layout"),
@@ -216,7 +277,7 @@ impl BlinnPhongRenderPass {
                 &locals_bind_group.layout,
                 &materials_bind_group_layout,
                 &textures_bind_group_layout,
-                &lights_bind_group_layout,
+                &lights_bind_group.layout,
             ],
             push_constant_ranges: &[wgpu::PushConstantRange {
                 stages: wgpu::ShaderStages::VERTEX_FRAGMENT,
@@ -307,10 +368,7 @@ impl BlinnPhongRenderPass {
             locals_bind_group,
             materials_bind_group_layout,
             textures_bind_group_layout,
-            lights_bind_group_layout,
             lights_bind_group,
-            directional_lights_storage_buffer: directional_lights_buffer,
-            point_lights_storage_buffer: point_lights_buffer,
             entity_pipeline: pipeline,
         }
     }
@@ -454,48 +512,17 @@ impl BlinnPhongRenderPass {
         render_pass.set_pipeline(&self.entity_pipeline);
         render_pass.set_bind_group(0, &self.globals_bind_group, &[]);
 
-        // Update light buffers.
-        let mut light_query = <(&Light, &NodeIdx)>::query();
-        let mut pl_arr = PntLightArray::default();
-        let mut dl_arr = DirLightArray::default();
-
-        let active_lights = light_query
-            .iter(&scene.world)
-            .filter(|(_, node_idx)| scene.nodes[**node_idx].is_active());
-        for (light, node_idx) in active_lights {
-            match light {
-                Light::Directional { direction, color } => {
-                    dl_arr.lights[dl_arr.len[0] as usize] = DirLight {
-                        direction: [-direction.x, -direction.y, -direction.z, 0.0],
-                        color: [color.r as f32, color.g as f32, color.b as f32, 1.0],
-                    };
-                    dl_arr.len[0] += 1;
-                }
-                Light::Point { color } => {
-                    let transform = scene.nodes.world(*node_idx);
-                    let position = transform.translation;
-                    pl_arr.lights[pl_arr.len[0] as usize] = PntLight {
-                        position: [position.x, position.y, position.z, 1.0],
-                        color: [color.r as f32, color.g as f32, color.b as f32, 1.0],
-                    };
-                    pl_arr.len[0] += 1;
-                }
-            }
+        {
+            // Update light data.
+            let mut light_query = <(&Light, &NodeIdx)>::query();
+            let active_lights = light_query
+                .iter(&scene.world)
+                .filter(|(_, node_idx)| scene.nodes[**node_idx].is_active());
+            self.lights_bind_group
+                .update_lights(active_lights, &scene.nodes, queue);
+            // Bind lights.
+            render_pass.set_bind_group(4, &self.lights_bind_group, &[]);
         }
-        // Update light buffers.
-        queue.write_buffer(
-            &self.directional_lights_storage_buffer,
-            0,
-            bytemuck::bytes_of(&dl_arr),
-        );
-        queue.write_buffer(
-            &self.point_lights_storage_buffer,
-            0,
-            bytemuck::bytes_of(&pl_arr),
-        );
-
-        // Bind lights. TODO: maybe move lights to renderer?
-        render_pass.set_bind_group(4, &self.lights_bind_group, &[]);
 
         let mut mesh_query = <(&NodeIdx, &MeshBundle)>::query();
         let mut mesh_bundles = FxHashSet::default();
