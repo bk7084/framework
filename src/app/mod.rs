@@ -13,7 +13,7 @@ use crate::{
         mesh::{Mesh, MeshBundle, SubMesh},
         Color, ConcatOrder, FxHashMap, Light, Material, SmlString, TextureType, Transform,
     },
-    render::{rpass::BlinnPhongShading, surface::Surface, GpuContext, RenderTarget, Renderer},
+    render::{rpass::BlinnPhongRenderPass, surface::Surface, GpuContext, RenderTarget, Renderer},
     scene::{Entity, NodeIdx, PyEntity, Scene},
 };
 use crossbeam_channel::Sender;
@@ -407,7 +407,7 @@ pub fn run_main_loop(mut app: PyAppState, builder: PyWindowBuilder) {
     // Create the surface to render to.
     let mut surface = Surface::new(&context, &window);
 
-    let mut blinn_phong_rpass = BlinnPhongShading::new(&context.device, surface.format());
+    let mut blinn_phong_rpass = BlinnPhongRenderPass::new(&context.device, surface.format());
 
     // let mut cube = Mesh::cube(1.0);
     // let mut textures = FxHashMap::default();

@@ -30,3 +30,18 @@ pub enum Alignment {
     /// The YZ plane.
     YZ,
 }
+
+/// Implement necessary size constants for the given types.
+#[macro_export]
+macro_rules! impl_size_constant {
+    ($($ty:ty),*) => {
+        $(
+            impl $ty {
+                #[doc = "Size of the type in bytes."]
+                pub const SIZE: usize = std::mem::size_of::<$ty>();
+                #[doc = "Size of the type in bytes as a `Option<wgpu::BufferSize>` (same as Option<NonZeroU64>)."]
+                pub const BUFFER_SIZE: Option<wgpu::BufferSize> = wgpu::BufferSize::new(Self::SIZE as u64);
+            }
+        )*
+    };
+}

@@ -17,10 +17,10 @@ use crate::{
     core::{
         assets::{GpuMeshAssets, Handle, MaterialBundleAssets, TextureAssets, TextureBundleAssets},
         mesh::{GpuMesh, Mesh, MeshBundle},
-        FxHashMap, FxHashSet, GpuMaterial, Material, MaterialBundle, SmlString, Texture,
-        TextureBundle, TextureType,
+        FxHashMap, GpuMaterial, Material, MaterialBundle, SmlString, Texture, TextureBundle,
+        TextureType,
     },
-    render::rpass::{texture_bundle_bind_group_layout, RenderingPass, MAX_TEXTURE_ARRAY_LEN},
+    render::rpass::{texture_bundle_bind_group_layout, BlinnPhongRenderPass},
     scene::{NodeIdx, Scene},
 };
 pub use context::*;
@@ -266,7 +266,7 @@ impl Renderer {
     /// Prepares the renderer for rendering.
     pub fn prepare(&mut self) {
         profiling::scope!("Renderer::prepare");
-        let mut sampler_indices = [0u32; MAX_TEXTURE_ARRAY_LEN as usize];
+        let mut sampler_indices = [0u32; BlinnPhongRenderPass::MAX_TEXTURE_ARRAY_LEN];
         for bundle in self.texture_bundles.iter_mut() {
             sampler_indices.fill(0);
             if bundle.textures.is_empty() || bundle.bind_group.is_some() {
@@ -333,7 +333,7 @@ impl Renderer {
     pub fn render(
         &mut self,
         scene: &Scene,
-        rpass: &mut dyn RenderingPass,
+        rpass: &mut BlinnPhongRenderPass,
         target: &RenderTarget,
     ) -> Result<(), wgpu::SurfaceError> {
         profiling::scope!("Renderer::render");

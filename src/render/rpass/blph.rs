@@ -1,220 +1,138 @@
 use crate::{
     core::{
-        assets::Handle,
         camera::Camera,
-        mesh::{GpuMesh, MeshBundle, VertexAttribute},
-        Color, FxHashSet, GpuMaterial, Light, MaterialBundle, TextureBundle,
+        mesh::{MeshBundle, VertexAttribute},
+        Color, FxHashSet, GpuMaterial, Light,
     },
     render::{
-        rpass::{Globals, RenderingPass},
+        rpass::{
+            BlinnPhongRenderPass, DirLight, DirLightArray, Globals, GlobalsBindGroup, Locals,
+            LocalsBindGroup, PConsts, PntLight, PntLightArray, DEPTH_FORMAT,
+        },
         RenderTarget, Renderer,
     },
     scene::{NodeIdx, Scene},
 };
-use bytemuck::{Pod, Zeroable};
-use glam::Mat4;
 use legion::IntoQuery;
-use std::{
-    num::{NonZeroU32, NonZeroU64},
-    ops::Range,
-};
+use std::num::{NonZeroU32, NonZeroU64};
 
-#[repr(C)]
-#[derive(Debug, Clone, Copy, Pod, Zeroable)]
-struct Locals {
-    model: [f32; 16],
-    model_view_inv: [f32; 16],
-}
-
-impl Locals {
-    pub const SIZE: wgpu::BufferAddress = std::mem::size_of::<Self>() as wgpu::BufferAddress;
-
-    pub const fn identity() -> Self {
-        Self {
-            model: Mat4::IDENTITY.to_cols_array(),
-            model_view_inv: Mat4::IDENTITY.to_cols_array(),
-        }
-    }
-}
-
-/// Initial number of meshes of which the buffer can hold.
-pub const INITIAL_MESHES_COUNT: usize = 512;
-
-/// Push constants for the shading pipeline.
-#[repr(C)]
-#[derive(Debug, Clone, Copy, Pod, Zeroable)]
-struct PConsts {
-    /// Index of the first instance in the instance buffer.
-    instance_base_index: u32,
-    /// Material index.
-    material_index: u32,
-}
-
-impl PConsts {
-    pub const SIZE: wgpu::BufferAddress = std::mem::size_of::<Self>() as wgpu::BufferAddress;
-}
-
-pub const MAX_DIRECTIONAL_LIGHTS: usize = 256;
-pub const MAX_POINT_LIGHTS: usize = 256;
-
-#[repr(C)]
-#[derive(Debug, Clone, Copy, Pod, Zeroable)]
-pub struct DirectionalLight {
-    pub direction: [f32; 4],
-    pub color: [f32; 4],
-}
-
-#[repr(C)]
-#[derive(Debug, Clone, Copy, Pod, Zeroable)]
-pub struct DirectionalLightArray {
-    pub len: [u32; 4], // make sure the array is 16-byte aligned.
-    pub lights: [DirectionalLight; MAX_DIRECTIONAL_LIGHTS],
-}
-
-impl DirectionalLightArray {
-    pub const SIZE: usize = std::mem::size_of::<Self>();
-    pub fn empty() -> Self {
-        Self {
-            len: [0u32; 4],
-            lights: [DirectionalLight::empty(); MAX_DIRECTIONAL_LIGHTS],
-        }
-    }
-}
-
-#[repr(C)]
-#[derive(Debug, Clone, Copy, Pod, Zeroable)]
-pub struct PointLight {
-    pub position: [f32; 4],
-    pub color: [f32; 4],
-}
-
-#[repr(C)]
-#[derive(Debug, Clone, Copy, Pod, Zeroable)]
-pub struct PointLightArray {
-    pub len: [u32; 4],
-    pub lights: [PointLight; MAX_POINT_LIGHTS],
-}
-
-impl PointLightArray {
-    pub const SIZE: usize = std::mem::size_of::<Self>();
-    pub fn empty() -> Self {
-        Self {
-            len: [0u32; 4], // make sure the array is 16-byte aligned.
-            lights: [PointLight::empty(); MAX_POINT_LIGHTS],
-        }
-    }
-}
-
-impl DirectionalLight {
-    pub const SIZE: usize = std::mem::size_of::<Self>();
-    pub fn empty() -> Self {
-        Self {
-            direction: [0.0; 4],
-            color: [0.0; 4],
-        }
-    }
-}
-
-impl PointLight {
-    pub const SIZE: usize = std::mem::size_of::<Self>();
-    pub fn empty() -> Self {
-        Self {
-            position: [0.0; 4],
-            color: [0.0; 4],
-        }
-    }
-}
-
-const DEPTH_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth24Plus;
-
-pub struct BlinnPhongShading {
-    pub depth_texture: Option<(wgpu::Texture, wgpu::TextureView)>,
-
-    pub globals_bind_group: wgpu::BindGroup,
-    pub globals_uniform_buffer: wgpu::Buffer,
-    pub globals_bind_group_layout: wgpu::BindGroupLayout,
-
-    pub locals_bind_group: wgpu::BindGroup,
-    pub locals_storage_buffer: wgpu::Buffer,
-    pub locals_bind_group_layout: wgpu::BindGroupLayout,
-
-    pub materials_bind_group_layout: wgpu::BindGroupLayout,
-    pub textures_bind_group_layout: wgpu::BindGroupLayout,
-
-    pub lights_bind_group_layout: wgpu::BindGroupLayout,
-    pub lights_bind_group: wgpu::BindGroup,
-    pub directional_lights_storage_buffer: wgpu::Buffer,
-    pub point_lights_storage_buffer: wgpu::Buffer,
-
-    /// The render pipeline for rendering entities.
-    pub entity_pipeline: wgpu::RenderPipeline,
-}
-
-impl BlinnPhongShading {
-    pub fn new(device: &wgpu::Device, format: wgpu::TextureFormat) -> Self {
-        let shader_module = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-            label: Some("shading_shader_module"),
-            source: wgpu::ShaderSource::Wgsl(include_str!("blinn_phong.wgsl").into()),
+impl GlobalsBindGroup {
+    /// Creates a new globals bind group.
+    pub fn new(device: &wgpu::Device) -> Self {
+        let layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("blph_globals_bg_layout"),
+            entries: &[wgpu::BindGroupLayoutEntry {
+                binding: 0,
+                visibility: wgpu::ShaderStages::VERTEX,
+                ty: wgpu::BindingType::Buffer {
+                    ty: wgpu::BufferBindingType::Uniform,
+                    has_dynamic_offset: false,
+                    min_binding_size: Globals::BUFFER_SIZE,
+                },
+                count: None,
+            }],
         });
-
-        let globals_bind_group_layout =
-            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-                label: Some("shading_globals_bind_group_layout"),
-                entries: &[wgpu::BindGroupLayoutEntry {
-                    binding: 0,
-                    visibility: wgpu::ShaderStages::VERTEX,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Uniform,
-                        has_dynamic_offset: false,
-                        min_binding_size: wgpu::BufferSize::new(Globals::SIZE),
-                    },
-                    count: None,
-                }],
-            });
-        let globals_uniform_buffer = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("shading_globals_uniform_buffer"),
-            size: Globals::SIZE,
+        let buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("blph_globals_buffer"),
+            size: Globals::SIZE as u64,
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
-        let globals_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("shading_globals_bind_group"),
-            layout: &globals_bind_group_layout,
+        let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("blph_globals_bg"),
+            layout: &layout,
             entries: &[wgpu::BindGroupEntry {
                 binding: 0,
-                resource: globals_uniform_buffer.as_entire_binding(),
+                resource: buffer.as_entire_binding(),
             }],
         });
 
-        let locals_bind_group_layout =
-            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-                label: Some("shading_locals_bind_group_layout"),
-                entries: &[wgpu::BindGroupLayoutEntry {
-                    binding: 0,
-                    visibility: wgpu::ShaderStages::VERTEX,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Storage { read_only: true },
-                        has_dynamic_offset: false,
-                        min_binding_size: wgpu::BufferSize::new(Locals::SIZE),
-                    },
-                    count: None,
-                }],
-            });
+        Self {
+            group: bind_group,
+            layout,
+            buffer,
+        }
+    }
+}
 
-        let locals_storage_buffer = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("shading_locals_storage_buffer"),
-            size: Locals::SIZE * INITIAL_MESHES_COUNT as u64,
+impl LocalsBindGroup {
+    /// Creates a new locals bind group.
+    pub fn new(device: &wgpu::Device) -> Self {
+        let layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("blph_locals_bg_layout"),
+            entries: &[wgpu::BindGroupLayoutEntry {
+                binding: 0,
+                visibility: wgpu::ShaderStages::VERTEX,
+                ty: wgpu::BindingType::Buffer {
+                    ty: wgpu::BufferBindingType::Storage { read_only: true },
+                    has_dynamic_offset: false,
+                    min_binding_size: Locals::BUFFER_SIZE,
+                },
+                count: None,
+            }],
+        });
+        let buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("blph_locals_buffer"),
+            size: Locals::SIZE as u64 * Self::INITIAL_INSTANCE_CAPACITY as u64,
             usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
-        let locals_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("shading_locals_bind_group"),
-            layout: &locals_bind_group_layout,
+        let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("blph_locals_bg"),
+            layout: &layout,
             entries: &[wgpu::BindGroupEntry {
                 binding: 0,
-                resource: locals_storage_buffer.as_entire_binding(),
+                resource: buffer.as_entire_binding(),
             }],
         });
+
+        Self {
+            group: bind_group,
+            layout,
+            buffer,
+            capacity: Self::INITIAL_INSTANCE_CAPACITY as u32,
+        }
+    }
+
+    /// Resize the locals buffer to the capacity greater than or equal to the
+    /// given number of instances.
+    pub fn resize(&mut self, device: &wgpu::Device, n_instances: u32) {
+        if n_instances <= self.capacity {
+            log::debug!("No need to resize instance locals buffer");
+            return;
+        }
+        // Calculate the new capacity with an increment of 256 instances.
+        let new_capacity = (n_instances / 256 + 1) * 256;
+        let size = new_capacity as u64 * Locals::SIZE as u64;
+        log::debug!("Resize instance locals buffer to {}", size);
+        self.buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("blph_locals_buffer"),
+            size,
+            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        log::debug!("Recreate locals bind group");
+        self.group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("blph_locals_bg"),
+            layout: &self.layout,
+            entries: &[wgpu::BindGroupEntry {
+                binding: 0,
+                resource: self.buffer.as_entire_binding(),
+            }],
+        });
+        self.capacity = new_capacity;
+    }
+}
+
+impl BlinnPhongRenderPass {
+    pub fn new(device: &wgpu::Device, format: wgpu::TextureFormat) -> Self {
+        let shader_module = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("shading_shader_module"),
+            source: wgpu::ShaderSource::Wgsl(include_str!("blph.wgsl").into()),
+        });
+
+        let globals_bind_group = GlobalsBindGroup::new(device);
+        let locals_bind_group = LocalsBindGroup::new(device);
 
         let materials_bind_group_layout =
             device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
@@ -243,9 +161,7 @@ impl BlinnPhongShading {
                         ty: wgpu::BindingType::Buffer {
                             ty: wgpu::BufferBindingType::Storage { read_only: true },
                             has_dynamic_offset: false,
-                            min_binding_size: wgpu::BufferSize::new(
-                                DirectionalLightArray::SIZE as u64,
-                            ),
+                            min_binding_size: DirLightArray::BUFFER_SIZE,
                         },
                         count: None,
                     },
@@ -255,7 +171,7 @@ impl BlinnPhongShading {
                         ty: wgpu::BindingType::Buffer {
                             ty: wgpu::BufferBindingType::Storage { read_only: true },
                             has_dynamic_offset: false,
-                            min_binding_size: wgpu::BufferSize::new(PointLightArray::SIZE as u64),
+                            min_binding_size: PntLightArray::BUFFER_SIZE,
                         },
                         count: None,
                     },
@@ -265,7 +181,7 @@ impl BlinnPhongShading {
         // Preallocate a buffer for directional lights.
         let directional_lights_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("shading_directional_lights_buffer"),
-            size: std::mem::size_of::<DirectionalLightArray>() as wgpu::BufferAddress,
+            size: DirLightArray::SIZE as u64,
             usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
@@ -273,7 +189,7 @@ impl BlinnPhongShading {
         // Preallocate a buffer for point lights.
         let point_lights_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("shading_point_lights_buffer"),
-            size: std::mem::size_of::<PointLightArray>() as wgpu::BufferAddress,
+            size: PntLightArray::SIZE as u64,
             usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
@@ -296,8 +212,8 @@ impl BlinnPhongShading {
         let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("blinn_phong_shading_pipeline_layout"),
             bind_group_layouts: &[
-                &globals_bind_group_layout,
-                &locals_bind_group_layout,
+                &globals_bind_group.layout,
+                &locals_bind_group.layout,
                 &materials_bind_group_layout,
                 &textures_bind_group_layout,
                 &lights_bind_group_layout,
@@ -386,13 +302,9 @@ impl BlinnPhongShading {
         });
 
         Self {
-            depth_texture: None,
+            depth_att: None,
             globals_bind_group,
-            globals_uniform_buffer,
-            globals_bind_group_layout,
             locals_bind_group,
-            locals_storage_buffer,
-            locals_bind_group_layout,
             materials_bind_group_layout,
             textures_bind_group_layout,
             lights_bind_group_layout,
@@ -403,11 +315,6 @@ impl BlinnPhongShading {
         }
     }
 }
-
-/// Maximum number of textures in a texture array.
-pub const MAX_TEXTURE_ARRAY_LEN: u32 = 128;
-pub const MAX_SAMPLER_ARRAY_LEN: u32 = 16;
-
 pub fn texture_bundle_bind_group_layout(device: &wgpu::Device) -> wgpu::BindGroupLayout {
     device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
         label: Some("blinn_phong_textures_bind_group_layout"),
@@ -420,7 +327,7 @@ pub fn texture_bundle_bind_group_layout(device: &wgpu::Device) -> wgpu::BindGrou
                     sample_type: wgpu::TextureSampleType::Float { filterable: true },
                     view_dimension: wgpu::TextureViewDimension::D2,
                 },
-                count: NonZeroU32::new(MAX_TEXTURE_ARRAY_LEN),
+                count: NonZeroU32::new(BlinnPhongRenderPass::MAX_TEXTURE_ARRAY_LEN as u32),
             },
             wgpu::BindGroupLayoutEntry {
                 binding: 1,
@@ -429,7 +336,8 @@ pub fn texture_bundle_bind_group_layout(device: &wgpu::Device) -> wgpu::BindGrou
                     ty: wgpu::BufferBindingType::Storage { read_only: true },
                     has_dynamic_offset: false,
                     min_binding_size: NonZeroU64::new(
-                        std::mem::size_of::<u32>() as u64 * MAX_TEXTURE_ARRAY_LEN as u64,
+                        std::mem::size_of::<u32>() as u64
+                            * BlinnPhongRenderPass::MAX_TEXTURE_ARRAY_LEN as u64,
                     ),
                 },
                 count: None,
@@ -438,14 +346,14 @@ pub fn texture_bundle_bind_group_layout(device: &wgpu::Device) -> wgpu::BindGrou
                 binding: 2,
                 visibility: wgpu::ShaderStages::FRAGMENT,
                 ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
-                count: NonZeroU32::new(MAX_SAMPLER_ARRAY_LEN),
+                count: NonZeroU32::new(BlinnPhongRenderPass::MAX_SAMPLER_ARRAY_LEN as u32),
             },
         ],
     })
 }
 
-impl RenderingPass for BlinnPhongShading {
-    fn record(
+impl BlinnPhongRenderPass {
+    pub fn record(
         &mut self,
         device: &wgpu::Device,
         queue: &wgpu::Queue,
@@ -455,7 +363,6 @@ impl RenderingPass for BlinnPhongShading {
         scene: &Scene,
     ) {
         profiling::scope!("BlinnPhongShading::record");
-
         let view_mat = {
             // Update camera globals.
             let mut camera_query = <(&Camera, &NodeIdx)>::query();
@@ -490,7 +397,7 @@ impl RenderingPass for BlinnPhongShading {
                 proj: proj.to_cols_array(),
             };
             queue.write_buffer(
-                &self.globals_uniform_buffer,
+                &self.globals_bind_group.buffer,
                 0,
                 bytemuck::bytes_of(&globals),
             );
@@ -499,7 +406,7 @@ impl RenderingPass for BlinnPhongShading {
 
         {
             // (Re-)create depth texture if necessary.
-            let need_recreate = match &self.depth_texture {
+            let need_recreate = match &self.depth_att {
                 None => true,
                 Some(depth) => target.size != depth.0.size(),
             };
@@ -517,7 +424,7 @@ impl RenderingPass for BlinnPhongShading {
                     view_formats: &[],
                 });
                 let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
-                self.depth_texture = Some((texture, view));
+                self.depth_att = Some((texture, view));
             }
         }
 
@@ -533,7 +440,7 @@ impl RenderingPass for BlinnPhongShading {
                 },
             })],
             depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
-                view: &self.depth_texture.as_ref().unwrap().1,
+                view: &self.depth_att.as_ref().unwrap().1,
                 depth_ops: Some(wgpu::Operations {
                     load: wgpu::LoadOp::Clear(1.0),
                     store: wgpu::StoreOp::Store,
@@ -549,8 +456,8 @@ impl RenderingPass for BlinnPhongShading {
 
         // Update light buffers.
         let mut light_query = <(&Light, &NodeIdx)>::query();
-        let mut pl_arr = PointLightArray::empty();
-        let mut dl_arr = DirectionalLightArray::empty();
+        let mut pl_arr = PntLightArray::default();
+        let mut dl_arr = DirLightArray::default();
 
         let active_lights = light_query
             .iter(&scene.world)
@@ -558,7 +465,7 @@ impl RenderingPass for BlinnPhongShading {
         for (light, node_idx) in active_lights {
             match light {
                 Light::Directional { direction, color } => {
-                    dl_arr.lights[dl_arr.len[0] as usize] = DirectionalLight {
+                    dl_arr.lights[dl_arr.len[0] as usize] = DirLight {
                         direction: [-direction.x, -direction.y, -direction.z, 0.0],
                         color: [color.r as f32, color.g as f32, color.b as f32, 1.0],
                     };
@@ -567,7 +474,7 @@ impl RenderingPass for BlinnPhongShading {
                 Light::Point { color } => {
                     let transform = scene.nodes.world(*node_idx);
                     let position = transform.translation;
-                    pl_arr.lights[pl_arr.len[0] as usize] = PointLight {
+                    pl_arr.lights[pl_arr.len[0] as usize] = PntLight {
                         position: [position.x, position.y, position.z, 1.0],
                         color: [color.r as f32, color.g as f32, color.b as f32, 1.0],
                     };
@@ -610,35 +517,7 @@ impl RenderingPass for BlinnPhongShading {
             return;
         }
 
-        // Resize locals buffer if necessary.
-        if total_inst_count > self.locals_storage_buffer.size() / Locals::SIZE {
-            log::warn!(
-                "Too many instances to draw in one frame: {} > {}, enlarge instance locals buffer!",
-                total_inst_count,
-                INITIAL_MESHES_COUNT
-            );
-            let mut new_size = self.locals_storage_buffer.size();
-            // Resize instance buffer if necessary.
-            while new_size < total_inst_count as u64 * Locals::SIZE {
-                new_size += 128 * Locals::SIZE;
-            }
-            log::info!("Resize instance locals buffer to {}", new_size);
-            self.locals_storage_buffer = device.create_buffer(&wgpu::BufferDescriptor {
-                label: Some("shading_locals_storage_buffer"),
-                size: new_size,
-                usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
-                mapped_at_creation: false,
-            });
-            log::info!("Recreate locals bind group");
-            self.locals_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-                label: Some("shading_locals_bind_group"),
-                layout: &self.locals_bind_group_layout,
-                entries: &[wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: self.locals_storage_buffer.as_entire_binding(),
-                }],
-            });
-        }
+        self.locals_bind_group.resize(device, total_inst_count);
 
         // Bind locals.
         render_pass.set_bind_group(1, &self.locals_bind_group, &[]);
@@ -817,7 +696,7 @@ impl RenderingPass for BlinnPhongShading {
 
         // Update locals before submitting the render pass.
         queue.write_buffer(
-            &self.locals_storage_buffer,
+            &self.locals_bind_group.buffer,
             0,
             bytemuck::cast_slice(&locals),
         );

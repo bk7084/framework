@@ -5,7 +5,7 @@ use crate::{
         mesh::{GpuMesh, VertexAttribute},
         Color,
     },
-    render::{rpass::RenderingPass, RenderTarget, Renderer},
+    render::{RenderTarget, Renderer},
     scene::{NodeIdx, Scene},
 };
 use bytemuck::{Pod, Zeroable};
@@ -132,117 +132,117 @@ impl Wireframe {
     }
 }
 
-impl RenderingPass for Wireframe {
-    fn record(
-        &mut self,
-        device: &wgpu::Device,
-        queue: &wgpu::Queue,
-        encoder: &mut wgpu::CommandEncoder,
-        target: &RenderTarget,
-        renderer: &Renderer,
-        scene: &Scene,
-    ) {
-        // (Re-)create depth texture if necessary.
-        let need_recreate = match &self.depth_texture {
-            None => true,
-            Some(depth) => target.size != depth.0.size(),
-        };
-
-        if need_recreate {
-            let texture = device.create_texture(&wgpu::TextureDescriptor {
-                label: Some("wireframe_depth_texture"),
-                size: target.size,
-                mip_level_count: 1,
-                sample_count: 1,
-                dimension: wgpu::TextureDimension::D2,
-                format: DEPTH_FORMAT,
-                usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
-                view_formats: &[],
-            });
-            let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
-            self.depth_texture = Some((texture, view));
-        }
-
-        #[rustfmt::skip]
-        // Update globals.
-        let mut camera_query = <(&Camera, &NodeIdx)>::query();
-        // TODO: support multiple cameras.
-        for (camera, node_idx) in camera_query.iter(&scene.world) {
-            if camera.is_main {
-                let view = scene.nodes.inverse_world(*node_idx).to_mat4();
-                let proj = camera.proj_matrix(target.aspect_ratio());
-                let globals = Globals {
-                    view: view.to_cols_array(),
-                    proj: proj.to_cols_array(),
-                };
-                queue.write_buffer(
-                    &self.globals_uniform_buffer,
-                    0,
-                    bytemuck::bytes_of(&globals),
-                );
-                break;
-            }
-        }
-
-        // Create render pass.
-        let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-            label: Some("wireframe_render_pass"),
-            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                view: &target.view,
-                resolve_target: None,
-                ops: wgpu::Operations {
-                    // load: wgpu::LoadOp::Clear(*Renderer::CLEAR_COLOR),
-                    load: wgpu::LoadOp::Clear(*Color::PURPLISH_GREY),
-                    store: wgpu::StoreOp::Store,
-                },
-            })],
-            depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
-                view: &self.depth_texture.as_ref().unwrap().1,
-                depth_ops: Some(wgpu::Operations {
-                    load: wgpu::LoadOp::Clear(1.0),
-                    store: wgpu::StoreOp::Store,
-                }),
-                stencil_ops: None,
-            }),
-            timestamp_writes: None,
-            occlusion_query_set: None,
-        });
-
-        render_pass.set_pipeline(&self.pipeline);
-        render_pass.set_bind_group(0, &self.globals_bind_group, &[]);
-
-        let mut mesh_query = <(&Handle<GpuMesh>, &NodeIdx)>::query();
-        let buffer = renderer.meshes.buffer();
-        for (mesh_handle, node_idx) in mesh_query.iter(&scene.world) {
-            match renderer.meshes.get(*mesh_handle) {
-                None => {
-                    log::error!("Missing mesh {:?}", mesh_handle);
-                    continue;
-                }
-                Some(mesh) => {
-                    let transform = scene.nodes.world(*node_idx).to_mat4();
-                    if let Some(pos_range) =
-                        mesh.get_vertex_attribute_range(VertexAttribute::POSITION)
-                    {
-                        render_pass.set_vertex_buffer(0, buffer.slice(pos_range.clone()));
-                        render_pass.set_push_constants(
-                            wgpu::ShaderStages::VERTEX,
-                            0,
-                            bytemuck::cast_slice(&transform.to_cols_array()),
-                        );
-                        match mesh.index_format {
-                            None => render_pass.draw(0..mesh.vertex_count, 0..1),
-                            Some(index_format) => {
-                                render_pass.set_index_buffer(
-                                    buffer.slice(mesh.index_range.clone()),
-                                    index_format,
-                                );
-                                render_pass.draw_indexed(0..mesh.index_count, 0, 0..1);
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-}
+// impl RenderingPass for Wireframe {
+//     fn record(
+//         &mut self,
+//         device: &wgpu::Device,
+//         queue: &wgpu::Queue,
+//         encoder: &mut wgpu::CommandEncoder,
+//         target: &RenderTarget,
+//         renderer: &Renderer,
+//         scene: &Scene,
+//     ) {
+//         // (Re-)create depth texture if necessary.
+//         let need_recreate = match &self.depth_texture {
+//             None => true,
+//             Some(depth) => target.size != depth.0.size(),
+//         };
+//
+//         if need_recreate {
+//             let texture = device.create_texture(&wgpu::TextureDescriptor {
+//                 label: Some("wireframe_depth_texture"),
+//                 size: target.size,
+//                 mip_level_count: 1,
+//                 sample_count: 1,
+//                 dimension: wgpu::TextureDimension::D2,
+//                 format: DEPTH_FORMAT,
+//                 usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
+//                 view_formats: &[],
+//             });
+//             let view =
+// texture.create_view(&wgpu::TextureViewDescriptor::default());             
+// self.depth_texture = Some((texture, view));         }
+//
+//         #[rustfmt::skip]
+//         // Update globals.
+//         let mut camera_query = <(&Camera, &NodeIdx)>::query();
+//         // TODO: support multiple cameras.
+//         for (camera, node_idx) in camera_query.iter(&scene.world) {
+//             if camera.is_main {
+//                 let view = scene.nodes.inverse_world(*node_idx).to_mat4();
+//                 let proj = camera.proj_matrix(target.aspect_ratio());
+//                 let globals = Globals {
+//                     view: view.to_cols_array(),
+//                     proj: proj.to_cols_array(),
+//                 };
+//                 queue.write_buffer(
+//                     &self.globals_uniform_buffer,
+//                     0,
+//                     bytemuck::bytes_of(&globals),
+//                 );
+//                 break;
+//             }
+//         }
+//
+//         // Create render pass.
+//         let mut render_pass =
+// encoder.begin_render_pass(&wgpu::RenderPassDescriptor {             label:
+// Some("wireframe_render_pass"),             color_attachments:
+// &[Some(wgpu::RenderPassColorAttachment {                 view: &target.view,
+//                 resolve_target: None,
+//                 ops: wgpu::Operations {
+//                     // load: wgpu::LoadOp::Clear(*Renderer::CLEAR_COLOR),
+//                     load: wgpu::LoadOp::Clear(*Color::PURPLISH_GREY),
+//                     store: wgpu::StoreOp::Store,
+//                 },
+//             })],
+//             depth_stencil_attachment:
+// Some(wgpu::RenderPassDepthStencilAttachment {                 view:
+// &self.depth_texture.as_ref().unwrap().1,                 depth_ops:
+// Some(wgpu::Operations {                     load: wgpu::LoadOp::Clear(1.0),
+//                     store: wgpu::StoreOp::Store,
+//                 }),
+//                 stencil_ops: None,
+//             }),
+//             timestamp_writes: None,
+//             occlusion_query_set: None,
+//         });
+//
+//         render_pass.set_pipeline(&self.pipeline);
+//         render_pass.set_bind_group(0, &self.globals_bind_group, &[]);
+//
+//         let mut mesh_query = <(&Handle<GpuMesh>, &NodeIdx)>::query();
+//         let buffer = renderer.meshes.buffer();
+//         for (mesh_handle, node_idx) in mesh_query.iter(&scene.world) {
+//             match renderer.meshes.get(*mesh_handle) {
+//                 None => {
+//                     log::error!("Missing mesh {:?}", mesh_handle);
+//                     continue;
+//                 }
+//                 Some(mesh) => {
+//                     let transform = scene.nodes.world(*node_idx).to_mat4();
+//                     if let Some(pos_range) =
+//                         
+// mesh.get_vertex_attribute_range(VertexAttribute::POSITION)                   
+// {                         render_pass.set_vertex_buffer(0,
+// buffer.slice(pos_range.clone()));                         
+// render_pass.set_push_constants(                             
+// wgpu::ShaderStages::VERTEX,                             0,
+//                             bytemuck::cast_slice(&transform.to_cols_array()),
+//                         );
+//                         match mesh.index_format {
+//                             None => render_pass.draw(0..mesh.vertex_count,
+// 0..1),                             Some(index_format) => {
+//                                 render_pass.set_index_buffer(
+//                                     buffer.slice(mesh.index_range.clone()),
+//                                     index_format,
+//                                 );
+//                                 render_pass.draw_indexed(0..mesh.index_count,
+// 0, 0..1);                             }
+//                         }
+//                     }
+//                 }
+//             }
+//         }
+//     }
+// }

@@ -1,9 +1,6 @@
-use crate::{
-    core::{
-        assets::{Asset, Handle},
-        SmlString,
-    },
-    render::rpass::MAX_SAMPLER_ARRAY_LEN,
+use crate::core::{
+    assets::{Asset, Handle},
+    SmlString,
 };
 use std::ops::Deref;
 
