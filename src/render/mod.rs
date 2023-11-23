@@ -1,6 +1,6 @@
 use crate::{color, core::Color};
 use crossbeam_channel::Receiver;
-use std::{collections::hash_map::Entry, path::Path, sync::Arc};
+use std::{collections::hash_map::Entry, default, path::Path, sync::Arc};
 use wgpu::util::DeviceExt;
 
 mod context;
@@ -268,19 +268,24 @@ impl Renderer {
     pub fn prepare(&mut self) {
         profiling::scope!("Renderer::prepare");
         let mut sampler_indices = [0u32; BlinnPhongRenderPass::MAX_TEXTURE_ARRAY_LEN];
+        let default_texture = self.textures.get(self.default_texture).unwrap();
+        let default_sampler = self.samplers.get("default").unwrap();
+        let default_texture_view = &default_texture.view;
+        // Create bind groups for each texture bundle.
         for bundle in self.texture_bundles.iter_mut() {
             sampler_indices.fill(0);
             if bundle.textures.is_empty() || bundle.bind_group.is_some() {
                 continue;
             }
-            let views = bundle
-                .textures
-                .iter()
-                .map(|t| {
-                    let texture = self.textures.get(*t).unwrap();
-                    &texture.view
-                })
-                .collect::<Vec<_>>();
+
+            // Populate texture views and samplers with default values.
+            let mut views = [default_texture_view; BlinnPhongRenderPass::MAX_TEXTURE_ARRAY_LEN];
+            let mut samplers = [default_sampler; BlinnPhongRenderPass::MAX_SAMPLER_ARRAY_LEN];
+
+            for (i, hdl) in bundle.textures.iter().enumerate() {
+                let texture = self.textures.get(*hdl).unwrap();
+                views[i] = &texture.view;
+            }
 
             let mut unique_samplers = vec![];
             for (idx, sampler) in bundle.samplers.iter().enumerate() {
@@ -290,10 +295,9 @@ impl Renderer {
                 }
             }
 
-            let samplers = unique_samplers
-                .iter()
-                .map(|s| self.samplers.get(s).unwrap())
-                .collect::<Vec<_>>();
+            for (i, sampler) in unique_samplers.iter().enumerate() {
+                samplers[i] = self.samplers.get(sampler).unwrap();
+            }
 
             bundle.sampler_index_buffer = Some(self.device.create_buffer_init(
                 &wgpu::util::BufferInitDescriptor {
