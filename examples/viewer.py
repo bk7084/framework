@@ -15,21 +15,21 @@ def read_from_file(filepath):
                 if filename.endswith(".obj"):
                     model = app.add_mesh(bk.Mesh.load_from(os.path.join(root, filename)))
                     model.set_visible(True)
-                    model.set_transform(Mat4.from_scale(Vec3(0.1, 0.1, 0.1)))
+                    # model.set_transform(Mat4.from_scale(Vec3(0.1, 0.1, 0.1)))
     else:
         model = app.add_mesh(bk.Mesh.load_from(filepath))
         model.set_visible(True)
-        model.set_transform(Mat4.from_scale(Vec3(0.1, 0.1, 0.1)))
+        # model.set_transform(Mat4.from_scale(Vec3(0.1, 0.1, 0.1)))
 
 
 if __name__ == "__main__":
     win = bk.Window()
-    win.set_title("BK7084 - 0x00: Window")
+    win.set_title("BK7084 - Viewer")
     win.set_size(800, 600)
     win.set_resizable(True)
 
     app = bk.App()
-    camera = app.create_camera(pos=Vec3(3, 3, 3), look_at=Vec3(0, 0, 0), fov_v=60.0, near=0.1, far=500.0)
+    camera = app.create_camera(pos=Vec3(50, 5, 50), look_at=Vec3(0, 0, 0), fov_v=60.0, near=0.1, far=500.0)
     camera.set_as_main_camera()
 
     for filepath in sys.argv[1:]:

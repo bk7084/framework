@@ -22,6 +22,7 @@ use crate::{
 use crossbeam_channel::Sender;
 use glam::{Mat4, Quat, Vec3};
 use numpy as np;
+use numpy::{array, pyarray};
 use pyo3::{
     prelude::*,
     types::{PyDict, PyTuple},
@@ -121,6 +122,19 @@ impl PyAppState {
     /// Get the frame time in seconds.
     pub fn delta_time(&self) -> f32 {
         self.curr_time.duration_since(self.prev_time).as_secs_f32()
+    }
+
+    /// Get the transform of an entity.
+    #[pyo3(name = "get_transform")]
+    pub fn get_transform_py(&self, entity: &PyEntity) -> Py<np::PyArray2<f32>> {
+        Python::with_gil(|py| {
+            let mat = self.scene.read().unwrap().nodes[entity.entity.node]
+                .transform()
+                .to_mat4()
+                .transpose();
+            let [x, y, z, w] = mat.to_cols_array_2d();
+            np::PyArray2::<f32>::from_array(py, &array![x, y, z, w]).to_owned()
+        })
     }
 
     /// Create a camera
@@ -320,7 +334,9 @@ impl PyAppState {
     ) -> PyResult<()> {
         if let Some(listeners) = self.event_listeners.get(event_name) {
             for listener in listeners {
-                listener.call(py, args, kwargs).unwrap();
+                let _ = listener.call(py, args, kwargs).map_err(|e| {
+                    log::error!("Failed to dispatch event: {}", e);
+                });
             }
         }
         Ok(())
@@ -496,6 +512,22 @@ pub fn run_main_loop(mut app: PyAppState, builder: PyWindowBuilder) {
                 color: Color::WHITE,
             },
         );
+        app.spawn_light(
+            NodeIdx::root(),
+            Light::Directional {
+                direction: Vec3::new(1.0, 1.0, 1.0).normalize(),
+                color: Color::WHITE,
+            },
+        );
+
+        app.spawn_light(
+            NodeIdx::root(),
+            Light::Directional {
+                direction: Vec3::new(0.0, 1.0, 0.0).normalize(),
+                color: Color::WHITE,
+            },
+        );
+
         let point_light = app.spawn_light(
             NodeIdx::root(),
             Light::Point {

@@ -385,7 +385,7 @@ impl BlinnPhongRenderPass {
                 entry_point: "fs_main",
                 targets: &[Some(wgpu::ColorTargetState {
                     format: output_format,
-                    blend: Some(wgpu::BlendState::ALPHA_BLENDING),
+                    blend: None,
                     write_mask: wgpu::ColorWrites::ALL,
                 })],
             }),
@@ -533,7 +533,7 @@ impl RenderingPass for BlinnPhongRenderPass {
                 view: &target.view,
                 resolve_target: None,
                 ops: wgpu::Operations {
-                    load: wgpu::LoadOp::Clear(*Color::DARK_GREY),
+                    load: wgpu::LoadOp::Clear(*Color::ICE_BLUE),
                     store: wgpu::StoreOp::Store,
                 },
             })],

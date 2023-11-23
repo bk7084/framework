@@ -200,7 +200,7 @@ fn blinn_phong_shading(view_mat: mat4x4<f32>, pos_eye_space: vec3<f32>, n: vec3<
 
 @fragment
 fn fs_main(vout: VSOutput) -> @location(0) vec4<f32> {
-    let ia = vec3<f32>(0.02, 0.02, 0.02);
+    let ia = vec3<f32>(0.04, 0.04, 0.04);
 
     var materials_count: u32 = arrayLength(&materials);
     var default_material_index: u32 = materials_count - 1u;
