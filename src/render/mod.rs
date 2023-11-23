@@ -1,6 +1,6 @@
 use crate::{color, core::Color};
 use crossbeam_channel::Receiver;
-use std::{collections::hash_map::Entry, default, path::Path, sync::Arc};
+use std::{collections::hash_map::Entry, path::Path, sync::Arc};
 use wgpu::util::DeviceExt;
 
 mod context;

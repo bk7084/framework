@@ -718,36 +718,15 @@ impl GpuMesh {
 }
 
 mod util {
-    /// Helper function to calculate the midpoint of two vertices
-    pub fn midpoint(v1: &[f32; 3], v2: &[f32; 3]) -> [f32; 3] {
-        [
-            (v1[0] + v2[0]) / 2.0,
-            (v1[1] + v2[1]) / 2.0,
-            (v1[2] + v2[2]) / 2.0,
-        ]
-    }
-
     /// Helper function to normalize a vector
     pub fn normalize(v: [f32; 3]) -> [f32; 3] {
         let length = (v[0].powi(2) + v[1].powi(2) + v[2].powi(2)).sqrt();
         [v[0] / length, v[1] / length, v[2] / length]
     }
 
-    /// Helper function to calculate UV coordinates based on a vector
-    pub fn uv_coordinates(v: [f32; 3]) -> [f32; 2] {
-        let u = 0.5 + (v[2].atan2(v[0]) / (2.0 * std::f32::consts::PI));
-        let v = 0.5 - (v[1].asin() / std::f32::consts::PI);
-        [u, v]
-    }
-
     /// Helper function to sum two vectors.
     pub fn sum(v1: &[f32; 3], v2: &[f32; 3]) -> [f32; 3] {
         [v1[0] + v2[0], v1[1] + v2[1], v1[2] + v2[2]]
-    }
-
-    /// Helper function to subtract two vectors.
-    pub fn sub(v1: &[f32; 3], v2: &[f32; 3]) -> [f32; 3] {
-        [v1[0] - v2[0], v1[1] - v2[1], v1[2] - v2[2]]
     }
 
     /// Helper function to multiply one vector by a scalar.

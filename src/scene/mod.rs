@@ -9,7 +9,7 @@ use crate::{
     app::command::{Command, CommandReceiver, CommandSender},
     core::{camera::Camera, ConcatOrder},
 };
-use legion::{storage::IntoComponentSource, EntityStore, IntoQuery, World};
+use legion::{storage::IntoComponentSource, IntoQuery, World};
 use numpy as np;
 use pyo3::Python;
 

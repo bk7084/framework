@@ -10,8 +10,8 @@ use crate::{
     app::command::Command,
     core::{
         camera::{Camera, Projection},
-        mesh::{Mesh, MeshBundle, SubMesh},
-        Color, ConcatOrder, FxHashMap, Light, Material, SmlString, TextureType, Transform,
+        mesh::{Mesh, MeshBundle},
+        Color, ConcatOrder, FxHashMap, Light, SmlString,
     },
     render::{
         rpass::BlinnPhongRenderPass, surface::Surface, GpuContext, RenderTarget, Renderer,
@@ -22,7 +22,7 @@ use crate::{
 use crossbeam_channel::Sender;
 use glam::{Mat4, Quat, Vec3};
 use numpy as np;
-use numpy::{array, pyarray};
+use numpy::array;
 use pyo3::{
     prelude::*,
     types::{PyDict, PyTuple},
@@ -32,7 +32,7 @@ use winit::{
     dpi::PhysicalSize,
     event::{Event, KeyboardInput, WindowEvent},
     event_loop::{EventLoop, EventLoopBuilder, EventLoopProxy},
-    window::{Window, WindowBuilder},
+    window::Window,
 };
 
 /// User events that can be sent to the event loop.
@@ -503,7 +503,7 @@ pub fn run_main_loop(mut app: PyAppState, builder: PyWindowBuilder) {
     // // // let obj_sponza = Mesh::load_from_obj("./data/sponza/sponza.obj");
     // let obj_sphere = Mesh::load_from_obj("./data/blender_sphere/sphere.obj");
 
-    let point_light = {
+    let _point_light = {
         // Light settings.
         app.spawn_light(
             NodeIdx::root(),
@@ -516,14 +516,6 @@ pub fn run_main_loop(mut app: PyAppState, builder: PyWindowBuilder) {
             NodeIdx::root(),
             Light::Directional {
                 direction: Vec3::new(1.0, 1.0, 1.0).normalize(),
-                color: Color::WHITE,
-            },
-        );
-
-        app.spawn_light(
-            NodeIdx::root(),
-            Light::Directional {
-                direction: Vec3::new(0.0, 1.0, 0.0).normalize(),
                 color: Color::WHITE,
             },
         );
