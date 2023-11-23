@@ -8,9 +8,9 @@ use crate::{
         rpass::{
             BlinnPhongRenderPass, DirLight, DirLightArray, Globals, GlobalsBindGroup,
             LightsBindGroup, Locals, LocalsBindGroup, PConsts, PntLight, PntLightArray,
-            DEPTH_FORMAT,
+            RenderingPass, DEPTH_FORMAT,
         },
-        RenderTarget, Renderer,
+        RenderTarget, Renderer, ShadingMode,
     },
     scene::{NodeIdx, Nodes, Scene},
 };
@@ -171,7 +171,7 @@ impl LightsBindGroup {
         });
 
         let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("shading_lights_bind_group"),
+            label: Some("blph_lights_bind_group"),
             layout: &layout,
             entries: &[
                 wgpu::BindGroupEntry {
@@ -285,11 +285,37 @@ impl BlinnPhongRenderPass {
             }],
         });
 
-        let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+        let pipeline = Self::create_pipeline(
+            device,
+            &pipeline_layout,
+            format,
+            &shader_module,
+            wgpu::PolygonMode::Fill,
+        );
+
+        Self {
+            depth_att: None,
+            globals_bind_group,
+            locals_bind_group,
+            materials_bind_group_layout,
+            textures_bind_group_layout,
+            lights_bind_group,
+            entity_pipeline: pipeline,
+        }
+    }
+
+    fn create_pipeline(
+        device: &wgpu::Device,
+        layout: &wgpu::PipelineLayout,
+        output_format: wgpu::TextureFormat,
+        shader_module: &wgpu::ShaderModule,
+        polygon_mode: wgpu::PolygonMode,
+    ) -> wgpu::RenderPipeline {
+        device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: Some("blinn_phong_shading_pipeline"),
-            layout: Some(&pipeline_layout),
+            layout: Some(layout),
             vertex: wgpu::VertexState {
-                module: &shader_module,
+                module: shader_module,
                 entry_point: "vs_main",
                 buffers: &[
                     wgpu::VertexBufferLayout {
@@ -334,7 +360,7 @@ impl BlinnPhongRenderPass {
                 module: &shader_module,
                 entry_point: "fs_main",
                 targets: &[Some(wgpu::ColorTargetState {
-                    format,
+                    format: output_format,
                     blend: Some(wgpu::BlendState::ALPHA_BLENDING),
                     write_mask: wgpu::ColorWrites::ALL,
                 })],
@@ -343,8 +369,7 @@ impl BlinnPhongRenderPass {
                 topology: wgpu::PrimitiveTopology::TriangleList,
                 front_face: wgpu::FrontFace::Ccw,
                 cull_mode: None, //Some(wgpu::Face::Back),
-                polygon_mode: wgpu::PolygonMode::Fill,
-                // unclipped_depth: false,
+                polygon_mode,
                 ..Default::default()
             },
             depth_stencil: Some(wgpu::DepthStencilState {
@@ -360,17 +385,7 @@ impl BlinnPhongRenderPass {
                 alpha_to_coverage_enabled: false,
             },
             multiview: None,
-        });
-
-        Self {
-            depth_att: None,
-            globals_bind_group,
-            locals_bind_group,
-            materials_bind_group_layout,
-            textures_bind_group_layout,
-            lights_bind_group,
-            entity_pipeline: pipeline,
-        }
+        })
     }
 }
 pub fn texture_bundle_bind_group_layout(device: &wgpu::Device) -> wgpu::BindGroupLayout {
@@ -410,15 +425,16 @@ pub fn texture_bundle_bind_group_layout(device: &wgpu::Device) -> wgpu::BindGrou
     })
 }
 
-impl BlinnPhongRenderPass {
-    pub fn record(
+impl RenderingPass for BlinnPhongRenderPass {
+    fn record(
         &mut self,
+        renderer: &Renderer,
+        target: &RenderTarget,
+        scene: &Scene,
         device: &wgpu::Device,
         queue: &wgpu::Queue,
         encoder: &mut wgpu::CommandEncoder,
-        target: &RenderTarget,
-        renderer: &Renderer,
-        scene: &Scene,
+        _mode: ShadingMode, // TODO: support shading mode.
     ) {
         profiling::scope!("BlinnPhongShading::record");
         let view_mat = {

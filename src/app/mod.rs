@@ -13,7 +13,10 @@ use crate::{
         mesh::{Mesh, MeshBundle, SubMesh},
         Color, ConcatOrder, FxHashMap, Light, Material, SmlString, TextureType, Transform,
     },
-    render::{rpass::BlinnPhongRenderPass, surface::Surface, GpuContext, RenderTarget, Renderer},
+    render::{
+        rpass::BlinnPhongRenderPass, surface::Surface, GpuContext, RenderTarget, Renderer,
+        ShadingMode,
+    },
     scene::{Entity, NodeIdx, PyEntity, Scene},
 };
 use crossbeam_channel::Sender;
@@ -407,7 +410,9 @@ pub fn run_main_loop(mut app: PyAppState, builder: PyWindowBuilder) {
     // Create the surface to render to.
     let mut surface = Surface::new(&context, &window);
 
-    let mut blinn_phong_rpass = BlinnPhongRenderPass::new(&context.device, surface.format());
+    let mut blph_render_pass = BlinnPhongRenderPass::new(&context.device, surface.format());
+
+    let mut shading_mode = ShadingMode::BlinnPhong;
 
     // let mut cube = Mesh::cube(1.0);
     // let mut textures = FxHashMap::default();
@@ -626,6 +631,18 @@ pub fn run_main_loop(mut app: PyAppState, builder: PyWindowBuilder) {
                     if app.input.is_key_pressed(KeyCode::Escape) {
                         control_flow.set_exit();
                     }
+                    if app.input.is_key_pressed(KeyCode::LControl)
+                        && app.input.is_key_pressed(KeyCode::LShift)
+                        && app.input.is_key_pressed(KeyCode::B)
+                    {
+                        shading_mode = ShadingMode::BlinnPhong;
+                    }
+                    if app.input.is_key_pressed(KeyCode::LControl)
+                        && app.input.is_key_pressed(KeyCode::LShift)
+                        && app.input.is_key_pressed(KeyCode::N)
+                    {
+                        shading_mode = ShadingMode::Wireframe;
+                    }
                 }
             }
             Event::RedrawRequested(window_id) if window_id == win_id => {
@@ -642,12 +659,12 @@ pub fn run_main_loop(mut app: PyAppState, builder: PyWindowBuilder) {
                 };
 
                 let scene = app.scene.read().unwrap();
-                match app
-                    .renderer
-                    .write()
-                    .unwrap()
-                    .render(&scene, &mut blinn_phong_rpass, &target)
-                {
+                match app.renderer.write().unwrap().render(
+                    &scene,
+                    &target,
+                    &mut blph_render_pass,
+                    shading_mode,
+                ) {
                     Ok(_) => {}
                     Err(wgpu::SurfaceError::Lost | wgpu::SurfaceError::Outdated) => {
                         surface.resize(&context.device, surface.width(), surface.height());

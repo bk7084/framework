@@ -1,12 +1,14 @@
 mod blph;
 mod skybox;
-mod wireframe;
 
+use crate::{
+    render::{RenderTarget, Renderer, ShadingMode},
+    scene::Scene,
+};
 pub use blph::*;
 use bytemuck::{Pod, Zeroable};
 use glam::Mat4;
 use std::ops::Deref;
-pub use wireframe::*;
 
 crate::impl_size_constant!(
     Globals,
@@ -191,6 +193,19 @@ impl Deref for LightsBindGroup {
     fn deref(&self) -> &Self::Target {
         &self.group
     }
+}
+
+pub trait RenderingPass {
+    fn record(
+        &mut self,
+        renderer: &Renderer,
+        target: &RenderTarget,
+        scene: &Scene,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        encoder: &mut wgpu::CommandEncoder,
+        mode: ShadingMode,
+    );
 }
 
 /// The render pass for the blinn-phong shading.

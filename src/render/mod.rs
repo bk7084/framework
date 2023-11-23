@@ -20,7 +20,7 @@ use crate::{
         FxHashMap, GpuMaterial, Material, MaterialBundle, SmlString, Texture, TextureBundle,
         TextureType,
     },
-    render::rpass::{texture_bundle_bind_group_layout, BlinnPhongRenderPass},
+    render::rpass::{texture_bundle_bind_group_layout, BlinnPhongRenderPass, RenderingPass},
     scene::{NodeIdx, Scene},
 };
 pub use context::*;
@@ -112,6 +112,7 @@ impl Renderer {
             bind_group: None,
             sampler_index_buffer: None,
         });
+
         Self {
             device,
             queue,
@@ -333,8 +334,9 @@ impl Renderer {
     pub fn render(
         &mut self,
         scene: &Scene,
-        rpass: &mut BlinnPhongRenderPass,
         target: &RenderTarget,
+        rpass: &mut dyn RenderingPass,
+        mode: ShadingMode,
     ) -> Result<(), wgpu::SurfaceError> {
         profiling::scope!("Renderer::render");
         let mut encoder = self
@@ -343,7 +345,15 @@ impl Renderer {
                 label: Some("Render"),
             });
 
-        rpass.record(&self.device, &self.queue, &mut encoder, target, self, scene);
+        rpass.record(
+            self,
+            target,
+            scene,
+            &self.device,
+            &self.queue,
+            &mut encoder,
+            mode,
+        );
 
         self.queue.submit(std::iter::once(encoder.finish()));
         Ok(())
