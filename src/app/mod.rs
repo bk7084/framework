@@ -260,7 +260,14 @@ impl PyAppState {
                 let entity = scene.spawn(NodeIdx::root(), (camera,));
                 let transform = scene.nodes[entity.node].transform_mut();
                 transform.translation = pos;
-                transform.looking_at(target, Vec3::Y);
+                // Avoid gimbal lock.
+                let forward = (target - pos).normalize();
+                let up = if forward.y.abs() > 0.999 {
+                    Vec3::new(0.0, 0.0, 1.0)
+                } else {
+                    Vec3::new(0.0, 1.0, 0.0)
+                };
+                transform.looking_at(target, up);
                 entity
             })
             .expect("Failed to create camera!");

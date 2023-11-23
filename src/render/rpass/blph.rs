@@ -256,7 +256,7 @@ impl BlinnPhongRenderPass {
                 label: Some("shading_materials_bind_group_layout"),
                 entries: &[wgpu::BindGroupLayoutEntry {
                     binding: 0,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    visibility: wgpu::ShaderStages::VERTEX_FRAGMENT,
                     ty: wgpu::BindingType::Buffer {
                         ty: wgpu::BufferBindingType::Storage { read_only: true },
                         has_dynamic_offset: false,
@@ -346,11 +346,35 @@ impl BlinnPhongRenderPass {
                         array_stride: std::mem::size_of::<[f32; 2]>() as wgpu::BufferAddress,
                         step_mode: wgpu::VertexStepMode::Vertex,
                         attributes: &[
-                            // UV0.
+                            // UV.
                             wgpu::VertexAttribute {
                                 offset: 0,
                                 shader_location: 2,
                                 format: wgpu::VertexFormat::Float32x2,
+                            },
+                        ],
+                    },
+                    wgpu::VertexBufferLayout {
+                        array_stride: std::mem::size_of::<[f32; 2]>() as wgpu::BufferAddress,
+                        step_mode: wgpu::VertexStepMode::Vertex,
+                        attributes: &[
+                            // Tangent.
+                            wgpu::VertexAttribute {
+                                offset: 0,
+                                shader_location: 3,
+                                format: wgpu::VertexFormat::Float32x3,
+                            },
+                        ],
+                    },
+                    wgpu::VertexBufferLayout {
+                        array_stride: std::mem::size_of::<[f32; 2]>() as wgpu::BufferAddress,
+                        step_mode: wgpu::VertexStepMode::Vertex,
+                        attributes: &[
+                            // Bi-tangent.
+                            wgpu::VertexAttribute {
+                                offset: 0,
+                                shader_location: 4,
+                                format: wgpu::VertexFormat::Float32x3,
                             },
                         ],
                     },
@@ -368,7 +392,7 @@ impl BlinnPhongRenderPass {
             primitive: wgpu::PrimitiveState {
                 topology: wgpu::PrimitiveTopology::TriangleList,
                 front_face: wgpu::FrontFace::Ccw,
-                cull_mode: None, //Some(wgpu::Face::Back),
+                cull_mode: None, // Some(wgpu::Face::Back),
                 polygon_mode,
                 ..Default::default()
             },
@@ -625,11 +649,22 @@ impl RenderingPass for BlinnPhongRenderPass {
                         {
                             render_pass.set_vertex_buffer(1, buffer.slice(normals_range.clone()));
                         }
-                        // Bind vertex buffer - uv0.
-                        if let Some(uv_range) =
-                            mesh.get_vertex_attribute_range(VertexAttribute::UV0)
+                        // Bind vertex buffer - uv.
+                        if let Some(uv_range) = mesh.get_vertex_attribute_range(VertexAttribute::UV)
                         {
                             render_pass.set_vertex_buffer(2, buffer.slice(uv_range.clone()));
+                        }
+                        // Bind vertex buffer - tangent.
+                        if let Some(tangent_range) =
+                            mesh.get_vertex_attribute_range(VertexAttribute::TANGENT)
+                        {
+                            render_pass.set_vertex_buffer(3, buffer.slice(tangent_range.clone()));
+                        }
+                        // Bind vertex buffer - bitangent.
+                        if let Some(bitangent_range) =
+                            mesh.get_vertex_attribute_range(VertexAttribute::BITANGENT)
+                        {
+                            render_pass.set_vertex_buffer(4, buffer.slice(bitangent_range.clone()));
                         }
 
                         // Bind material.

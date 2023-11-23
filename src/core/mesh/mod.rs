@@ -71,6 +71,31 @@ impl From<PyTopology> for wgpu::PrimitiveTopology {
     }
 }
 
+pub trait IndexType: Copy {
+    fn as_u32(&self) -> u32;
+    fn as_usize(&self) -> usize;
+}
+
+impl IndexType for u32 {
+    fn as_u32(&self) -> u32 {
+        *self
+    }
+
+    fn as_usize(&self) -> usize {
+        *self as usize
+    }
+}
+
+impl IndexType for u16 {
+    fn as_u32(&self) -> u32 {
+        *self as u32
+    }
+
+    fn as_usize(&self) -> usize {
+        *self as usize
+    }
+}
+
 /// Indices of a mesh.
 #[derive(Clone, Debug)]
 pub enum Indices {
@@ -248,50 +273,59 @@ impl Mesh {
         self.materials = Some(materials);
     }
 
-    // TODO: implement this.
-    /// Computes per vertex normals for the mesh.
-    pub fn compute_per_vertex_normals(&mut self) {
-        // If the mesh does not have positions, return.
-        if !self.attributes.0.contains_key(&VertexAttribute::POSITION) {
-            log::error!("Mesh does not have positions.");
+    /// Computes per vertex tangents for the mesh.
+    pub fn compute_tangents(&mut self) {
+        if self.attributes.0.contains_key(&VertexAttribute::TANGENT)
+            || self.attributes.0.contains_key(&VertexAttribute::BITANGENT)
+        {
+            log::warn!("Mesh already has tangents and bitangents. Skipping tangent computation.");
             return;
         }
-
-        // If the mesh already has normals, return.
-        if self.attributes.0.contains_key(&VertexAttribute::NORMAL) {
-            log::warn!("Mesh already has normals. Skipping normal computation.");
-            return;
-        }
-
-        // Get the positions.
-        let positions = self
+        let vertices = self
             .attributes
             .0
             .get(&VertexAttribute::POSITION)
             .unwrap()
             .as_slice::<[f32; 3]>();
-
-        // Get the indices.
-        if self.indices.is_none() {
-            log::error!("Cannot compute normals without indices.");
-            return;
+        let uvs = self
+            .attributes
+            .0
+            .get(&VertexAttribute::UV)
+            .unwrap()
+            .as_slice::<[f32; 2]>();
+        let mut tangents = vec![[0.0, 0.0, 0.0]; vertices.len()];
+        let mut bitangents = vec![[0.0, 0.0, 0.0]; vertices.len()];
+        match &self.indices {
+            None => {
+                panic!("Indices are required to compute the bi/tangents");
+            }
+            Some(indices) => match indices {
+                Indices::U32(indices) => {
+                    compute_tangents_bi_tangents(
+                        indices,
+                        &vertices,
+                        &uvs,
+                        &mut tangents,
+                        &mut bitangents,
+                    );
+                }
+                Indices::U16(indices) => compute_tangents_bi_tangents(
+                    indices,
+                    &vertices,
+                    &uvs,
+                    &mut tangents,
+                    &mut bitangents,
+                ),
+            },
         }
 
-        // let indices = match &self.indices {
-        //     Some(Indices::U32(indices)) => indices.as_slice(),
-        //     Some(Indices::U16(indices)) => indices.as_slice(),
-        //     None => unreachable!("Cannot compute normals without indices."),
-        // };
-        for pos in positions.iter() {
-            log::info!("{:?}", pos);
-        }
-
-        // Compute the normals.
-        // let mut normals = Vec::with_capacity(positions.len());
-        todo!("Compute normals.");
+        self.attributes
+            .insert(VertexAttribute::TANGENT, AttribContainer::new(&tangents));
+        self.attributes.insert(
+            VertexAttribute::BITANGENT,
+            AttribContainer::new(&bitangents),
+        );
     }
-
-    pub fn compute_tangents(&mut self) {}
 }
 
 pub struct VertexBufferLayout {
@@ -362,8 +396,8 @@ impl Mesh {
         ];
         attributes.insert(VertexAttribute::POSITION, AttribContainer::new(&vertices));
         attributes.insert(VertexAttribute::NORMAL, AttribContainer::new(&normals));
-        attributes.insert(VertexAttribute::UV0, AttribContainer::new(&uvs));
-        Mesh {
+        attributes.insert(VertexAttribute::UV, AttribContainer::new(&uvs));
+        let mut mesh = Mesh {
             id: 0,
             topology: wgpu::PrimitiveTopology::TriangleList,
             attributes,
@@ -371,7 +405,9 @@ impl Mesh {
             sub_meshes: None,
             path: None,
             materials: None,
-        }
+        };
+        mesh.compute_tangents();
+        mesh
     }
 
     #[rustfmt::skip]
@@ -415,8 +451,8 @@ impl Mesh {
 
         attributes.insert(VertexAttribute::POSITION, AttribContainer::new(&vertices));
         attributes.insert(VertexAttribute::NORMAL, AttribContainer::new(&normals));
-        attributes.insert(VertexAttribute::UV0, AttribContainer::new(&uvs));
-        Mesh {
+        attributes.insert(VertexAttribute::UV, AttribContainer::new(&uvs));
+        let mut mesh = Mesh {
             id: 1,
             topology: wgpu::PrimitiveTopology::TriangleList,
             attributes,
@@ -424,7 +460,9 @@ impl Mesh {
             sub_meshes: None,
             path: None,
             materials: None,
-        }
+        };
+        mesh.compute_tangents();
+        mesh
     }
 
     /// Creates a sphere of centered at the origin.
@@ -482,9 +520,9 @@ impl Mesh {
 
         attributes.insert(VertexAttribute::POSITION, AttribContainer::new(&vertices));
         attributes.insert(VertexAttribute::NORMAL, AttribContainer::new(&normals));
-        attributes.insert(VertexAttribute::UV0, AttribContainer::new(&uvs));
+        attributes.insert(VertexAttribute::UV, AttribContainer::new(&uvs));
 
-        Mesh {
+        let mut mesh = Mesh {
             id: MESH_ID.fetch_add(1, std::sync::atomic::Ordering::Relaxed),
             topology: wgpu::PrimitiveTopology::TriangleList,
             attributes,
@@ -492,7 +530,9 @@ impl Mesh {
             sub_meshes: None,
             path: None,
             materials: None,
-        }
+        };
+        mesh.compute_tangents();
+        mesh
     }
 
     /// Creates a triangle with user defined vertices.
@@ -515,9 +555,9 @@ impl Mesh {
 
         attributes.insert(VertexAttribute::POSITION, AttribContainer::new(&vertices));
         attributes.insert(VertexAttribute::NORMAL, AttribContainer::new(&normals));
-        attributes.insert(VertexAttribute::UV0, AttribContainer::new(&uvs));
+        attributes.insert(VertexAttribute::UV, AttribContainer::new(&uvs));
 
-        Mesh {
+        let mut mesh = Mesh {
             id: MESH_ID.fetch_add(1, std::sync::atomic::Ordering::Relaxed),
             topology: wgpu::PrimitiveTopology::TriangleList,
             attributes,
@@ -525,7 +565,9 @@ impl Mesh {
             sub_meshes: None,
             path: None,
             materials: None,
-        }
+        };
+        mesh.compute_tangents();
+        mesh
     }
 
     /// Loads a mesh from a wavefront obj file.
@@ -593,7 +635,7 @@ impl Mesh {
         }
 
         if !uvs.is_empty() {
-            attributes.insert(VertexAttribute::UV0, AttribContainer::new(&uvs));
+            attributes.insert(VertexAttribute::UV, AttribContainer::new(&uvs));
         }
 
         let id = MESH_ID.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
@@ -608,7 +650,7 @@ impl Mesh {
         log::debug!("- Processed materials: {:#?}", materials);
         log::debug!("- Loaded submeshes: {:#?}", sub_meshes);
 
-        Mesh {
+        let mut mesh = Mesh {
             id,
             topology: wgpu::PrimitiveTopology::TriangleList,
             attributes,
@@ -620,7 +662,9 @@ impl Mesh {
             sub_meshes: Some(sub_meshes),
             path: None,
             materials: Some(materials),
-        }
+        };
+        mesh.compute_tangents();
+        mesh
     }
 }
 
@@ -674,7 +718,7 @@ impl GpuMesh {
 }
 
 mod util {
-    // Helper function to calculate the midpoint of two vertices
+    /// Helper function to calculate the midpoint of two vertices
     pub fn midpoint(v1: &[f32; 3], v2: &[f32; 3]) -> [f32; 3] {
         [
             (v1[0] + v2[0]) / 2.0,
@@ -683,17 +727,32 @@ mod util {
         ]
     }
 
-    // Helper function to normalize a vector
+    /// Helper function to normalize a vector
     pub fn normalize(v: [f32; 3]) -> [f32; 3] {
         let length = (v[0].powi(2) + v[1].powi(2) + v[2].powi(2)).sqrt();
         [v[0] / length, v[1] / length, v[2] / length]
     }
 
-    // Helper function to calculate UV coordinates based on a vector
+    /// Helper function to calculate UV coordinates based on a vector
     pub fn uv_coordinates(v: [f32; 3]) -> [f32; 2] {
         let u = 0.5 + (v[2].atan2(v[0]) / (2.0 * std::f32::consts::PI));
         let v = 0.5 - (v[1].asin() / std::f32::consts::PI);
         [u, v]
+    }
+
+    /// Helper function to sum two vectors.
+    pub fn sum(v1: &[f32; 3], v2: &[f32; 3]) -> [f32; 3] {
+        [v1[0] + v2[0], v1[1] + v2[1], v1[2] + v2[2]]
+    }
+
+    /// Helper function to subtract two vectors.
+    pub fn sub(v1: &[f32; 3], v2: &[f32; 3]) -> [f32; 3] {
+        [v1[0] - v2[0], v1[1] - v2[1], v1[2] - v2[2]]
+    }
+
+    /// Helper function to multiply one vector by a scalar.
+    pub fn mul_scalar(v: &[f32; 3], s: f32) -> [f32; 3] {
+        [v[0] * s, v[1] * s, v[2] * s]
     }
 }
 
@@ -702,4 +761,62 @@ pub struct MeshBundle {
     pub mesh: Handle<GpuMesh>,
     pub textures: Handle<TextureBundle>,
     pub materials: Handle<MaterialBundle>,
+}
+
+fn compute_tangents_bi_tangents<T: IndexType>(
+    indices: &[T],
+    vertices: &[[f32; 3]],
+    uvs: &[[f32; 2]],
+    tangents: &mut [[f32; 3]],
+    bitangents: &mut [[f32; 3]],
+) {
+    let mut n_tris_per_vert = vec![0u32; vertices.len()];
+    for tri in indices.chunks(3) {
+        let (tri0, tri1, tri2) = (tri[0].as_usize(), tri[1].as_usize(), tri[2].as_usize());
+        let v0 = glam::Vec3::from(vertices[tri0]);
+        let v1 = glam::Vec3::from(vertices[tri1]);
+        let v2 = glam::Vec3::from(vertices[tri2]);
+        let uv0 = glam::Vec2::from(uvs[tri0]);
+        let uv1 = glam::Vec2::from(uvs[tri1]);
+        let uv2 = glam::Vec2::from(uvs[tri2]);
+
+        // Calculate the edges of the triangle
+        let delta_pos1 = v1 - v0;
+        let delta_pos2 = v2 - v0;
+
+        // This will give us a direction to calculate the
+        // tangent and bitangent
+        let delta_uv1 = uv1 - uv0;
+        let delta_uv2 = uv2 - uv0;
+
+        // Solving the following system of equations
+        //     delta_pos1 = delta_uv1.x * T + delta_u.y * B
+        //     delta_pos2 = delta_uv2.x * T + delta_uv2.y * B
+        let r = 1.0 / (delta_uv1.x * delta_uv2.y - delta_uv1.y * delta_uv2.x);
+        let tangent = ((delta_pos1 * delta_uv2.y - delta_pos2 * delta_uv1.y) * r).to_array();
+        // Flip the bitangent to enable right-handed normal maps with wgpu texture
+        // coordinate system.
+        let bitangent = ((delta_pos2 * delta_uv1.x - delta_pos1 * delta_uv2.x) * -r).to_array();
+
+        tangents[tri0] = util::sum(&tangent, &tangents[tri0]);
+        tangents[tri1] = util::sum(&tangent, &tangents[tri1]);
+        tangents[tri2] = util::sum(&tangent, &tangents[tri2]);
+        n_tris_per_vert[tri0] += 1;
+        n_tris_per_vert[tri1] += 1;
+        n_tris_per_vert[tri2] += 1;
+        bitangents[tri0] = util::sum(&bitangent, &bitangents[tri0]);
+        bitangents[tri1] = util::sum(&bitangent, &bitangents[tri1]);
+        bitangents[tri2] = util::sum(&bitangent, &bitangents[tri2]);
+    }
+
+    // Average the tangents and bitangents
+    for i in 0..vertices.len() {
+        let tangent = tangents[i];
+        let bitangent = bitangents[i];
+        let denom = 1.0f32 / n_tris_per_vert[i] as f32;
+        let tangent = util::normalize(util::mul_scalar(&tangent, denom));
+        let bitangent = util::normalize(util::mul_scalar(&bitangent, denom));
+        tangents[i] = tangent;
+        bitangents[i] = bitangent;
+    }
 }

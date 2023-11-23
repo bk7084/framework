@@ -71,11 +71,11 @@ impl VertexAttribute {
     /// Normal attribute.
     pub const NORMAL: Self = Self::new("vertex_normal", wgpu::VertexFormat::Float32x3, 1);
     /// UV attribute.
-    pub const UV0: Self = Self::new("vertex_uv0", wgpu::VertexFormat::Float32x2, 2);
-    /// UV attribute.
-    pub const UV1: Self = Self::new("vertex_uv1", wgpu::VertexFormat::Float32x2, 3);
+    pub const UV: Self = Self::new("vertex_uv0", wgpu::VertexFormat::Float32x2, 2);
     /// Tangent attribute.
-    pub const TANGENT: Self = Self::new("vertex_tangent", wgpu::VertexFormat::Float32x4, 4);
+    pub const TANGENT: Self = Self::new("vertex_tangent", wgpu::VertexFormat::Float32x3, 3);
+    /// Bitangent attribute.
+    pub const BITANGENT: Self = Self::new("vertex_bitangent", wgpu::VertexFormat::Float32x3, 4);
     /// Color attribute.
     pub const COLOR: Self = Self::new("vertex_color", wgpu::VertexFormat::Float32x4, 5);
 

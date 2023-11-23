@@ -80,9 +80,9 @@ struct VSInput {
     @builtin(instance_index) instance_index: u32,
     @location(0) position: vec3<f32>,
     @location(1) normal: vec3<f32>,
-    @location(2) uv0: vec2<f32>,
-//    @location(3) uv1: vec2<f32>,
-//    @location(4) tangent: vec4<f32>,
+    @location(2) uv: vec2<f32>,
+    @location(3) tangent: vec3<f32>,
+    @location(4) bitangent: vec3<f32>,
 //    @location(5) color: vec4<f32>,
 }
 
@@ -97,6 +97,8 @@ struct VSOutput {
     @location(4) view_mat_y: vec4<f32>,
     @location(5) view_mat_z: vec4<f32>,
     @location(6) view_mat_w: vec4<f32>,
+    @location(7) tangent_eye_space: vec3<f32>,
+    @location(8) bitangent_eye_space: vec3<f32>,
 }
 
 @group(0) @binding(0)
@@ -132,10 +134,16 @@ fn vs_main(vin: VSInput) -> VSOutput {
 
     out.position = globals.proj * pos_eye_space;
     out.pos_eye_space = pos_eye_space.xyz / pos_eye_space.w;
+    out.uv = vin.uv;
 
-    out.uv = vin.uv0;
     var transformed_normal = transpose(locals.model_view_inv) * vec4<f32>(vin.normal, 0.0);
+    var transformed_bitangent = transpose(locals.model_view_inv) * vec4<f32>(vin.bitangent, 0.0);
+    var transformed_tangent = transpose(locals.model_view_inv) * vec4<f32>(vin.tangent, 0.0);
+
     out.normal_eye_space = normalize(transformed_normal.xyz);
+    out.bitangent_eye_space = normalize(transformed_bitangent.xyz);
+    out.tangent_eye_space = normalize(transformed_tangent.xyz);
+
     out.view_mat_x = globals.view.x;
     out.view_mat_y = globals.view.y;
     out.view_mat_z = globals.view.z;
@@ -204,6 +212,17 @@ fn fs_main(vout: VSOutput) -> @location(0) vec4<f32> {
         kd = textureSample(textures[material.map_kd], samplers[texture_sampler_ids[material.map_kd]], vout.uv).rgb;
     }
 
+    // Use normal from vertex data, which is by default in object space.
+    var n = vout.normal_eye_space;
+    if (material.map_norm != INVALID_INDEX) {
+        // Use normal from normal map, unpacked to [-1, 1].
+        n = textureSample(textures[material.map_norm], samplers[texture_sampler_ids[material.map_norm]], vout.uv).rgb;
+        n = normalize(n * 2.0 - 1.0);
+        // Transform normal from tangent space to eye space.
+        let tbn = mat3x3<f32>(vout.tangent_eye_space, vout.bitangent_eye_space, vout.normal_eye_space);
+        n = normalize(tbn * n);
+    }
+
     // Output kd as color.
     if (material.illum == 11u) {
         return vec4<f32>(kd, 1.0);
@@ -214,7 +233,7 @@ fn fs_main(vout: VSOutput) -> @location(0) vec4<f32> {
     }
 
     if (material.illum == 13u) {
-        return vec4<f32>(vout.normal_eye_space, 1.0);
+        return vec4<f32>(n, 1.0);
     }
 
     var color = materials[default_material_index].kd.rgb;
@@ -231,7 +250,7 @@ fn fs_main(vout: VSOutput) -> @location(0) vec4<f32> {
 
     let view_mat = mat4x4<f32>(vout.view_mat_x, vout.view_mat_y, vout.view_mat_z, vout.view_mat_w);
 
-    color = blinn_phong_shading(view_mat, vout.pos_eye_space, vout.normal_eye_space, kd, ks, ns);
+    color = blinn_phong_shading(view_mat, vout.pos_eye_space, n, kd, ks, ns);
 
     // Ambient on.
     if (material.illum != 0u) {
