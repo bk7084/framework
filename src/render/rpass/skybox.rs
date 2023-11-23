@@ -131,140 +131,144 @@ impl<'a> SkyboxRenderPass<'a> {
         globals: &'a wgpu::Buffer,
         output_format: wgpu::TextureFormat,
     ) -> Self {
-        let env_map = EnvironmentMap::new_from_images(
-            device,
-            queue,
-            1024,
-            1024,
-            [
-                image::load_from_memory(include_bytes!("../../../data/skybox/right.jpg"))
-                    .expect("Failed to load skybox texture!")
-                    .to_rgba8(),
-                image::load_from_memory(include_bytes!("../../../data/skybox/left.jpg"))
-                    .expect("Failed to load skybox texture!")
-                    .to_rgba8(),
-                image::load_from_memory(include_bytes!("../../../data/skybox/top.jpg"))
-                    .expect("Failed to load skybox texture!")
-                    .to_rgba8(),
-                image::load_from_memory(include_bytes!("../../../data/skybox/bottom.jpg"))
-                    .expect("Failed to load skybox texture!")
-                    .to_rgba8(),
-                image::load_from_memory(include_bytes!("../../../data/skybox/front.jpg"))
-                    .expect("Failed to load skybox texture!")
-                    .to_rgba8(),
-                image::load_from_memory(include_bytes!("../../../data/skybox/back.jpg"))
-                    .expect("Failed to load skybox texture!")
-                    .to_rgba8(),
-            ],
-        );
-        let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            label: Some("skybox_bind_group_layout"),
-            entries: &[
-                // Globals uniform buffer.
-                wgpu::BindGroupLayoutEntry {
-                    binding: 0,
-                    visibility: wgpu::ShaderStages::VERTEX,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Uniform,
-                        has_dynamic_offset: false,
-                        min_binding_size: Globals::BUFFER_SIZE,
-                    },
-                    count: None,
-                },
-                // Environment map.
-                wgpu::BindGroupLayoutEntry {
-                    binding: 1,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Texture {
-                        multisampled: false,
-                        view_dimension: wgpu::TextureViewDimension::Cube,
-                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
-                    },
-                    count: None,
-                },
-                // Environment map sampler.
-                wgpu::BindGroupLayoutEntry {
-                    binding: 2,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
-                    count: None,
-                },
-            ],
-        });
-        let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("skybox_bind_group"),
-            layout: &bind_group_layout,
-            entries: &[
-                // Globals uniform buffer.
-                wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: globals.as_entire_binding(),
-                },
-                // Environment map.
-                wgpu::BindGroupEntry {
-                    binding: 1,
-                    resource: wgpu::BindingResource::TextureView(&env_map.view),
-                },
-                // Environment map sampler.
-                wgpu::BindGroupEntry {
-                    binding: 2,
-                    resource: wgpu::BindingResource::Sampler(&env_map.sampler),
-                },
-            ],
-        });
-
-        let shader_module = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-            label: Some("skybox_shader_module"),
-            source: wgpu::ShaderSource::Wgsl(include_str!("skybox.wgsl").into()),
-        });
-
-        let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-            label: Some("skybox_pipeline_layout"),
-            bind_group_layouts: &[&bind_group_layout],
-            push_constant_ranges: &[],
-        });
-
-        let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            label: Some("skybox_pipeline"),
-            layout: Some(&pipeline_layout),
-            vertex: wgpu::VertexState {
-                module: &shader_module,
-                entry_point: "vs_main",
-                buffers: &[],
-            },
-            primitive: Default::default(),
-            depth_stencil: Some(wgpu::DepthStencilState {
-                format: DEPTH_FORMAT,
-                depth_write_enabled: false,
-                depth_compare: wgpu::CompareFunction::LessEqual,
-                stencil: Default::default(),
-                bias: Default::default(),
-            }),
-            multisample: wgpu::MultisampleState {
-                count: 1,
-                mask: !0,
-                alpha_to_coverage_enabled: false,
-            },
-            fragment: Some(wgpu::FragmentState {
-                module: &shader_module,
-                entry_point: "fs_main",
-                targets: &[Some(wgpu::ColorTargetState {
-                    format: output_format,
-                    blend: None,
-                    write_mask: wgpu::ColorWrites::ALL,
-                })],
-            }),
-            multiview: None,
-        });
-
-        Self {
-            bind_group_layout,
-            bind_group,
-            globals,
-            env_map,
-            pipeline_layout,
-            pipeline,
-        }
+        // let env_map = EnvironmentMap::new_from_images(
+        //     device,
+        //     queue,
+        //     1024,
+        //     1024,
+        //     [
+        //         image::load_from_memory(include_bytes!("../../../data/skybox/right.
+        // jpg"))             .expect("Failed to load skybox texture!")
+        //             .to_rgba8(),
+        //         image::load_from_memory(include_bytes!("../../../data/skybox/left.
+        // jpg"))             .expect("Failed to load skybox texture!")
+        //             .to_rgba8(),
+        //         image::load_from_memory(include_bytes!("../../../data/skybox/top.jpg"
+        // ))             .expect("Failed to load skybox texture!")
+        //             .to_rgba8(),
+        //         image::load_from_memory(include_bytes!("../../../data/skybox/bottom.
+        // jpg"))             .expect("Failed to load skybox texture!")
+        //             .to_rgba8(),
+        //         image::load_from_memory(include_bytes!("../../../data/skybox/front.
+        // jpg"))             .expect("Failed to load skybox texture!")
+        //             .to_rgba8(),
+        //         image::load_from_memory(include_bytes!("../../../data/skybox/back.
+        // jpg"))             .expect("Failed to load skybox texture!")
+        //             .to_rgba8(),
+        //     ],
+        // );
+        // let bind_group_layout =
+        // device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+        //     label: Some("skybox_bind_group_layout"),
+        //     entries: &[
+        //         // Globals uniform buffer.
+        //         wgpu::BindGroupLayoutEntry {
+        //             binding: 0,
+        //             visibility: wgpu::ShaderStages::VERTEX,
+        //             ty: wgpu::BindingType::Buffer {
+        //                 ty: wgpu::BufferBindingType::Uniform,
+        //                 has_dynamic_offset: false,
+        //                 min_binding_size: Globals::BUFFER_SIZE,
+        //             },
+        //             count: None,
+        //         },
+        //         // Environment map.
+        //         wgpu::BindGroupLayoutEntry {
+        //             binding: 1,
+        //             visibility: wgpu::ShaderStages::FRAGMENT,
+        //             ty: wgpu::BindingType::Texture {
+        //                 multisampled: false,
+        //                 view_dimension: wgpu::TextureViewDimension::Cube,
+        //                 sample_type: wgpu::TextureSampleType::Float { filterable:
+        // true },             },
+        //             count: None,
+        //         },
+        //         // Environment map sampler.
+        //         wgpu::BindGroupLayoutEntry {
+        //             binding: 2,
+        //             visibility: wgpu::ShaderStages::FRAGMENT,
+        //             ty:
+        // wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+        //             count: None,
+        //         },
+        //     ],
+        // });
+        // let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+        //     label: Some("skybox_bind_group"),
+        //     layout: &bind_group_layout,
+        //     entries: &[
+        //         // Globals uniform buffer.
+        //         wgpu::BindGroupEntry {
+        //             binding: 0,
+        //             resource: globals.as_entire_binding(),
+        //         },
+        //         // Environment map.
+        //         wgpu::BindGroupEntry {
+        //             binding: 1,
+        //             resource: wgpu::BindingResource::TextureView(&env_map.view),
+        //         },
+        //         // Environment map sampler.
+        //         wgpu::BindGroupEntry {
+        //             binding: 2,
+        //             resource: wgpu::BindingResource::Sampler(&env_map.sampler),
+        //         },
+        //     ],
+        // });
+        //
+        // let shader_module = device.create_shader_module(wgpu::ShaderModuleDescriptor
+        // {     label: Some("skybox_shader_module"),
+        //     source: wgpu::ShaderSource::Wgsl(include_str!("skybox.wgsl").into()),
+        // });
+        //
+        // let pipeline_layout =
+        // device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+        //     label: Some("skybox_pipeline_layout"),
+        //     bind_group_layouts: &[&bind_group_layout],
+        //     push_constant_ranges: &[],
+        // });
+        //
+        // let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor
+        // {     label: Some("skybox_pipeline"),
+        //     layout: Some(&pipeline_layout),
+        //     vertex: wgpu::VertexState {
+        //         module: &shader_module,
+        //         entry_point: "vs_main",
+        //         buffers: &[],
+        //     },
+        //     primitive: Default::default(),
+        //     depth_stencil: Some(wgpu::DepthStencilState {
+        //         format: DEPTH_FORMAT,
+        //         depth_write_enabled: false,
+        //         depth_compare: wgpu::CompareFunction::LessEqual,
+        //         stencil: Default::default(),
+        //         bias: Default::default(),
+        //     }),
+        //     multisample: wgpu::MultisampleState {
+        //         count: 1,
+        //         mask: !0,
+        //         alpha_to_coverage_enabled: false,
+        //     },
+        //     fragment: Some(wgpu::FragmentState {
+        //         module: &shader_module,
+        //         entry_point: "fs_main",
+        //         targets: &[Some(wgpu::ColorTargetState {
+        //             format: output_format,
+        //             blend: None,
+        //             write_mask: wgpu::ColorWrites::ALL,
+        //         })],
+        //     }),
+        //     multiview: None,
+        // });
+        //
+        // Self {
+        //     bind_group_layout,
+        //     bind_group,
+        //     globals,
+        //     env_map,
+        //     pipeline_layout,
+        //     pipeline,
+        // }
+        todo!()
     }
 }
 
