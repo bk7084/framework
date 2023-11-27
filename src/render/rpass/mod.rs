@@ -34,8 +34,12 @@ pub struct Globals {
 #[repr(C)]
 #[derive(Debug, Clone, Copy, Pod, Zeroable)]
 struct Locals {
+    /// The model matrix.
     model: [f32; 16],
+    /// The inverse of the model-view matrix.
     model_view_inv: [f32; 16],
+    /// The material index in case of overriding the material.
+    material_index: [u32; 4],
 }
 
 impl Locals {
@@ -43,6 +47,7 @@ impl Locals {
         Self {
             model: Mat4::IDENTITY.to_cols_array(),
             model_view_inv: Mat4::IDENTITY.to_cols_array(),
+            material_index: [u32::MAX; 4],
         }
     }
 }

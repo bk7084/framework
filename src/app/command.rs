@@ -16,11 +16,18 @@ pub enum Command {
         rotation: Quat,
         order: ConcatOrder,
     },
-    /// Rotates the camera entity around the center of the scene.
+    /// Rotates the camera entity around the center of the scene (more precisely
+    /// rotates the object around the camera).
     CameraOrbit {
         entity: Entity,
         rotation_x: f32,
         rotation_y: f32,
+    },
+    /// Pans the camera entity.
+    CameraPan {
+        entity: Entity,
+        delta_x: f32,
+        delta_y: f32,
     },
     /// Scales the entity in the local space.
     Scale {
@@ -42,8 +49,8 @@ pub enum Command {
     /// Sets by force the material to use. This will override the material
     /// set by the submesh. If the material index is out of bounds of all
     /// the materials of the entity, the command will set the material to
-    /// the first material of the entity.
-    SetMaterial { entity: Entity, material: u32 },
+    /// the last material of the entity.
+    UseMaterial { entity: Entity, material: u32 },
     /// Sets the entity as the main camera.
     SetAsMainCamera { entity: Entity },
     /// Clears the material override.

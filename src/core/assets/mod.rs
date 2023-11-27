@@ -290,7 +290,10 @@ impl AssetBundle<Texture, Vec<Option<Texture>>> {
         queue: &wgpu::Queue,
         filepath: &Path,
     ) -> Handle<Texture> {
-        let bytes = std::fs::read(filepath).expect("Failed to read texture file!");
+        let bytes = std::fs::read(filepath).expect(&format!(
+            "Failed to read texture file: {}",
+            filepath.display()
+        ));
         self.load_from_bytes(device, queue, &bytes, Some(filepath))
     }
 }

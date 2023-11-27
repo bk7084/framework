@@ -1,11 +1,4 @@
-use crate::{
-    render::{
-        rpass::{Globals, DEPTH_FORMAT},
-        RenderTarget, Renderer,
-    },
-    scene::Scene,
-};
-use std::num::NonZeroU64;
+use crate::render::rpass::{Globals, DEPTH_FORMAT};
 
 /// A skybox environment map.
 ///

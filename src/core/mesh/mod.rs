@@ -10,6 +10,7 @@ use std::{
 };
 
 mod attribute;
+
 use crate::core::{
     assets::{Asset, Handle},
     Alignment, Material, MaterialBundle, TextureBundle,
@@ -163,6 +164,8 @@ impl SubMesh {
 /// Mesh id counter. 0 and 1 are reserved for the default cube and quad.
 static MESH_ID: AtomicU64 = AtomicU64::new(2);
 
+/// A mesh is a collection of vertices with optional indices and materials.
+/// Vertices can have different attributes such as position, normal, uv, etc.
 #[pyo3::pyclass]
 pub struct Mesh {
     /// Unique id of the mesh.
@@ -255,7 +258,7 @@ impl Mesh {
     }
 
     /// Applies a single material to the whole mesh.
-    pub fn apply_material(&mut self, material: Material) {
+    pub fn set_material(&mut self, material: Material) {
         if self.materials.is_none() {
             self.materials = Some(Vec::new());
         }
@@ -271,6 +274,40 @@ impl Mesh {
     #[setter]
     pub fn set_materials(&mut self, materials: Vec<Material>) {
         self.materials = Some(materials);
+    }
+
+    /// Returns the materials of the mesh.
+    #[getter]
+    pub fn get_materials(&self) -> Option<Vec<Material>> {
+        self.materials.clone()
+    }
+
+    /// Appends a material to the current list of materials of the mesh.
+    pub fn append_material(&mut self, material: Material) -> u32 {
+        if self.materials.is_none() {
+            self.materials = Some(Vec::new());
+        }
+        self.materials.as_mut().unwrap().push(material);
+        self.materials.as_ref().unwrap().len() as u32 - 1
+    }
+
+    /// Appends a list of materials to the current list of materials of the
+    /// mesh.
+    pub fn append_materials(&mut self, materials: Vec<Material>) -> Vec<u32> {
+        if self.materials.is_none() {
+            self.materials = Some(Vec::new());
+        }
+        let existing = self.materials.as_mut().unwrap();
+        let base_index = existing.len() as u32;
+        let num = materials.len() as u32;
+        existing.extend(materials);
+        (base_index..base_index + num).collect()
+    }
+
+    /// Sets the submeshes of the mesh.
+    #[setter]
+    pub fn set_sub_meshes(&mut self, sub_meshes: Vec<SubMesh>) {
+        self.sub_meshes = Some(sub_meshes);
     }
 
     /// Computes per vertex tangents for the mesh.
