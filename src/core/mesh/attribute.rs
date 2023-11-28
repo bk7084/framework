@@ -51,6 +51,8 @@ pub struct VertexAttribute {
     pub format: wgpu::VertexFormat,
     /// Index of the vertex attribute in the shader.
     pub shader_location: u32,
+    /// Size of the vertex attribute in bytes.
+    pub size: usize,
 }
 
 impl PartialOrd for VertexAttribute {
@@ -67,23 +69,52 @@ impl Ord for VertexAttribute {
 
 impl VertexAttribute {
     /// Position attribute.
-    pub const POSITION: Self = Self::new("vertex_position", wgpu::VertexFormat::Float32x3, 0);
+    pub const POSITION: Self = Self::new(
+        "vertex_position",
+        wgpu::VertexFormat::Float32x3,
+        0,
+        std::mem::size_of::<[f32; 3]>(),
+    );
     /// Normal attribute.
-    pub const NORMAL: Self = Self::new("vertex_normal", wgpu::VertexFormat::Float32x3, 1);
+    pub const NORMAL: Self = Self::new(
+        "vertex_normal",
+        wgpu::VertexFormat::Float32x3,
+        1,
+        std::mem::size_of::<[f32; 3]>(),
+    );
     /// UV attribute.
-    pub const UV: Self = Self::new("vertex_uv0", wgpu::VertexFormat::Float32x2, 2);
+    pub const UV: Self = Self::new(
+        "vertex_uv0",
+        wgpu::VertexFormat::Float32x2,
+        2,
+        std::mem::size_of::<[f32; 2]>(),
+    );
     /// Tangent attribute.
-    pub const TANGENT: Self = Self::new("vertex_tangent", wgpu::VertexFormat::Float32x3, 3);
-    /// Bitangent attribute.
-    pub const BITANGENT: Self = Self::new("vertex_bitangent", wgpu::VertexFormat::Float32x3, 4);
+    pub const TANGENT: Self = Self::new(
+        "vertex_tangent",
+        wgpu::VertexFormat::Float32x4,
+        3,
+        std::mem::size_of::<[f32; 4]>(),
+    );
     /// Color attribute.
-    pub const COLOR: Self = Self::new("vertex_color", wgpu::VertexFormat::Float32x4, 5);
+    pub const COLOR: Self = Self::new(
+        "vertex_color",
+        wgpu::VertexFormat::Float32x4,
+        4,
+        std::mem::size_of::<[f32; 4]>(),
+    );
 
-    pub const fn new(name: &'static str, format: wgpu::VertexFormat, shader_location: u32) -> Self {
+    pub const fn new(
+        name: &'static str,
+        format: wgpu::VertexFormat,
+        shader_location: u32,
+        size: usize,
+    ) -> Self {
         Self {
             name,
             format,
             shader_location,
+            size,
         }
     }
 }

@@ -13,7 +13,8 @@ pub struct Node {
     active: bool,
     /// Visible state of this node.
     visible: bool,
-    /// Override for the material to use.
+    /// Material override. If set, this material will be used instead of the
+    /// material set by the submesh.
     pub(crate) material_override: Option<u32>,
 }
 
@@ -103,7 +104,7 @@ impl Index<NodeIdx> for &[Node] {
     type Output = Node;
 
     fn index(&self, index: NodeIdx) -> &Self::Output {
-        &self[index]
+        &(*self).index(index.0)
     }
 }
 
@@ -111,7 +112,8 @@ impl Index<NodeIdx> for &mut [Node] {
     type Output = Node;
 
     fn index(&self, index: NodeIdx) -> &Self::Output {
-        &self[index]
+        let self_: &[Node] = self;
+        &self_.index(index.0)
     }
 }
 
@@ -123,7 +125,7 @@ impl IndexMut<NodeIdx> for Vec<Node> {
 
 impl IndexMut<NodeIdx> for &mut [Node] {
     fn index_mut(&mut self, index: NodeIdx) -> &mut Self::Output {
-        &mut self[index]
+        (*self).index_mut(index.0)
     }
 }
 

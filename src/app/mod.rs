@@ -145,7 +145,7 @@ impl PyAppState {
     /// * `target` - The target of the camera.
     /// * `fov` - The field of view of the camera in degrees.
     #[pyo3(name = "create_camera")]
-    #[pyo3(signature = (pos, look_at, fov_v, near=0.1, far=200.0))]
+    #[pyo3(signature = (pos, look_at, fov_v, near=0.1, far=200.0, background=Color::DARK_GREY))]
     pub fn create_camera_py(
         &mut self,
         pos: &np::PyArray2<f32>,
@@ -153,6 +153,7 @@ impl PyAppState {
         fov_v: f32,
         near: f32,
         far: f32,
+        background: Color,
     ) -> PyEntity {
         log::debug!(
             "[Py] Creating camera at {:?} looking at {:?} with fov: {:?}",
@@ -164,7 +165,7 @@ impl PyAppState {
         Python::with_gil(|_py| {
             let pos = Vec3::from_slice(pos.readonly().as_slice().unwrap());
             let target = Vec3::from_slice(look_at.readonly().as_slice().unwrap());
-            let entity = self.create_camera(proj, pos, target);
+            let entity = self.create_camera(proj, pos, target, background);
             PyEntity {
                 entity,
                 cmd_sender: self.sender.clone(),
@@ -176,6 +177,31 @@ impl PyAppState {
     #[pyo3(name = "add_mesh")]
     pub fn add_mesh_py(&mut self, mesh: &Mesh) -> PyEntity {
         let entity = self.spawn_object_with_mesh(NodeIdx::root(), mesh);
+        PyEntity {
+            entity,
+            cmd_sender: self.sender.clone(),
+        }
+    }
+
+    #[pyo3(signature = (pos, color=Color::WHITE))]
+    pub fn add_point_light_py(&mut self, pos: &np::PyArray2<f32>, color: Color) -> PyEntity {
+        let position = Vec3::from_slice(pos.readonly().as_slice().unwrap());
+        let entity = self.spawn_light(NodeIdx::root(), Light::Point { color }, Some(position));
+        PyEntity {
+            entity,
+            cmd_sender: self.sender.clone(),
+        }
+    }
+
+    #[pyo3(name = "add_directional_light")]
+    #[pyo3(signature = (dir, color=Color::WHITE))]
+    pub fn add_directional_light_py(&mut self, dir: &np::PyArray2<f32>, color: Color) -> PyEntity {
+        let direction = Vec3::from_slice(dir.readonly().as_slice().unwrap());
+        let entity = self.spawn_light(
+            NodeIdx::root(),
+            Light::Directional { direction, color },
+            None,
+        );
         PyEntity {
             entity,
             cmd_sender: self.sender.clone(),
@@ -216,12 +242,14 @@ impl PyAppState {
     /// Returns the entity ID of the spawned object.
     pub fn spawn_object_with_mesh(&mut self, parent: NodeIdx, mesh: &Mesh) -> Entity {
         log::debug!("Spawning object with mesh#{}", mesh.id);
+        // TODO: validate the mesh before spawning.
         self.renderer
             .write()
             .map(|mut renderer| {
                 let (mesh_hdl, instanced) = renderer.upload_mesh(mesh);
 
                 let entity = if instanced {
+                    // TODO: instancing with different materials.
                     log::debug!("Spawning instanced object with mesh#{}", mesh.id);
                     let bundle = renderer.get_mesh_bundle(mesh_hdl).unwrap();
                     self.scene
@@ -251,10 +279,18 @@ impl PyAppState {
             .expect("Failed to spawn object with mesh!")
     }
 
-    pub fn spawn_light(&mut self, parent: NodeIdx, light: Light) -> Entity {
+    pub fn spawn_light(&mut self, parent: NodeIdx, light: Light, position: Option<Vec3>) -> Entity {
         self.scene
             .write()
-            .map(|mut scene| scene.spawn(parent, (light,)))
+            .map(|mut scene| {
+                let entity = scene.spawn(parent, (light,));
+                if light.is_point() {
+                    // Update light's position only if it's a point light.
+                    let translation = position.unwrap_or(Vec3::ZERO);
+                    scene.nodes[entity.node].transform_mut().translation = translation;
+                }
+                entity
+            })
             .unwrap()
     }
 
@@ -265,12 +301,18 @@ impl PyAppState {
     }
 
     /// Creates the main camera.
-    pub fn create_camera(&mut self, proj: Projection, pos: Vec3, target: Vec3) -> Entity {
+    pub fn create_camera(
+        &mut self,
+        proj: Projection,
+        pos: Vec3,
+        target: Vec3,
+        background: Color,
+    ) -> Entity {
         let entity = self
             .scene
             .write()
             .map(|mut scene| {
-                let camera = Camera::new(proj, Color::LIGHT_PERIWINKLE, false);
+                let camera = Camera::new(proj, background, false);
                 let entity = scene.spawn(NodeIdx::root(), (camera,));
                 let transform = scene.nodes[entity.node].transform_mut();
                 transform.translation = pos;
@@ -377,26 +419,44 @@ impl PyAppState {
             let vert = -delta[1] / win_size.1 as f32 * std::f32::consts::TAU * 2.0;
             // Set a threshold to avoid jitter.
             if horiz.abs() > 0.0001 || vert.abs() > 0.0001 {
-                if input.is_key_pressed(KeyCode::LShift) {
-                    let rot = Quat::from_mat4(
-                        &(Mat4::from_rotation_y(horiz) * Mat4::from_rotation_x(vert)),
-                    );
-                    self.sender
-                        .send(Command::Rotate {
-                            entity: self.main_camera.unwrap(),
-                            rotation: rot,
-                            order: ConcatOrder::Post,
-                        })
-                        .unwrap();
-                } else {
-                    self.sender
-                        .send(Command::CameraOrbit {
-                            entity: self.main_camera.unwrap(),
-                            rotation_x: vert,
-                            rotation_y: horiz,
-                        })
-                        .unwrap();
-                };
+                match (
+                    input.is_key_pressed(KeyCode::LShift),
+                    input.is_key_pressed(KeyCode::LControl),
+                ) {
+                    (true, true) => {
+                        // Free rotate the camera around its own axis.
+                        let rot = Quat::from_mat4(
+                            &(Mat4::from_rotation_y(horiz) * Mat4::from_rotation_x(vert)),
+                        );
+                        self.sender
+                            .send(Command::Rotate {
+                                entity: self.main_camera.unwrap(),
+                                rotation: rot,
+                                order: ConcatOrder::Post,
+                            })
+                            .unwrap();
+                    }
+                    (true, false) => {
+                        // Pan the camera.
+                        self.sender
+                            .send(Command::CameraPan {
+                                entity: self.main_camera.unwrap(),
+                                delta_x: horiz,
+                                delta_y: vert,
+                            })
+                            .unwrap();
+                    }
+                    (false, _) => {
+                        // Orbit the camera around the target.
+                        self.sender
+                            .send(Command::CameraOrbit {
+                                entity: self.main_camera.unwrap(),
+                                rotation_x: vert,
+                                rotation_y: horiz,
+                            })
+                            .unwrap();
+                    }
+                }
             }
         }
 
@@ -502,50 +562,6 @@ pub fn run_main_loop(mut app: PyAppState, builder: PyWindowBuilder) {
     // // // let obj_sibenik = Mesh::load_from_obj("./data/sibenik/sibenik.obj");
     // // // let obj_sponza = Mesh::load_from_obj("./data/sponza/sponza.obj");
     // let obj_sphere = Mesh::load_from_obj("./data/blender_sphere/sphere.obj");
-
-    let _point_light = {
-        // Light settings.
-        app.spawn_light(
-            NodeIdx::root(),
-            Light::Directional {
-                direction: Vec3::new(-1.0, -1.0, -1.0).normalize(),
-                color: Color::WHITE,
-            },
-        );
-        app.spawn_light(
-            NodeIdx::root(),
-            Light::Directional {
-                direction: Vec3::new(1.0, 1.0, 1.0).normalize(),
-                color: Color::WHITE,
-            },
-        );
-
-        let point_light = app.spawn_light(
-            NodeIdx::root(),
-            Light::Point {
-                color: Color::WHITE,
-            },
-        );
-
-        // let point_light1 = app.spawn_light(
-        //     NodeIdx::root(),
-        //     Light::Point {
-        //         color: Color::WHITE,
-        //     },
-        // );
-
-        let mut scene = app.scene.write().unwrap();
-        let point_light_node = &mut scene.nodes[point_light.node];
-        let point_light_transform = point_light_node.transform_mut();
-        point_light_transform.translation = Vec3::new(1.0, 1.0, 0.0);
-
-        // let point_light1_node = &mut scene.nodes[point_light1.node];
-        // let point_light1_transform = point_light1_node.transform_mut();
-        // point_light1_transform.translation = Vec3::new(0.0, 0.0, 0.0);
-
-        point_light
-    };
-
     // let triangle = Mesh::triangle(&[
     //     Vec3::new(0.0, 0.0, 0.0),
     //     Vec3::new(1.0, 0.0, 0.0),
@@ -735,11 +751,6 @@ pub fn run_main_loop(mut app: PyAppState, builder: PyWindowBuilder) {
                 //     // let rect1 = &mut scene.nodes[rect1_id];
                 //     // let rect1_transform = rect1.transform_mut();
                 //     // *rect1_transform = rot * tra;
-                //
-                //     let cube = &mut scene.nodes[cube_id];
-                //     cube.transform_mut().pre_concat(&rot0);
-                //     // let pl_node = &mut scene.nodes[point_light.node];
-                //     // pl_node.transform_mut().pre_concat(&rot0);
                 // }
                 app.update(surface.size(), dt, t);
                 app.prepare();

@@ -93,9 +93,26 @@ impl PyEntity {
         });
     }
 
-    pub fn set_material(&self, material: u32) {
+    pub fn scale(&self, scale: &np::PyArray2<f32>, order: ConcatOrder) {
+        Python::with_gil(|_py| {
+            let scale = Vec3::from_slice(scale.readonly().as_slice().unwrap());
+            self.cmd_sender
+                .send(Command::Scale {
+                    entity: self.entity,
+                    scale,
+                    order,
+                })
+                .unwrap();
+        });
+    }
+
+    /// Sets the material to use. This will override the material set by the
+    /// submesh. If the material index is out of bounds of all the materials
+    /// of the entity, the command will set the material to the last material
+    /// of the entity.
+    pub fn use_material(&self, material: u32) {
         self.cmd_sender
-            .send(Command::SetMaterial {
+            .send(Command::UseMaterial {
                 entity: self.entity,
                 material,
             })
@@ -275,6 +292,19 @@ impl Scene {
                             * Quat::from_axis_angle(x.truncate(), rotation_x),
                     ));
                 }
+                Command::CameraPan {
+                    entity,
+                    delta_x,
+                    delta_y,
+                } => {
+                    let node = &mut self.nodes[entity.node];
+                    let x = node.transform().to_mat4().x_axis;
+                    let y = node.transform().to_mat4().y_axis;
+                    node.transform_mut()
+                        .pre_concat(&Transform::from_translation(
+                            x.truncate() * delta_x + y.truncate() * -delta_y,
+                        ));
+                }
                 Command::SetTransform {
                     entity,
                     translation,
@@ -286,7 +316,7 @@ impl Scene {
                     node.transform_mut().rotation = rotation;
                     node.transform_mut().scale = scale;
                 }
-                Command::SetMaterial { entity, material } => {
+                Command::UseMaterial { entity, material } => {
                     let node = &mut self.nodes[entity.node];
                     node.material_override = Some(material);
                 }

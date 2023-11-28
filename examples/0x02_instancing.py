@@ -13,6 +13,8 @@ camera.set_as_main_camera()
 cube_mesh = bk.Mesh.load_from(bk.res_path("../data/blender_cube/cube.obj"))
 sphere_mesh = bk.Mesh.load_from(bk.res_path("../data/blender_sphere/sphere.obj"))
 
+app.add_directional_light(Vec3(0.0, 0.0, -1.0), bk.Color.WHITE)
+
 objs = []
 
 for i in range(0, 16):

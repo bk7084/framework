@@ -355,26 +355,14 @@ impl BlinnPhongRenderPass {
                         ],
                     },
                     wgpu::VertexBufferLayout {
-                        array_stride: std::mem::size_of::<[f32; 2]>() as wgpu::BufferAddress,
+                        array_stride: VertexAttribute::TANGENT.size as wgpu::BufferAddress,
                         step_mode: wgpu::VertexStepMode::Vertex,
                         attributes: &[
                             // Tangent.
                             wgpu::VertexAttribute {
                                 offset: 0,
-                                shader_location: 3,
-                                format: wgpu::VertexFormat::Float32x3,
-                            },
-                        ],
-                    },
-                    wgpu::VertexBufferLayout {
-                        array_stride: std::mem::size_of::<[f32; 2]>() as wgpu::BufferAddress,
-                        step_mode: wgpu::VertexStepMode::Vertex,
-                        attributes: &[
-                            // Bi-tangent.
-                            wgpu::VertexAttribute {
-                                offset: 0,
-                                shader_location: 4,
-                                format: wgpu::VertexFormat::Float32x3,
+                                shader_location: VertexAttribute::TANGENT.shader_location,
+                                format: VertexAttribute::TANGENT.format,
                             },
                         ],
                     },
@@ -461,7 +449,7 @@ impl RenderingPass for BlinnPhongRenderPass {
         _mode: ShadingMode, // TODO: support shading mode.
     ) {
         profiling::scope!("BlinnPhongShading::record");
-        let view_mat = {
+        let (view_mat, clear_color) = {
             // Update camera globals.
             let mut camera_query = <(&Camera, &NodeIdx)>::query();
             let num_cameras = camera_query.iter(&scene.world).count();
@@ -499,7 +487,7 @@ impl RenderingPass for BlinnPhongRenderPass {
                 0,
                 bytemuck::bytes_of(&globals),
             );
-            view_mat
+            (view_mat, camera.background)
         };
 
         {
@@ -533,7 +521,7 @@ impl RenderingPass for BlinnPhongRenderPass {
                 view: &target.view,
                 resolve_target: None,
                 ops: wgpu::Operations {
-                    load: wgpu::LoadOp::Clear(*Color::ICE_BLUE),
+                    load: wgpu::LoadOp::Clear(*clear_color),
                     store: wgpu::StoreOp::Store,
                 },
             })],
@@ -601,15 +589,22 @@ impl RenderingPass for BlinnPhongRenderPass {
                 .get(&bundle.mesh)
                 .expect("Unreachable! Instancing should be created for all meshes!");
             let mut inst_count = 0;
-            for (i, node) in instancing.nodes.iter().enumerate() {
-                if !scene.nodes[*node].is_visible() {
+            for (i, node_idx) in instancing.nodes.iter().enumerate() {
+                let node = &scene.nodes[*node_idx];
+                if !node.is_visible() {
                     continue;
                 }
                 inst_count += 1;
-                let model_mat = scene.nodes.world(*node).to_mat4();
+                let model_mat = scene.nodes.world(*node_idx).to_mat4();
                 locals[locals_offset as usize + i] = Locals {
                     model: model_mat.to_cols_array(),
-                    model_view_inv: (view_mat * model_mat).inverse().to_cols_array(),
+                    model_view_it: (view_mat * model_mat).inverse().transpose().to_cols_array(),
+                    material_index: [
+                        node.material_override.unwrap_or(u32::MAX),
+                        u32::MAX,
+                        u32::MAX,
+                        u32::MAX,
+                    ],
                 };
             }
             debug_assert!(
@@ -627,9 +622,7 @@ impl RenderingPass for BlinnPhongRenderPass {
             let inst_range = 0..inst_count;
 
             let mtls = renderer.material_bundles.get(bundle.materials).unwrap();
-            // let node = &scene.nodes[*node_idx];
             let texs = renderer.texture_bundles.get(bundle.textures).unwrap();
-            // let model_mat = scene.nodes.world(*node_idx).to_mat4();
 
             match renderer.meshes.get(bundle.mesh) {
                 None => {
@@ -658,25 +651,16 @@ impl RenderingPass for BlinnPhongRenderPass {
                         if let Some(tangent_range) =
                             mesh.get_vertex_attribute_range(VertexAttribute::TANGENT)
                         {
-                            render_pass.set_vertex_buffer(3, buffer.slice(tangent_range.clone()));
-                        }
-                        // Bind vertex buffer - bitangent.
-                        if let Some(bitangent_range) =
-                            mesh.get_vertex_attribute_range(VertexAttribute::BITANGENT)
-                        {
-                            render_pass.set_vertex_buffer(4, buffer.slice(bitangent_range.clone()));
+                            render_pass.set_vertex_buffer(
+                                VertexAttribute::TANGENT.shader_location,
+                                buffer.slice(tangent_range.clone()),
+                            );
                         }
 
                         // Bind material.
                         render_pass.set_bind_group(2, &mtls.bind_group, &[]);
                         // Bind textures.
                         render_pass.set_bind_group(3, texs.bind_group.as_ref().unwrap(), &[]);
-
-                        // TODO: support material override.
-                        // let override_material = node
-                        //     .material_override
-                        //     .map(|id| id.min(mtls.n_materials - 1));
-                        let override_material = None;
 
                         match mesh.index_format {
                             None => {
@@ -685,23 +669,18 @@ impl RenderingPass for BlinnPhongRenderPass {
                                     None => {
                                         // No sub-meshes, use the default material.
                                         // Update material index.
-                                        let material_id = override_material.unwrap_or(0);
                                         render_pass.set_push_constants(
                                             wgpu::ShaderStages::VERTEX_FRAGMENT,
                                             64,
-                                            bytemuck::bytes_of(&material_id),
+                                            bytemuck::bytes_of(&0u32),
                                         );
                                         render_pass.draw(0..mesh.vertex_count, inst_range);
                                     }
                                     Some(sub_meshes) => {
                                         // Draw each sub-mesh.
-                                        for sub_mesh in sub_meshes {
+                                        for sm in sub_meshes {
                                             let material_id =
-                                                override_material.unwrap_or_else(|| {
-                                                    sub_mesh
-                                                        .material
-                                                        .unwrap_or(mtls.n_materials - 1)
-                                                });
+                                                sm.material.unwrap_or(mtls.n_materials - 1);
                                             // Update material index.
                                             render_pass.set_push_constants(
                                                 wgpu::ShaderStages::VERTEX_FRAGMENT,
@@ -709,7 +688,7 @@ impl RenderingPass for BlinnPhongRenderPass {
                                                 bytemuck::bytes_of(&material_id),
                                             );
                                             render_pass.draw(
-                                                sub_mesh.range.start..sub_mesh.range.end,
+                                                sm.range.start..sm.range.end,
                                                 inst_range.clone(),
                                             )
                                         }
@@ -726,11 +705,10 @@ impl RenderingPass for BlinnPhongRenderPass {
                                         log::trace!("Draw mesh with index, no sub-meshes");
                                         // No sub-meshes, use the default material.
                                         // Update material index.
-                                        let material_id = override_material.unwrap_or(0);
                                         render_pass.set_push_constants(
                                             wgpu::ShaderStages::VERTEX_FRAGMENT,
                                             4,
-                                            bytemuck::bytes_of(&material_id),
+                                            bytemuck::bytes_of(&0u32),
                                         );
                                         render_pass.draw_indexed(
                                             0..mesh.index_count,
@@ -747,9 +725,7 @@ impl RenderingPass for BlinnPhongRenderPass {
                                                 sm.range.end
                                             );
                                             let material_id =
-                                                override_material.unwrap_or_else(|| {
-                                                    sm.material.unwrap_or(mtls.n_materials - 1)
-                                                });
+                                                sm.material.unwrap_or(mtls.n_materials - 1);
                                             // Update material index.
                                             render_pass.set_push_constants(
                                                 wgpu::ShaderStages::VERTEX_FRAGMENT,

@@ -146,6 +146,7 @@ impl AssetBundle<GpuMesh, GpuMeshStorage> {
         for gpu_mesh in self.storage.data.iter() {
             if let Some((hdl, gpu_mesh)) = gpu_mesh {
                 if same_mesh(mesh, gpu_mesh) {
+                    log::info!("Found existing mesh: {:?}", gpu_mesh.mesh_id);
                     return (*hdl, true);
                 }
             }
@@ -240,7 +241,6 @@ impl AssetBundle<Texture, Vec<Option<Texture>>> {
             .map_err(|e| eprintln!("Failed to load texture: {:?} from {:?}", e, path))
             .unwrap()
             .to_rgba8();
-        log::debug!("---- Loaded image: {:?}", img.dimensions());
         let dims = img.dimensions();
         let size = wgpu::Extent3d {
             width: dims.0,
@@ -290,7 +290,11 @@ impl AssetBundle<Texture, Vec<Option<Texture>>> {
         queue: &wgpu::Queue,
         filepath: &Path,
     ) -> Handle<Texture> {
-        let bytes = std::fs::read(filepath).expect("Failed to read texture file!");
+        log::debug!("---- Loaded image from: {:?}", filepath);
+        let bytes = std::fs::read(filepath).expect(&format!(
+            "Failed to read texture file: {}",
+            filepath.display()
+        ));
         self.load_from_bytes(device, queue, &bytes, Some(filepath))
     }
 }

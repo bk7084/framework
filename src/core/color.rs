@@ -49,25 +49,6 @@ pub const COLORS: [Color; 16] = [
 ];
 
 impl Color {
-    pub const DARK_GREY: Self = COLORS[0];
-    pub const PURPLISH_GREY: Self = COLORS[1];
-    pub const VERY_LIGHT_PINK: Self = COLORS[2];
-    pub const PEACHY_PINK: Self = COLORS[3];
-    pub const LIGHT_PERIWINKLE: Self = COLORS[4];
-    pub const CLOUDY_BLUE: Self = COLORS[5];
-    pub const ICE_BLUE: Self = COLORS[6];
-    pub const LIGHT_LAVENDER: Self = COLORS[7];
-    pub const GREENISH_GREY: Self = COLORS[8];
-    pub const WASHED_OUT_GREEN: Self = COLORS[9];
-    pub const LIGHT_KHAKI: Self = COLORS[10];
-    pub const PALE: Self = COLORS[11];
-    pub const PINKISH_TAN: Self = COLORS[12];
-    pub const VERY_LIGHT_BROWN: Self = COLORS[13];
-    pub const BUFF: Self = COLORS[14];
-    pub const OFF_WHITE: Self = COLORS[15];
-    pub const WHITE: Self = color!(1.0, 1.0, 1.0);
-    pub const BLACK: Self = color!(0.0, 0.0, 0.0);
-
     /// Creates a new color.
     #[inline]
     pub const fn new(r: f64, g: f64, b: f64, a: f64) -> Self {
@@ -151,11 +132,79 @@ impl From<Color> for [u8; 4] {
 }
 
 // Python interface
-#[cfg(feature = "python")]
 #[pyo3::pymethods]
 impl Color {
+    #[classattr]
+    pub const DARK_GREY: Self = COLORS[0];
+    #[classattr]
+    pub const PURPLISH_GREY: Self = COLORS[1];
+    #[classattr]
+    pub const VERY_LIGHT_PINK: Self = COLORS[2];
+    #[classattr]
+    pub const PEACHY_PINK: Self = COLORS[3];
+    #[classattr]
+    pub const LIGHT_PERIWINKLE: Self = COLORS[4];
+    #[classattr]
+    pub const CLOUDY_BLUE: Self = COLORS[5];
+    #[classattr]
+    pub const ICE_BLUE: Self = COLORS[6];
+    #[classattr]
+    pub const LIGHT_LAVENDER: Self = COLORS[7];
+    #[classattr]
+    pub const GREENISH_GREY: Self = COLORS[8];
+    #[classattr]
+    pub const WASHED_OUT_GREEN: Self = COLORS[9];
+    #[classattr]
+    pub const LIGHT_KHAKI: Self = COLORS[10];
+    #[classattr]
+    pub const PALE: Self = COLORS[11];
+    #[classattr]
+    pub const PINKISH_TAN: Self = COLORS[12];
+    #[classattr]
+    pub const VERY_LIGHT_BROWN: Self = COLORS[13];
+    #[classattr]
+    pub const BUFF: Self = COLORS[14];
+    #[classattr]
+    pub const OFF_WHITE: Self = COLORS[15];
+    #[classattr]
+    pub const WHITE: Self = color!(1.0, 1.0, 1.0);
+    #[classattr]
+    pub const BLACK: Self = color!(0.0, 0.0, 0.0);
+    #[classattr]
+    pub const RED: Self = color!(1.0, 0.0, 0.0);
+    #[classattr]
+    pub const GREEN: Self = color!(0.0, 1.0, 0.0);
+    #[classattr]
+    pub const BLUE: Self = color!(0.0, 0.0, 1.0);
+    #[classattr]
+    pub const YELLOW: Self = color!(1.0, 1.0, 0.0);
+    #[classattr]
+    pub const CYAN: Self = color!(0.0, 1.0, 1.0);
+    #[classattr]
+    pub const MAGENTA: Self = color!(1.0, 0.0, 1.0);
+    #[classattr]
+    pub const ORANGE: Self = color!(1.0, 0.5, 0.0);
+    #[classattr]
+    pub const PURPLE: Self = color!(0.5, 0.0, 1.0);
+    #[classattr]
+    pub const PINK: Self = color!(1.0, 0.0, 0.5);
+    #[classattr]
+    pub const LIME: Self = color!(0.5, 1.0, 0.0);
+    #[classattr]
+    pub const TEAL: Self = color!(0.0, 1.0, 0.5);
+    #[classattr]
+    pub const LAVENDER: Self = color!(0.5, 0.0, 1.0);
+    #[classattr]
+    pub const BROWN: Self = color!(0.5, 0.25, 0.0);
+    #[classattr]
+    pub const BEIGE: Self = color!(0.5, 0.5, 0.25);
+    #[classattr]
+    pub const MAROON: Self = color!(0.5, 0.0, 0.25);
+    #[classattr]
+    pub const MINT: Self = color!(0.25, 0.5, 0.5);
+
     #[new]
-    pub fn new_py(r: f64, g: f64, b: f64, a: f64) -> Self {
-        Self::new(r, g, b, a)
+    pub fn new_py(r: f64, g: f64, b: f64) -> Self {
+        Self::new(r, g, b, 1.0)
     }
 }
