@@ -491,6 +491,14 @@ impl Mesh {
             materials: None,
         };
         mesh.update_tangents();
+        println!(
+            "tangents: {:?}",
+            mesh.attributes
+                .0
+                .get(&VertexAttribute::TANGENT)
+                .unwrap()
+                .as_slice::<[f32; 4]>()
+        );
         mesh
     }
 

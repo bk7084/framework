@@ -380,7 +380,7 @@ impl BlinnPhongRenderPass {
             primitive: wgpu::PrimitiveState {
                 topology: wgpu::PrimitiveTopology::TriangleList,
                 front_face: wgpu::FrontFace::Ccw,
-                cull_mode: None, // Some(wgpu::Face::Back),
+                cull_mode: Some(wgpu::Face::Back),
                 polygon_mode,
                 ..Default::default()
             },
