@@ -183,7 +183,6 @@ impl PyAppState {
         }
     }
 
-    #[pyo3(name = "add_point_light")]
     #[pyo3(signature = (pos, color=Color::WHITE))]
     pub fn add_point_light_py(&mut self, pos: &np::PyArray2<f32>, color: Color) -> PyEntity {
         let position = Vec3::from_slice(pos.readonly().as_slice().unwrap());
@@ -250,6 +249,7 @@ impl PyAppState {
                 let (mesh_hdl, instanced) = renderer.upload_mesh(mesh);
 
                 let entity = if instanced {
+                    // TODO: instancing with different materials.
                     log::debug!("Spawning instanced object with mesh#{}", mesh.id);
                     let bundle = renderer.get_mesh_bundle(mesh_hdl).unwrap();
                     self.scene

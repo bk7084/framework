@@ -146,7 +146,7 @@ impl Renderer {
         &mut self,
         materials: Option<&Vec<Material>>,
     ) -> (Handle<MaterialBundle>, Handle<TextureBundle>) {
-        log::debug!("materials: {:#?}", materials);
+        log::debug!("materials: {:?}", materials);
         match materials {
             None => {
                 // Mesh has no material, use default material.
@@ -201,8 +201,8 @@ impl Renderer {
                         }
                     }
                 }
-                log::debug!("loaded textures: {:#?}", textures);
-                log::debug!("GpuMaterials to be uploaded: {:#?}", gpu_mtls);
+                log::debug!("loaded textures: {:?}", textures);
+                log::debug!("GpuMaterials to be uploaded: {:?}", gpu_mtls);
                 textures.push(self.default_texture);
                 let bundle = MaterialBundle::new(&self.device, &gpu_mtls);
                 let material_bundle = self.material_bundles.add(bundle);

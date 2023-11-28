@@ -5,9 +5,10 @@ use std::{
     ops::Deref,
     path::{Path, PathBuf},
 };
+use tobj::NormalTexture;
 use wgpu::util::DeviceExt;
 
-use crate::core::{FxHashMap, SmlString};
+use crate::core::{Color, FxHashMap, SmlString};
 
 /// Texture type.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -83,67 +84,77 @@ impl Material {
     pub fn from_tobj_material(mtl: tobj::Material, filepath: &Path) -> Self {
         let mut textures = FxHashMap::default();
         let base = filepath.parent().unwrap_or_else(|| Path::new(""));
-        match mtl.unknown_param.get("map_bump") {
-            None => {
-                // Try with "bump" instead
-                if let Some(path) = mtl.unknown_param.get("bump").map(AsRef::<Path>::as_ref) {
-                    if let Some(resolved) = resolve_path(path, base) {
-                        textures.insert(TextureType::MapBump, resolved);
-                    }
-                }
-            }
-            Some(path) => {
-                if let Some(resolved) = resolve_path(path.as_ref(), base) {
-                    textures.insert(TextureType::MapBump, resolved);
-                }
-            }
-        }
-
         if let Some(path) = mtl.unknown_param.get("map_disp") {
             if let Some(resolved) = resolve_path(path.as_ref(), base) {
                 textures.insert(TextureType::MapDisp, resolved);
+            } else {
+                log::error!("Displacement map can't be loaded: {:?}", path);
             }
         }
 
         if let Some(path) = mtl.unknown_param.get("map_decal") {
             if let Some(resolved) = resolve_path(path.as_ref(), base) {
                 textures.insert(TextureType::MapDecal, resolved);
+            } else {
+                log::error!("Decal map can't be loaded: {:?}", path);
             }
         }
 
         if let Some(path) = mtl.ambient_texture.as_ref() {
             if let Some(resolved) = resolve_path(path.as_ref(), base) {
                 textures.insert(TextureType::MapKa, resolved);
+            } else {
+                log::error!("Ambient map can't be loaded: {:?}", path);
             }
         }
 
         if let Some(path) = mtl.diffuse_texture.as_ref() {
             if let Some(resolved) = resolve_path(path.as_ref(), base) {
                 textures.insert(TextureType::MapKd, resolved);
+            } else {
+                log::error!("Diffuse map can't be loaded: {:?}", path);
             }
         }
 
         if let Some(path) = mtl.specular_texture.as_ref() {
             if let Some(resolved) = resolve_path(path.as_ref(), base) {
                 textures.insert(TextureType::MapKs, resolved);
+            } else {
+                log::error!("Specular map can't be loaded: {:?}", path);
             }
         }
 
         if let Some(path) = mtl.shininess_texture.as_ref() {
             if let Some(resolved) = resolve_path(path.as_ref(), base) {
                 textures.insert(TextureType::MapNs, resolved);
+            } else {
+                log::error!("Shininess map can't be loaded: {:?}", path);
             }
         }
 
         if let Some(path) = mtl.dissolve_texture.as_ref() {
             if let Some(resolved) = resolve_path(path.as_ref(), base) {
                 textures.insert(TextureType::MapD, resolved);
+            } else {
+                log::error!("Opacity map can't be loaded: {:?}", path);
             }
         }
 
-        if let Some(path) = mtl.normal_texture.as_ref() {
-            if let Some(resolved) = resolve_path(path.as_ref(), base) {
-                textures.insert(TextureType::MapNorm, resolved);
+        if let Some(tex) = mtl.normal_texture.as_ref() {
+            match tex {
+                NormalTexture::BumpMap(path) => {
+                    if let Some(resolved) = resolve_path(path.as_ref(), base) {
+                        textures.insert(TextureType::MapBump, resolved);
+                    } else {
+                        log::error!("Bump map can't be loaded: {:?}", path);
+                    }
+                }
+                NormalTexture::NormalMap(path) => {
+                    if let Some(resolved) = resolve_path(path.as_ref(), base) {
+                        textures.insert(TextureType::MapNorm, resolved);
+                    }
+                    log::error!("Normal map can't be loaded: {:?}", path);
+                }
             }
         }
 
@@ -167,8 +178,8 @@ impl Default for Material {
             name: SmlString::from("material_default"),
             ambient: Some([1.0, 1.0, 1.0]),
             diffuse: Some([0.9, 0.4, 0.3]),
-            specular: Some([0.15, 0.15, 0.15]),
-            shininess: Some(1.0),
+            specular: Some([0.5, 0.5, 0.5]),
+            shininess: Some(10.0),
             refractive_index: Some(1.0),
             opacity: Some(1.0),
             illumination_model: Some(2),
@@ -362,8 +373,8 @@ impl Material {
     }
 
     #[setter]
-    pub fn set_diffuse(&mut self, kd: [f32; 3]) {
-        self.diffuse = Some(kd);
+    pub fn set_diffuse(&mut self, kd: Color) {
+        self.diffuse = Some([kd.r as f32, kd.g as f32, kd.b as f32]);
     }
 
     #[getter]
@@ -372,8 +383,8 @@ impl Material {
     }
 
     #[setter]
-    pub fn set_ambient(&mut self, ka: [f32; 3]) {
-        self.ambient = Some(ka);
+    pub fn set_ambient(&mut self, ka: Color) {
+        self.ambient = Some([ka.r as f32, ka.g as f32, ka.b as f32]);
     }
 
     #[getter]
@@ -382,13 +393,23 @@ impl Material {
     }
 
     #[setter]
-    pub fn set_specular(&mut self, ks: [f32; 3]) {
-        self.specular = Some(ks);
+    pub fn set_specular(&mut self, ks: Color) {
+        self.specular = Some([ks.r as f32, ks.g as f32, ks.b as f32]);
     }
 
     #[getter]
     pub fn get_specular(&self) -> Option<[f32; 3]> {
         self.specular
+    }
+
+    #[setter]
+    pub fn set_shininess(&mut self, ns: f32) {
+        self.shininess = Some(ns);
+    }
+
+    #[getter]
+    pub fn get_shininess(&self) -> Option<f32> {
+        self.shininess
     }
 
     #[setter]

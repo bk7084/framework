@@ -310,11 +310,9 @@ impl Mesh {
         self.sub_meshes = Some(sub_meshes);
     }
 
-    /// Computes per vertex tangents for the mesh.
-    pub fn compute_tangents(&mut self) {
-        if self.attributes.0.contains_key(&VertexAttribute::TANGENT)
-            || self.attributes.0.contains_key(&VertexAttribute::BITANGENT)
-        {
+    /// Computes per vertex tangents for the mesh from the UVs.
+    pub fn update_tangents(&mut self) {
+        if self.attributes.0.contains_key(&VertexAttribute::TANGENT) {
             log::warn!("Mesh already has tangents and bitangents. Skipping tangent computation.");
             return;
         }
@@ -330,38 +328,32 @@ impl Mesh {
             .get(&VertexAttribute::UV)
             .unwrap()
             .as_slice::<[f32; 2]>();
-        let mut tangents = vec![[0.0, 0.0, 0.0]; vertices.len()];
-        let mut bitangents = vec![[0.0, 0.0, 0.0]; vertices.len()];
+        let normals = self
+            .attributes
+            .0
+            .get(&VertexAttribute::NORMAL)
+            .unwrap()
+            .as_slice::<[f32; 3]>();
+        let mut tangents: Vec<[f32; 4]> = vec![[0.0, 0.0, 0.0, 0.0]; vertices.len()];
         match &self.indices {
             None => {
                 panic!("Indices are required to compute the bi/tangents");
             }
             Some(indices) => match indices {
                 Indices::U32(indices) => {
-                    compute_tangents_bi_tangents(
-                        indices,
-                        &vertices,
-                        &uvs,
-                        &mut tangents,
-                        &mut bitangents,
-                    );
+                    compute_tangents(&vertices, indices, &uvs, normals, &mut tangents);
                 }
-                Indices::U16(indices) => compute_tangents_bi_tangents(
-                    indices,
-                    &vertices,
-                    &uvs,
-                    &mut tangents,
-                    &mut bitangents,
-                ),
+                Indices::U16(indices) => {
+                    compute_tangents(&vertices, indices, &uvs, normals, &mut tangents)
+                }
             },
         }
-
+        // println!("vertices: {:?}", vertices);
+        // println!("uvs: {:?}", uvs);
+        // println!("normals: {:?}", normals);
+        // println!("tangents: {:?}", tangents);
         self.attributes
             .insert(VertexAttribute::TANGENT, AttribContainer::new(&tangents));
-        self.attributes.insert(
-            VertexAttribute::BITANGENT,
-            AttribContainer::new(&bitangents),
-        );
     }
 }
 
@@ -443,7 +435,7 @@ impl Mesh {
             path: None,
             materials: None,
         };
-        mesh.compute_tangents();
+        mesh.update_tangents();
         mesh
     }
 
@@ -498,7 +490,7 @@ impl Mesh {
             path: None,
             materials: None,
         };
-        mesh.compute_tangents();
+        mesh.update_tangents();
         mesh
     }
 
@@ -568,7 +560,7 @@ impl Mesh {
             path: None,
             materials: None,
         };
-        mesh.compute_tangents();
+        mesh.update_tangents();
         mesh
     }
 
@@ -603,7 +595,7 @@ impl Mesh {
             path: None,
             materials: None,
         };
-        mesh.compute_tangents();
+        mesh.update_tangents();
         mesh
     }
 
@@ -624,7 +616,7 @@ impl Mesh {
         let materials = materials.expect("Failed to load materials.");
         log::debug!("- Loaded {} models.", models.len());
         log::debug!("- Loaded {} materials.", materials.len());
-        log::debug!("-- Loaded materials: {:#?}", materials);
+        log::debug!("-- Loaded materials: {:?}", materials);
         let mut attributes = VertexAttributes::default();
         let mut vertices: Vec<f32> = Vec::new();
         let mut normals: Vec<f32> = Vec::new();
@@ -684,8 +676,8 @@ impl Mesh {
             .map(|m| Material::from_tobj_material(m.clone(), &path.as_ref()))
             .collect();
 
-        log::debug!("- Processed materials: {:#?}", materials);
-        log::debug!("- Loaded submeshes: {:#?}", sub_meshes);
+        log::debug!("- Processed materials: {:?}", materials);
+        log::debug!("- Loaded submeshes: {:?}", sub_meshes);
 
         let mut mesh = Mesh {
             id,
@@ -700,7 +692,23 @@ impl Mesh {
             path: None,
             materials: Some(materials),
         };
-        mesh.compute_tangents();
+        mesh.update_tangents();
+        // println!(
+        //     "tangents: {:?}",
+        //     mesh.attributes
+        //         .0
+        //         .get(&VertexAttribute::TANGENT)
+        //         .unwrap()
+        //         .as_slice::<[f32; 4]>()
+        // );
+        // println!(
+        //     "normals: {:?}",
+        //     mesh.attributes
+        //         .0
+        //         .get(&VertexAttribute::NORMAL)
+        //         .unwrap()
+        //         .as_slice::<[f32; 3]>()
+        // );
         mesh
     }
 }
@@ -765,21 +773,45 @@ mod util {
     }
 
     /// Helper function to normalize a vector
-    pub fn normalize(v: [f32; 3]) -> [f32; 3] {
+    pub fn normalize(v: &[f32; 3]) -> [f32; 3] {
         let length = (v[0].powi(2) + v[1].powi(2) + v[2].powi(2)).sqrt();
         [v[0] / length, v[1] / length, v[2] / length]
     }
 
-    /// Helper function to calculate UV coordinates based on a vector
-    pub fn uv_coordinates(v: [f32; 3]) -> [f32; 2] {
-        let u = 0.5 + (v[2].atan2(v[0]) / (2.0 * std::f32::consts::PI));
-        let v = 0.5 - (v[1].asin() / std::f32::consts::PI);
-        [u, v]
+    /// Helper function to calculate the dot product of two vectors
+    pub fn dot(v1: &[f32; 3], v2: &[f32; 3]) -> f32 {
+        v1[0] * v2[0] + v1[1] * v2[1] + v1[2] * v2[2]
+    }
+
+    /// Helper function to calculate the cross product of two vectors
+    pub fn cross(v1: &[f32; 3], v2: &[f32; 3]) -> [f32; 3] {
+        [
+            v1[1] * v2[2] - v1[2] * v2[1],
+            v1[2] * v2[0] - v1[0] * v2[2],
+            v1[0] * v2[1] - v1[1] * v2[0],
+        ]
+    }
+
+    /// Helper function to calculate the rejection of a vector from
+    /// another which is the perpendicular part of the decomposition
+    /// of the first vector onto the second.
+    pub fn rejection(a: &[f32; 3], b: &[f32; 3]) -> [f32; 3] {
+        let b_norm = normalize(b);
+        let dot = dot(a, &b_norm);
+        [
+            a[0] - dot * b_norm[0],
+            a[1] - dot * b_norm[1],
+            a[2] - dot * b_norm[2],
+        ]
     }
 
     /// Helper function to sum two vectors.
     pub fn sum(v1: &[f32; 3], v2: &[f32; 3]) -> [f32; 3] {
         [v1[0] + v2[0], v1[1] + v2[1], v1[2] + v2[2]]
+    }
+
+    pub fn sum_vec3_vec4(v1: &[f32; 3], v2: &[f32; 4]) -> [f32; 4] {
+        [v1[0] + v2[0], v1[1] + v2[1], v1[2] + v2[2], v2[3]]
     }
 
     /// Helper function to subtract two vectors.
@@ -800,26 +832,27 @@ pub struct MeshBundle {
     pub materials: Handle<MaterialBundle>,
 }
 
-fn compute_tangents_bi_tangents<T: IndexType>(
+fn compute_tangents<T: IndexType>(
+    positions: &[[f32; 3]],
     indices: &[T],
-    vertices: &[[f32; 3]],
     uvs: &[[f32; 2]],
-    tangents: &mut [[f32; 3]],
-    bitangents: &mut [[f32; 3]],
+    normals: &[[f32; 3]],
+    tangents: &mut [[f32; 4]],
 ) {
-    let mut n_tris_per_vert = vec![0u32; vertices.len()];
+    let mut bitangents = vec![[0.0f32; 3]; positions.len()];
+    let mut n_tris_per_vert = vec![0u32; positions.len()];
     for tri in indices.chunks(3) {
         let (tri0, tri1, tri2) = (tri[0].as_usize(), tri[1].as_usize(), tri[2].as_usize());
-        let v0 = glam::Vec3::from(vertices[tri0]);
-        let v1 = glam::Vec3::from(vertices[tri1]);
-        let v2 = glam::Vec3::from(vertices[tri2]);
+        let v0 = glam::Vec3::from(positions[tri0]);
+        let v1 = glam::Vec3::from(positions[tri1]);
+        let v2 = glam::Vec3::from(positions[tri2]);
         let uv0 = glam::Vec2::from(uvs[tri0]);
         let uv1 = glam::Vec2::from(uvs[tri1]);
         let uv2 = glam::Vec2::from(uvs[tri2]);
 
         // Calculate the edges of the triangle
-        let delta_pos1 = v1 - v0;
-        let delta_pos2 = v2 - v0;
+        let e1 = v1 - v0;
+        let e2 = v2 - v0;
 
         // This will give us a direction to calculate the
         // tangent and bitangent
@@ -830,30 +863,42 @@ fn compute_tangents_bi_tangents<T: IndexType>(
         //     delta_pos1 = delta_uv1.x * T + delta_u.y * B
         //     delta_pos2 = delta_uv2.x * T + delta_uv2.y * B
         let r = 1.0 / (delta_uv1.x * delta_uv2.y - delta_uv1.y * delta_uv2.x);
-        let tangent = ((delta_pos1 * delta_uv2.y - delta_pos2 * delta_uv1.y) * r).to_array();
-        // Flip the bitangent to enable right-handed normal maps with wgpu texture
-        // coordinate system.
-        let bitangent = ((delta_pos2 * delta_uv1.x - delta_pos1 * delta_uv2.x) * -r).to_array();
-
-        tangents[tri0] = util::sum(&tangent, &tangents[tri0]);
-        tangents[tri1] = util::sum(&tangent, &tangents[tri1]);
-        tangents[tri2] = util::sum(&tangent, &tangents[tri2]);
-        n_tris_per_vert[tri0] += 1;
-        n_tris_per_vert[tri1] += 1;
-        n_tris_per_vert[tri2] += 1;
+        let tangent = ((e1 * delta_uv2.y - e2 * delta_uv1.y) * r).to_array();
+        let bitangent = ((-e1 * delta_uv2.x + e2 * delta_uv1.x) * r).to_array();
+        tangents[tri0] = util::sum_vec3_vec4(&tangent, &tangents[tri0]);
+        tangents[tri1] = util::sum_vec3_vec4(&tangent, &tangents[tri1]);
+        tangents[tri2] = util::sum_vec3_vec4(&tangent, &tangents[tri2]);
         bitangents[tri0] = util::sum(&bitangent, &bitangents[tri0]);
         bitangents[tri1] = util::sum(&bitangent, &bitangents[tri1]);
         bitangents[tri2] = util::sum(&bitangent, &bitangents[tri2]);
+        n_tris_per_vert[tri0] += 1;
+        n_tris_per_vert[tri1] += 1;
+        n_tris_per_vert[tri2] += 1;
     }
 
     // Average the tangents and bitangents
-    for i in 0..vertices.len() {
-        let tangent = tangents[i];
-        let bitangent = bitangents[i];
+    for i in 0..positions.len() {
         let denom = 1.0f32 / n_tris_per_vert[i] as f32;
-        let tangent = util::normalize(util::mul_scalar(&tangent, denom));
-        let bitangent = util::normalize(util::mul_scalar(&bitangent, denom));
-        tangents[i] = tangent;
-        bitangents[i] = bitangent;
+        let tangent = [tangents[i][0], tangents[i][1], tangents[i][2]];
+        let average = util::normalize(&util::mul_scalar(&tangent, denom));
+        tangents[i][0] = average[0];
+        tangents[i][1] = average[1];
+        tangents[i][2] = average[2];
+    }
+
+    for i in 0..positions.len() {
+        let tangent = tangents[i];
+        let t = [tangent[0], tangent[1], tangent[2]];
+        let b = bitangents[i];
+        let n = normals[i];
+        let t_perp = util::normalize(&util::rejection(&t, &n));
+        tangents[i][0] = t_perp[0];
+        tangents[i][1] = t_perp[1];
+        tangents[i][2] = t_perp[2];
+        tangents[i][3] = if util::dot(&util::cross(&t, &b), &n) > 0.0 {
+            1.0
+        } else {
+            -1.0
+        };
     }
 }

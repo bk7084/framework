@@ -42,6 +42,10 @@ if __name__ == "__main__":
     camera = app.create_camera(pos=Vec3(args.cam_pos), look_at=Vec3(0, 0, 0), fov_v=60.0, near=0.1, far=args.far)
     camera.set_as_main_camera()
 
+    app.add_directional_light(Vec3(-1.0, -1.0, -1.0), bk.Color.WHITE)
+    app.add_directional_light(Vec3(1.0, 1.0, 1.0), bk.Color.WHITE)
+    # app.add_point_light(Vec3(2.5, 0, 2.5), bk.Color(1.0, 1.0, 1.0), show_light=True)
+
     for filepath in args.files:
         read_from_file(filepath, args.scale)
 

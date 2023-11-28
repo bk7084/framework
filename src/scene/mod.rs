@@ -93,6 +93,19 @@ impl PyEntity {
         });
     }
 
+    pub fn scale(&self, scale: &np::PyArray2<f32>, order: ConcatOrder) {
+        Python::with_gil(|_py| {
+            let scale = Vec3::from_slice(scale.readonly().as_slice().unwrap());
+            self.cmd_sender
+                .send(Command::Scale {
+                    entity: self.entity,
+                    scale,
+                    order,
+                })
+                .unwrap();
+        });
+    }
+
     /// Sets the material to use. This will override the material set by the
     /// submesh. If the material index is out of bounds of all the materials
     /// of the entity, the command will set the material to the last material

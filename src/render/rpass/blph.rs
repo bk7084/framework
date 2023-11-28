@@ -355,26 +355,14 @@ impl BlinnPhongRenderPass {
                         ],
                     },
                     wgpu::VertexBufferLayout {
-                        array_stride: std::mem::size_of::<[f32; 2]>() as wgpu::BufferAddress,
+                        array_stride: VertexAttribute::TANGENT.size as wgpu::BufferAddress,
                         step_mode: wgpu::VertexStepMode::Vertex,
                         attributes: &[
                             // Tangent.
                             wgpu::VertexAttribute {
                                 offset: 0,
-                                shader_location: 3,
-                                format: wgpu::VertexFormat::Float32x3,
-                            },
-                        ],
-                    },
-                    wgpu::VertexBufferLayout {
-                        array_stride: std::mem::size_of::<[f32; 2]>() as wgpu::BufferAddress,
-                        step_mode: wgpu::VertexStepMode::Vertex,
-                        attributes: &[
-                            // Bi-tangent.
-                            wgpu::VertexAttribute {
-                                offset: 0,
-                                shader_location: 4,
-                                format: wgpu::VertexFormat::Float32x3,
+                                shader_location: VertexAttribute::TANGENT.shader_location,
+                                format: VertexAttribute::TANGENT.format,
                             },
                         ],
                     },
@@ -610,7 +598,7 @@ impl RenderingPass for BlinnPhongRenderPass {
                 let model_mat = scene.nodes.world(*node_idx).to_mat4();
                 locals[locals_offset as usize + i] = Locals {
                     model: model_mat.to_cols_array(),
-                    model_view_inv: (view_mat * model_mat).inverse().to_cols_array(),
+                    model_view_it: (view_mat * model_mat).inverse().transpose().to_cols_array(),
                     material_index: [
                         node.material_override.unwrap_or(u32::MAX),
                         u32::MAX,
@@ -663,13 +651,10 @@ impl RenderingPass for BlinnPhongRenderPass {
                         if let Some(tangent_range) =
                             mesh.get_vertex_attribute_range(VertexAttribute::TANGENT)
                         {
-                            render_pass.set_vertex_buffer(3, buffer.slice(tangent_range.clone()));
-                        }
-                        // Bind vertex buffer - bitangent.
-                        if let Some(bitangent_range) =
-                            mesh.get_vertex_attribute_range(VertexAttribute::BITANGENT)
-                        {
-                            render_pass.set_vertex_buffer(4, buffer.slice(bitangent_range.clone()));
+                            render_pass.set_vertex_buffer(
+                                VertexAttribute::TANGENT.shader_location,
+                                buffer.slice(tangent_range.clone()),
+                            );
                         }
 
                         // Bind material.

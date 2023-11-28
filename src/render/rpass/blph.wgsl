@@ -23,7 +23,7 @@ struct Globals {
 
 struct Locals {
     model: mat4x4<f32>,
-    model_view_inv: mat4x4<f32>,
+    model_view_it: mat4x4<f32>,
     material_index: vec4<u32>,
 }
 
@@ -83,8 +83,7 @@ struct VSInput {
     @location(0) position: vec3<f32>,
     @location(1) normal: vec3<f32>,
     @location(2) uv: vec2<f32>,
-    @location(3) tangent: vec3<f32>,
-    @location(4) bitangent: vec3<f32>,
+    @location(3) tangent: vec4<f32>,
 //    @location(5) color: vec4<f32>,
 }
 
@@ -94,14 +93,14 @@ struct VSOutput {
     @builtin(position) position: vec4<f32>,
     @location(0) pos_eye_space: vec3<f32>,
     @location(1) normal_eye_space: vec3<f32>,
-    @location(2) uv: vec2<f32>,
-    @location(3) material_index: u32,
-    @location(4) view_mat_x: vec4<f32>, // View matrix.
-    @location(5) view_mat_y: vec4<f32>,
-    @location(6) view_mat_z: vec4<f32>,
-    @location(7) view_mat_w: vec4<f32>,
-    @location(8) tangent_eye_space: vec3<f32>,
-    @location(9) bitangent_eye_space: vec3<f32>,
+    @location(2) tangent_eye_space: vec3<f32>,
+    @location(3) bitangent_eye_space: vec3<f32>,
+    @location(4) uv: vec2<f32>,
+    @location(5) material_index: u32,
+    @location(6) view_mat_x: vec4<f32>, // View matrix.
+    @location(7) view_mat_y: vec4<f32>,
+    @location(8) view_mat_z: vec4<f32>,
+    @location(9) view_mat_w: vec4<f32>,
 }
 
 @group(0) @binding(0) var<uniform> globals : Globals;
@@ -119,12 +118,13 @@ struct VSOutput {
 
 var<push_constant> pconsts : PConsts;
 
-@vertex fn vs_main(vin : VSInput)->VSOutput {
-    // Model matrix.
+@vertex
+fn vs_main(vin : VSInput)->VSOutput {
     let locals = instances[vin.instance_index + pconsts.instance_base_index];
 
     var out: VSOutput;
-    let pos_eye_space = globals.view * locals.model * vec4<f32>(vin.position, 1.0);
+    let model_view = globals.view * locals.model;
+    let pos_eye_space = model_view * vec4<f32>(vin.position, 1.0);
 
     out.position = globals.proj * pos_eye_space;
     out.pos_eye_space = pos_eye_space.xyz / pos_eye_space.w;
@@ -136,13 +136,12 @@ var<push_constant> pconsts : PConsts;
         out.material_index = pconsts.material_index;
     }
 
-    var transformed_normal = transpose(locals.model_view_inv) * vec4<f32>(vin.normal, 0.0);
-    var transformed_bitangent = transpose(locals.model_view_inv) * vec4<f32>(vin.bitangent, 0.0);
-    var transformed_tangent = transpose(locals.model_view_inv) * vec4<f32>(vin.tangent, 0.0);
+    let nrm_mat = mat3x3(locals.model_view_it.x.xyz, locals.model_view_it.y.xyz, locals.model_view_it.z.xyz);
+    let tangent = vin.tangent.xyz * vin.tangent.w;
 
-    out.normal_eye_space = normalize(transformed_normal.xyz);
-    out.bitangent_eye_space = normalize(transformed_bitangent.xyz);
-    out.tangent_eye_space = normalize(transformed_tangent.xyz);
+    out.normal_eye_space = normalize(nrm_mat * vin.normal);
+    out.tangent_eye_space = normalize(nrm_mat * tangent);
+    out.bitangent_eye_space = normalize(cross(out.normal_eye_space, out.tangent_eye_space));
 
     out.view_mat_x = globals.view.x;
     out.view_mat_y = globals.view.y;
@@ -158,6 +157,7 @@ fn blinn_phong_brdf(wi: vec3<f32>, wo: vec3<f32>, n: vec3<f32>, kd: vec3<f32>, k
     if ((dot(n, wo) < 0.0) || (dot(n, wi) < 0.0)) {
         return vec3<f32>(0.0, 0.0, 0.0);
     }
+
     var dot_n_wi = max(0.0, dot(n, wi));
     var diffuse = kd * dot_n_wi;
     if (illum != 2u) {
@@ -199,7 +199,8 @@ fn blinn_phong_shading(view_mat: mat4x4<f32>, pos_eye_space: vec3<f32>, n: vec3<
     return color;
 }
 
-@fragment fn fs_main(vout : VSOutput)->@location(0) vec4<f32> {
+@fragment
+fn fs_main(vout : VSOutput) -> @location(0) vec4<f32> {
     var materials_count : u32 = arrayLength(&materials);
     var default_material_index : u32 = materials_count - 1u;
 
@@ -214,11 +215,10 @@ fn blinn_phong_shading(view_mat: mat4x4<f32>, pos_eye_space: vec3<f32>, n: vec3<
     var n = vout.normal_eye_space;
     if (material.map_norm != INVALID_INDEX) {
         // Use normal from normal map, unpacked to [-1, 1].
-        n = textureSample(textures[material.map_norm], samplers[texture_sampler_ids[material.map_norm]], vout.uv).rgb;
-        n = normalize(n * 2.0 - 1.0);
-        // Transform normal from tangent space to eye space.
+        var normal = textureSample(textures[material.map_norm], samplers[texture_sampler_ids[material.map_norm]], vout.uv).xyz;
+        normal = normal * 2.0 - vec3<f32>(1.0);
         let tbn = mat3x3<f32>(vout.tangent_eye_space, vout.bitangent_eye_space, vout.normal_eye_space);
-        n = normalize(tbn * n);
+        n = normalize(tbn * normal);
     }
 
     var color = materials[default_material_index].kd.rgb;

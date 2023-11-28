@@ -16,9 +16,13 @@ cameras = [
 
 cameras[0].set_as_main_camera()
 
-tri_mesh = bk.Mesh.create_triangle(Vec3(-2, -2, 1), Vec3(2, -2, 1), Vec3(0, 2, 1))
+tri_mesh = bk.Mesh.create_triangle(Vec3(-2, -2, -1.5), Vec3(2, -2, -1.5), Vec3(0, 2, -1.5))
 tri = app.add_mesh(tri_mesh)
 tri.set_visible(True)
+
+cube_mesh = bk.Mesh.load_from(bk.res_path("../data/blender_cube/cube.obj"))
+cube = app.add_mesh(cube_mesh)
+cube.set_visible(True)
 
 i = 0
 space_pressed = False
