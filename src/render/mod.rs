@@ -77,7 +77,7 @@ impl Renderer {
         let mut textures = TextureAssets::new();
         let bytes = include_bytes!("../../data/textures/checker.png");
         let default_texture =
-            textures.load_from_bytes(&context.device, &context.queue, bytes, None);
+            textures.load_from_bytes(&context.device, &context.queue, bytes, None, None);
         let mut samplers = FxHashMap::default();
         let default_sampler = context.device.create_sampler(&wgpu::SamplerDescriptor {
             label: Some("sampler_default"),
@@ -166,7 +166,11 @@ impl Renderer {
                 let mut textures = Vec::new();
                 for (mtl, gpu_mtl) in mtls.iter().zip(gpu_mtls.iter_mut()) {
                     for (tex_ty, tex_path) in mtl.textures.iter() {
-                        let texture_hdl = self.add_texture(&tex_path);
+                        let format = match tex_ty {
+                            TextureType::MapNorm => Some(wgpu::TextureFormat::Rgba8Unorm),
+                            _ => None,
+                        };
+                        let texture_hdl = self.add_texture(&tex_path, format);
                         let texture_idx = textures.len();
                         textures.push(texture_hdl);
                         match tex_ty {
@@ -260,9 +264,13 @@ impl Renderer {
         }
     }
 
-    pub fn add_texture(&mut self, filepath: &Path) -> Handle<Texture> {
+    pub fn add_texture(
+        &mut self,
+        filepath: &Path,
+        format: Option<wgpu::TextureFormat>,
+    ) -> Handle<Texture> {
         self.textures
-            .load_from_file(&self.device, &self.queue, filepath)
+            .load_from_file(&self.device, &self.queue, filepath, format)
     }
 
     /// Prepares the renderer for rendering.

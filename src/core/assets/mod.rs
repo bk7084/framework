@@ -236,6 +236,7 @@ impl AssetBundle<Texture, Vec<Option<Texture>>> {
         queue: &wgpu::Queue,
         bytes: &[u8],
         path: Option<&Path>,
+        format: Option<wgpu::TextureFormat>,
     ) -> Handle<Texture> {
         let img = image::load_from_memory(bytes)
             .map_err(|e| eprintln!("Failed to load texture: {:?} from {:?}", e, path))
@@ -253,9 +254,9 @@ impl AssetBundle<Texture, Vec<Option<Texture>>> {
             mip_level_count: 1,
             sample_count: 1,
             dimension: wgpu::TextureDimension::D2,
-            format: TextureFormat::Rgba8UnormSrgb,
+            format: format.unwrap_or(TextureFormat::Rgba8UnormSrgb),
             usage: wgpu::TextureUsages::COPY_DST | wgpu::TextureUsages::TEXTURE_BINDING,
-            view_formats: &[],
+            view_formats: &[TextureFormat::Rgba8UnormSrgb],
         };
         let raw = device.create_texture(&desc);
         let view = raw.create_view(&wgpu::TextureViewDescriptor::default());
@@ -289,13 +290,14 @@ impl AssetBundle<Texture, Vec<Option<Texture>>> {
         device: &wgpu::Device,
         queue: &wgpu::Queue,
         filepath: &Path,
+        format: Option<wgpu::TextureFormat>,
     ) -> Handle<Texture> {
         log::debug!("---- Loaded image from: {:?}", filepath);
         let bytes = std::fs::read(filepath).expect(&format!(
             "Failed to read texture file: {}",
             filepath.display()
         ));
-        self.load_from_bytes(device, queue, &bytes, Some(filepath))
+        self.load_from_bytes(device, queue, &bytes, Some(filepath), format)
     }
 }
 

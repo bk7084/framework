@@ -761,60 +761,6 @@ impl GpuMesh {
     }
 }
 
-mod util {
-    /// Helper function to normalize a vector
-    pub fn normalize(v: &[f32; 3]) -> [f32; 3] {
-        let length = (v[0].powi(2) + v[1].powi(2) + v[2].powi(2)).sqrt();
-        [v[0] / length, v[1] / length, v[2] / length]
-    }
-
-    /// Helper function to calculate the dot product of two vectors
-    pub fn dot(v1: &[f32; 3], v2: &[f32; 3]) -> f32 {
-        v1[0] * v2[0] + v1[1] * v2[1] + v1[2] * v2[2]
-    }
-
-    /// Helper function to calculate the cross product of two vectors
-    pub fn cross(v1: &[f32; 3], v2: &[f32; 3]) -> [f32; 3] {
-        [
-            v1[1] * v2[2] - v1[2] * v2[1],
-            v1[2] * v2[0] - v1[0] * v2[2],
-            v1[0] * v2[1] - v1[1] * v2[0],
-        ]
-    }
-
-    /// Helper function to calculate the rejection of a vector from
-    /// another which is the perpendicular part of the decomposition
-    /// of the first vector onto the second.
-    pub fn rejection(a: &[f32; 3], b: &[f32; 3]) -> [f32; 3] {
-        let b_norm = normalize(b);
-        let dot = dot(a, &b_norm);
-        [
-            a[0] - dot * b_norm[0],
-            a[1] - dot * b_norm[1],
-            a[2] - dot * b_norm[2],
-        ]
-    }
-
-    /// Helper function to sum two vectors.
-    pub fn sum(v1: &[f32; 3], v2: &[f32; 3]) -> [f32; 3] {
-        [v1[0] + v2[0], v1[1] + v2[1], v1[2] + v2[2]]
-    }
-
-    pub fn sum_vec3_vec4(v1: &[f32; 3], v2: &[f32; 4]) -> [f32; 4] {
-        [v1[0] + v2[0], v1[1] + v2[1], v1[2] + v2[2], v2[3]]
-    }
-
-    /// Helper function to subtract two vectors.
-    pub fn sub(v1: &[f32; 3], v2: &[f32; 3]) -> [f32; 3] {
-        [v1[0] - v2[0], v1[1] - v2[1], v1[2] - v2[2]]
-    }
-
-    /// Helper function to multiply one vector by a scalar.
-    pub fn mul_scalar(v: &[f32; 3], s: f32) -> [f32; 3] {
-        [v[0] * s, v[1] * s, v[2] * s]
-    }
-}
-
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
 pub struct MeshBundle {
     pub mesh: Handle<GpuMesh>,
