@@ -99,7 +99,6 @@ struct VSOutput {
     @location(6) view_mat_y: vec4<f32>,
     @location(7) view_mat_z: vec4<f32>,
     @location(8) view_mat_w: vec4<f32>,
-    @location(9) tangent: vec3<f32>,
 }
 
 @group(0) @binding(0) var<uniform> globals : Globals;
@@ -125,21 +124,18 @@ fn vs_main(vin : VSInput)->VSOutput {
     let model_view = globals.view * locals.model;
     let pos_eye_space = model_view * vec4<f32>(vin.position, 1.0);
 
-    out.position = globals.proj * pos_eye_space;
-    out.pos_eye_space = pos_eye_space.xyz / pos_eye_space.w;
-    out.uv = vin.uv;
-
     if (locals.material_index.x != INVALID_INDEX) {
         out.material_index = locals.material_index.x;
     } else {
         out.material_index = pconsts.material_index;
     }
-
     let nrm_mat = mat3x3(locals.model_view_it.x.xyz, locals.model_view_it.y.xyz, locals.model_view_it.z.xyz);
+
+    out.position = globals.proj * pos_eye_space;
+    out.uv = vin.uv;
+    out.pos_eye_space = pos_eye_space.xyz / pos_eye_space.w;
     out.normal_eye_space = normalize(nrm_mat * vin.normal);
     out.tangent_eye_space = vec4<f32>(normalize(nrm_mat * vin.tangent.xyz), vin.tangent.w);
-    out.tangent = vin.tangent.xyz;
-
     out.view_mat_x = globals.view.x;
     out.view_mat_y = globals.view.y;
     out.view_mat_z = globals.view.z;
@@ -218,7 +214,7 @@ fn fetch_normal_map(map: u32, uv: vec2<f32>, tangent: vec3<f32>, normal: vec3<f3
     var m = unpack_normal_map(map, uv);
     // Convert normal from tangent space to view space.
     let t = normalize(tangent - n * dot(tangent, n));
-    let b = normalize(cross(normal, tangent) * sigma);
+    let b = normalize(cross(n, t) * sigma);
     let tbn = mat3x3<f32>(t, b, n);
     return normalize(tbn * m);
 }
@@ -237,6 +233,7 @@ fn fs_main(vout : VSOutput) -> @location(0) vec4<f32> {
 
     let view_mat = mat4x4<f32>(vout.view_mat_x, vout.view_mat_y, vout.view_mat_z, vout.view_mat_w);
 
+    let view_mat3 = mat3x3<f32>(vout.view_mat_x.xyz, vout.view_mat_y.xyz, vout.view_mat_z.xyz);
     let n = fetch_normal_map(material.map_norm, vout.uv, vout.tangent_eye_space.xyz, vout.normal_eye_space, vout.tangent_eye_space.w);
 
     var color = materials[default_material_index].kd.rgb;
@@ -288,16 +285,6 @@ fn fs_main(vout : VSOutput) -> @location(0) vec4<f32> {
         }
         color += ka * ia * kd;
     }
-
-//    if (all(vout.tangent == vec3<f32>(1.0, 0.0, 0.0))) {
-//        color = vec3<f32>(1.0, 0.0, 0.0);
-//    } else if (all(vout.tangent == vec3<f32>(0.0, 1.0, 0.0))) {
-//        color = vec3<f32>(0.0, 1.0, 0.0);
-//    } else if (all(vout.tangent == vec3<f32>(0.0, 0.0, 1.0))) {
-//        color = vec3<f32>(0.0, 0.0, 1.0);
-//    } else {
-//        color = vec3<f32>(0.0, 0.0, 0.0);
-//    }
 
     return vec4<f32>(color, 1.0);
 }

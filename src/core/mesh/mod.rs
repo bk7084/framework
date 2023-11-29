@@ -1,4 +1,4 @@
-use glam::Vec3;
+use glam::{Vec3, Vec4};
 use numpy as np;
 use pyo3::Python;
 use rustc_hash::FxHashMap;
@@ -334,7 +334,7 @@ impl Mesh {
             .get(&VertexAttribute::NORMAL)
             .unwrap()
             .as_slice::<[f32; 3]>();
-        let mut tangents: Vec<[f32; 4]> = vec![[0.0, 0.0, 0.0, 0.0]; vertices.len()];
+        let mut tangents: Vec<Vec4> = vec![Vec4::ZERO; vertices.len()];
         match &self.indices {
             None => {
                 panic!("Indices are required to compute the bi/tangents");
@@ -348,12 +348,11 @@ impl Mesh {
                 }
             },
         }
-        // println!("vertices: {:?}", vertices);
-        // println!("uvs: {:?}", uvs);
-        // println!("normals: {:?}", normals);
-        // println!("tangents: {:?}", tangents);
-        self.attributes
-            .insert(VertexAttribute::TANGENT, AttribContainer::new(&tangents));
+        let tangents_raw: Vec<[f32; 4]> = tangents.iter().map(|t| t.to_array()).collect();
+        self.attributes.insert(
+            VertexAttribute::TANGENT,
+            AttribContainer::new(&tangents_raw),
+        );
     }
 }
 
@@ -491,14 +490,6 @@ impl Mesh {
             materials: None,
         };
         mesh.update_tangents();
-        println!(
-            "tangents: {:?}",
-            mesh.attributes
-                .0
-                .get(&VertexAttribute::TANGENT)
-                .unwrap()
-                .as_slice::<[f32; 4]>()
-        );
         mesh
     }
 
@@ -836,10 +827,9 @@ fn compute_tangents<T: IndexType>(
     indices: &[T],
     uvs: &[[f32; 2]],
     normals: &[[f32; 3]],
-    tangents: &mut [[f32; 4]],
+    tangents: &mut [Vec4],
 ) {
-    let mut bitangents = vec![[0.0f32; 3]; positions.len()];
-    let mut n_tris_per_vert = vec![0u32; positions.len()];
+    let mut bitangents = vec![Vec3::ZERO; positions.len()];
     for tri in indices.chunks(3) {
         let (tri0, tri1, tri2) = (tri[0].as_usize(), tri[1].as_usize(), tri[2].as_usize());
         let v0 = glam::Vec3::from(positions[tri0]);
@@ -862,42 +852,37 @@ fn compute_tangents<T: IndexType>(
         //     delta_pos1 = delta_uv1.x * T + delta_u.y * B
         //     delta_pos2 = delta_uv2.x * T + delta_uv2.y * B
         let r = 1.0 / (delta_uv1.x * delta_uv2.y - delta_uv1.y * delta_uv2.x);
-        let tangent = ((e1 * delta_uv2.y - e2 * delta_uv1.y) * r).to_array();
-        let bitangent = ((-e1 * delta_uv2.x + e2 * delta_uv1.x) * r).to_array();
-        tangents[tri0] = util::sum_vec3_vec4(&tangent, &tangents[tri0]);
-        tangents[tri1] = util::sum_vec3_vec4(&tangent, &tangents[tri1]);
-        tangents[tri2] = util::sum_vec3_vec4(&tangent, &tangents[tri2]);
-        bitangents[tri0] = util::sum(&bitangent, &bitangents[tri0]);
-        bitangents[tri1] = util::sum(&bitangent, &bitangents[tri1]);
-        bitangents[tri2] = util::sum(&bitangent, &bitangents[tri2]);
-        n_tris_per_vert[tri0] += 1;
-        n_tris_per_vert[tri1] += 1;
-        n_tris_per_vert[tri2] += 1;
+        let tangent = (e1 * delta_uv2.y - e2 * delta_uv1.y) * r;
+        let bitangent = (-e1 * delta_uv2.x + e2 * delta_uv1.x) * r;
+        tangents[tri0] = Vec4::new(
+            tangent.x + tangents[tri0].x,
+            tangent.y + tangents[tri0].y,
+            tangent.z + tangents[tri0].z,
+            0.0,
+        );
+        tangents[tri1] = Vec4::new(
+            tangent.x + tangents[tri1].x,
+            tangent.y + tangents[tri1].y,
+            tangent.z + tangents[tri1].z,
+            0.0,
+        );
+        tangents[tri2] = Vec4::new(
+            tangent.x + tangents[tri2].x,
+            tangent.y + tangents[tri2].y,
+            tangent.z + tangents[tri2].z,
+            0.0,
+        );
+        bitangents[tri0] += bitangent;
+        bitangents[tri1] += bitangent;
+        bitangents[tri2] += bitangent;
     }
 
     // Average the tangents and bitangents
     for i in 0..positions.len() {
-        let denom = 1.0f32 / n_tris_per_vert[i] as f32;
-        let tangent = [tangents[i][0], tangents[i][1], tangents[i][2]];
-        let average = util::normalize(&util::mul_scalar(&tangent, denom));
-        tangents[i][0] = average[0];
-        tangents[i][1] = average[1];
-        tangents[i][2] = average[2];
-    }
-
-    for i in 0..positions.len() {
-        let tangent = tangents[i];
-        let t = [tangent[0], tangent[1], tangent[2]];
-        let b = bitangents[i];
-        let n = normals[i];
-        let t_perp = util::normalize(&util::rejection(&t, &n));
-        tangents[i][0] = t_perp[0];
-        tangents[i][1] = t_perp[1];
-        tangents[i][2] = t_perp[2];
-        tangents[i][3] = if util::dot(&util::cross(&t, &b), &n) > 0.0 {
-            1.0
-        } else {
-            -1.0
-        };
+        let t = tangents[i].truncate().normalize();
+        let b = bitangents[i].normalize();
+        let n = Vec3::from(normals[i]);
+        let t_perp = t - n * t.dot(n);
+        tangents[i] = Vec4::from((t_perp, n.dot(t.cross(b)).signum()));
     }
 }

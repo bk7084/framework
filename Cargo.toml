@@ -18,7 +18,7 @@ cfg-if = "1"
 crossbeam-channel = "0.5"
 env_logger = "0.10"
 image = "0.24"
-glam = "0.24"
+glam = {  version = "0.24", features = ["bytecheck"] }
 legion = { git = "https://github.com/matthiascy/legion.git", branch = "master" }
 log = "0.4"
 numpy = "0.20"
