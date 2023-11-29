@@ -129,8 +129,8 @@ fn vs_main(vin : VSInput)->VSOutput {
     } else {
         out.material_index = pconsts.material_index;
     }
-    let nrm_mat = mat3x3(locals.model_view_it.x.xyz, locals.model_view_it.y.xyz, locals.model_view_it.z.xyz);
 
+    let nrm_mat = mat3x3(locals.model_view_it.x.xyz, locals.model_view_it.y.xyz, locals.model_view_it.z.xyz);
     out.position = globals.proj * pos_eye_space;
     out.uv = vin.uv;
     out.pos_eye_space = pos_eye_space.xyz / pos_eye_space.w;
@@ -147,23 +147,21 @@ const INVALID_INDEX: u32 = 0xffffffffu;
 
 /// Blinn-Phong BRDF in camera space.
 fn blinn_phong_brdf(wi: vec3<f32>, wo: vec3<f32>, n: vec3<f32>, kd: vec3<f32>, ks: vec3<f32>, ns: f32, illum: u32) -> vec3<f32> {
-    if ((dot(n, wo) < 0.0) || (dot(n, wi) < 0.0)) {
-        return vec3<f32>(0.0, 0.0, 0.0);
-    }
-
     var dot_n_wi = max(0.0, dot(n, wi));
     var diffuse = kd * dot_n_wi;
     if (illum != 2u) {
         return diffuse;
     }
-
     var h = normalize(wi + wo);
     var dot_n_h = max(0.0, dot(n, h));
-    var specular = ks * pow(dot_n_h, ns);
+    var specular = vec3<f32>(0.0);
+    if (dot_n_wi > 0.0) {
+        specular = ks * pow(dot_n_h, ns);
+    }
     return diffuse + specular;
 }
 
-fn blinn_phong_shading(view_mat: mat4x4<f32>, pos_eye_space: vec3<f32>, n: vec3<f32>, kd: vec3<f32>, ks: vec3<f32>, ns: f32, illum: u32) -> vec3<f32> {
+fn blinn_phong_shading_eye_space(view_mat: mat4x4<f32>, pos_eye_space: vec3<f32>, n: vec3<f32>, kd: vec3<f32>, ks: vec3<f32>, ns: f32, illum: u32) -> vec3<f32> {
     var color = vec3<f32>(0.0, 0.0, 0.0);
 
     // View direction in camera space.
@@ -182,9 +180,8 @@ fn blinn_phong_shading(view_mat: mat4x4<f32>, pos_eye_space: vec3<f32>, n: vec3<
         // Light position in view space.
         var light_pos = (view_mat * vec4<f32>(light.position, 1.0));
         var pos_to_light = (light_pos / light_pos.w).xyz - pos_eye_space;
-        var dist = length(pos_to_light) * 0.2;
-        var light_color = light.color * (1.0 / pow(dist, 2.0));
-
+        var dist = length(pos_to_light);
+        var light_color = light.color * (1.0 / (1.0 + 0.02 * dist * dist));
         var wi = normalize(pos_to_light);
         var coeff = blinn_phong_brdf(wi, wo, n, kd, ks, ns, illum);
         color += coeff * light_color;
@@ -197,26 +194,18 @@ fn blinn_phong_shading(view_mat: mat4x4<f32>, pos_eye_space: vec3<f32>, n: vec3<
 ///
 /// The normal map is assumed to be in tangent space. The normal is unpacked to [-1, 1].
 fn unpack_normal_map(map: u32, uv: vec2<f32>) -> vec3<f32> {
-    if (map == INVALID_INDEX) {
-        return vec3<f32>(0.0, 0.0, 1.0);
-    }
     var m = textureSample(textures[map], samplers[texture_sampler_ids[map]], uv).xyz;
     m = m * 2.0 - vec3<f32>(1.0);
     return normalize(m);
 }
 
-fn fetch_normal_map(map: u32, uv: vec2<f32>, tangent: vec3<f32>, normal: vec3<f32>, sigma: f32) -> vec3<f32> {
+/// Constructs a TBN matrix transforming from tangent space to other spaces.
+fn tbn_matrix(tangent: vec4<f32>, normal: vec3<f32>) -> mat3x3<f32> {
     let n = normalize(normal);
-    // Use normal from vertex data, which is already in view space.
-    if (map == INVALID_INDEX) {
-        return n;
-    }
-    var m = unpack_normal_map(map, uv);
-    // Convert normal from tangent space to view space.
-    let t = normalize(tangent - n * dot(tangent, n));
-    let b = normalize(cross(n, t) * sigma);
-    let tbn = mat3x3<f32>(t, b, n);
-    return normalize(tbn * m);
+    var t = normalize(tangent.xyz);
+    t = normalize(t - n * dot(t, n));
+    let b = normalize(cross(n, t) * tangent.w); // sign(dot(cross(n, t), n))
+    return mat3x3<f32>(t, b, n);
 }
 
 @fragment
@@ -231,16 +220,16 @@ fn fs_main(vout : VSOutput) -> @location(0) vec4<f32> {
         kd = textureSample(textures[material.map_kd], samplers[texture_sampler_ids[material.map_kd]], vout.uv).rgb;
     }
 
-    let view_mat = mat4x4<f32>(vout.view_mat_x, vout.view_mat_y, vout.view_mat_z, vout.view_mat_w);
-
-    let view_mat3 = mat3x3<f32>(vout.view_mat_x.xyz, vout.view_mat_y.xyz, vout.view_mat_z.xyz);
-    let n = fetch_normal_map(material.map_norm, vout.uv, vout.tangent_eye_space.xyz, vout.normal_eye_space, vout.tangent_eye_space.w);
-
     var color = materials[default_material_index].kd.rgb;
 
     var ks = material.ks.rgb;
     if (material.map_ks != INVALID_INDEX) {
         ks = textureSample(textures[material.map_ks], samplers[texture_sampler_ids[material.map_ks]], vout.uv).rgb;
+    }
+
+    var ns = material.ns;
+    if (material.map_ns != INVALID_INDEX) {
+        ns = textureSample(textures[material.map_ns], samplers[texture_sampler_ids[material.map_ns]], vout.uv).r;
     }
 
     // Output kd as color.
@@ -256,16 +245,14 @@ fn fs_main(vout : VSOutput) -> @location(0) vec4<f32> {
         return vec4<f32>(vout.uv, 0.0, 1.0);
     }
 
-    if (material.illum == 14u) {
-        return vec4<f32>(n, 1.0);
+    var n = normalize(vout.normal_eye_space);
+    if (material.map_norm != INVALID_INDEX) {
+        n = unpack_normal_map(material.map_norm, vout.uv);
+        let tbn = tbn_matrix(vout.tangent_eye_space, vout.normal_eye_space);
+        n = normalize(tbn * n);
     }
-
-    var ns = material.ns;
-    if (material.map_ns != INVALID_INDEX) {
-        ns = textureSample(textures[material.map_ns], samplers[texture_sampler_ids[material.map_ns]], vout.uv).r;
-    }
-
-    color = blinn_phong_shading(view_mat, vout.pos_eye_space, n, kd, ks, ns, material.illum);
+    let view_mat = mat4x4<f32>(vout.view_mat_x, vout.view_mat_y, vout.view_mat_z, vout.view_mat_w);
+    color = blinn_phong_shading_eye_space(view_mat, vout.pos_eye_space, n, kd, ks, ns, material.illum);
 
     // Ambient on.
     if (material.illum != 0u) {

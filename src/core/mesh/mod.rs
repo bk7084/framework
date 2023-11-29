@@ -72,7 +72,7 @@ impl From<PyTopology> for wgpu::PrimitiveTopology {
     }
 }
 
-pub trait IndexType: Copy {
+pub trait IndexType: Copy + Debug {
     fn as_u32(&self) -> u32;
     fn as_usize(&self) -> usize;
 }

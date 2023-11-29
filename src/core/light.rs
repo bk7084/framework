@@ -5,9 +5,9 @@ use glam::Vec3;
 pub enum Light {
     /// A directional light.
     Directional {
-        /// The direction from which the light is coming.
-        /// But the shader will use the opposite direction during shading
-        /// calculations. See
+        /// The direction from which the light is coming (in world space, origin
+        /// - position). But the shader will use the opposite direction
+        /// during shading calculations. See
         /// [`crate::render::rpass::LightsBindGroup::update_lights`].
         direction: Vec3,
         color: Color,
