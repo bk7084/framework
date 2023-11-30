@@ -434,10 +434,17 @@ impl Material {
     /// type and the value is the path to the texture.
     #[setter]
     pub fn set_textures(&mut self, textures: &PyDict) {
+        if textures.is_empty() {
+            return;
+        }
         for (key, value) in textures.iter() {
             let key: String = key
                 .extract()
                 .expect("Failed to extract texture type string");
+            if value.is_none() {
+                log::warn!("Texture path is None for key: {}", key);
+                continue;
+            }
             let value: String = value
                 .extract()
                 .expect("Failed to downcast texture path to string");
