@@ -766,11 +766,11 @@ impl GpuMesh {
     }
 }
 
+/// A collection of materials and their corresponding textures.
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
-pub struct MeshBundle {
-    pub mesh: Handle<GpuMesh>,
-    pub textures: Handle<TextureBundle>,
+pub struct AestheticBundle {
     pub materials: Handle<MaterialBundle>,
+    pub textures: Handle<TextureBundle>,
 }
 
 fn compute_tangents<T: IndexType>(

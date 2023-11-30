@@ -10,7 +10,7 @@ use crate::{
     app::command::Command,
     core::{
         camera::{Camera, Projection},
-        mesh::{Mesh, MeshBundle},
+        mesh::{AestheticBundle, Mesh},
         Color, ConcatOrder, FxHashMap, Light, SmlString,
     },
     render::{
@@ -260,7 +260,7 @@ impl PyAppState {
                     log::debug!("Spawning object with mesh#{}", mesh.id);
                     log::debug!("Uploading materials for mesh#{}", mesh.id);
                     let (materials, textures) = renderer.upload_materials(mesh.materials.as_ref());
-                    let bundle = MeshBundle {
+                    let bundle = AestheticBundle {
                         mesh: mesh_hdl,
                         textures,
                         materials,

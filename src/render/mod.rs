@@ -16,7 +16,7 @@ use crate::{
     app::command::{Command, CommandReceiver},
     core::{
         assets::{GpuMeshAssets, Handle, MaterialBundleAssets, TextureAssets, TextureBundleAssets},
-        mesh::{GpuMesh, Mesh, MeshBundle},
+        mesh::{AestheticBundle, GpuMesh, Mesh},
         FxHashMap, GpuMaterial, Material, MaterialBundle, SmlString, Texture, TextureBundle,
         TextureType,
     },
@@ -56,8 +56,8 @@ pub struct Renderer {
     default_texture: Handle<Texture>,
     default_material_bundle: Handle<MaterialBundle>,
     default_texture_bundle: Handle<TextureBundle>,
-    mesh_bundles: FxHashMap<Handle<GpuMesh>, MeshBundle>,
-    instancing: FxHashMap<Handle<GpuMesh>, Instancing>,
+    aesthetic_bundles: Vec<AestheticBundle>,
+    instancing: FxHashMap<Handle<GpuMesh>, Instances>,
     samplers: FxHashMap<SmlString, wgpu::Sampler>,
     cmd_receiver: Receiver<Command>,
 }
@@ -124,7 +124,7 @@ impl Renderer {
             textures,
             default_material_bundle,
             default_texture_bundle,
-            mesh_bundles: FxHashMap::default(),
+            aesthetic_bundles: FxHashMap::default(),
             instancing: FxHashMap::default(),
             samplers,
             cmd_receiver: receiver,
@@ -229,12 +229,12 @@ impl Renderer {
     }
 
     /// Gets a mesh bundle.
-    pub fn get_mesh_bundle(&self, mesh: Handle<GpuMesh>) -> Option<MeshBundle> {
-        self.mesh_bundles.get(&mesh).cloned()
+    pub fn get_mesh_bundle(&self, mesh: Handle<GpuMesh>) -> Option<AestheticBundle> {
+        self.aesthetic_bundles.get(&mesh).cloned()
     }
 
-    pub fn insert_mesh_bundle(&mut self, mesh: Handle<GpuMesh>, bundle: MeshBundle) {
-        self.mesh_bundles.insert(mesh, bundle);
+    pub fn insert_mesh_bundle(&mut self, mesh: Handle<GpuMesh>, bundle: AestheticBundle) {
+        self.aesthetic_bundles.insert(mesh, bundle);
     }
 
     /// Adds a new instancing data for a mesh.
@@ -249,7 +249,7 @@ impl Renderer {
             Entry::Vacant(_) => {
                 self.instancing.insert(
                     mesh,
-                    Instancing {
+                    Instances {
                         nodes: nodes.to_vec(),
                     },
                 );
@@ -373,9 +373,11 @@ impl Renderer {
     }
 }
 
-/// Instancing information for a mesh.
+/// Instancing information for a GpuMesh.
 #[derive(Clone, Debug, Default)]
-pub struct Instancing {
+pub struct Instances {
     /// Nodes that use this mesh.
     pub nodes: Vec<NodeIdx>,
+    /// Index of the AestheticBundle inside the renderer.
+    pub aesthetics: Vec<u32>,
 }

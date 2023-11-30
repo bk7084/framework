@@ -1,7 +1,7 @@
 use crate::{
     core::{
         camera::Camera,
-        mesh::{MeshBundle, VertexAttribute},
+        mesh::{AestheticBundle, VertexAttribute},
         FxHashSet, GpuMaterial, Light,
     },
     render::{
@@ -563,7 +563,7 @@ impl RenderingPass for BlinnPhongRenderPass {
             render_pass.set_bind_group(4, &self.lights_bind_group, &[]);
         }
 
-        let mut mesh_query = <(&NodeIdx, &MeshBundle)>::query();
+        let mut mesh_query = <(&NodeIdx, &AestheticBundle)>::query();
         let mut mesh_bundles = FxHashSet::default();
         let mut total_inst_count = 0;
         for (_, mesh) in mesh_query
