@@ -257,6 +257,9 @@ fn fs_main(vout : VSOutput) -> @location(0) vec4<f32> {
     // Ambient on.
     if (material.illum != 0u) {
         var ka = material.ka.rgb;
+        if (material.map_ka != INVALID_INDEX) {
+            ka = textureSample(textures[material.map_ka], samplers[texture_sampler_ids[material.map_ka]], vout.uv).rgb;
+        }
 
         var ia = vec3<f32>(0.0, 0.0, 0.0);
         for (var i : u32 = 0u; i < directional_lights.len; i++) {
@@ -265,11 +268,7 @@ fn fs_main(vout : VSOutput) -> @location(0) vec4<f32> {
         for (var i : u32 = 0u; i < point_lights.len; i++) {
             ia += point_lights.data[i].color;
         }
-        ia = 0.04 * ia / f32(directional_lights.len + point_lights.len);
-
-        if (material.map_ka != INVALID_INDEX) {
-            ka = textureSample(textures[material.map_ka], samplers[texture_sampler_ids[material.map_ka]], vout.uv).rgb;
-        }
+        ia = 0.08 * ia / f32(directional_lights.len + point_lights.len);
         color += ka * ia * kd;
     }
 

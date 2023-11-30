@@ -177,7 +177,7 @@ impl Default for Material {
         Self {
             name: SmlString::from("material_default"),
             ambient: Some([1.0, 1.0, 1.0]),
-            diffuse: Some([0.9, 0.4, 0.3]),
+            diffuse: Some([0.7, 0.7, 0.7]),
             specular: Some([0.5, 0.5, 0.5]),
             shininess: Some(10.0),
             refractive_index: Some(1.0),

@@ -56,7 +56,7 @@ class App(PyAppState):
             color (Color): Color of the light.
             show_light (bool, optional): Whether to show the light object. Defaults to False.
         """
-        entity = super().add_point_light_py(pos, color)
+        light = super().add_point_light_py(pos, color)
         if show_light:
             mat = Material()
             mat.diffuse = color
@@ -66,7 +66,8 @@ class App(PyAppState):
             sphere = self.add_mesh(mesh)
             sphere.set_visible(True)
             sphere.set_transform(Mat4.from_translation(pos))
-        return entity
+            return light, sphere
+        return light
 
     def run(self, builder: Window):
         """Starts the main loop."""
