@@ -377,6 +377,12 @@ impl Material {
         self.diffuse = Some([kd.r as f32, kd.g as f32, kd.b as f32]);
     }
 
+    #[setter]
+    #[deprecated(note = "Use `set_diffuse` instead")]
+    pub fn set_kd(&mut self, kd: [f32; 3]) {
+        self.diffuse = Some(kd);
+    }
+
     #[getter]
     pub fn get_diffuse(&self) -> Option<[f32; 3]> {
         self.diffuse

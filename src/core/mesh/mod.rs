@@ -257,6 +257,11 @@ impl Mesh {
         Self::load_from_obj(&path)
     }
 
+    #[deprecated]
+    pub fn apply_material(&mut self, material: Material) {
+        self.set_material(material)
+    }
+
     /// Applies a single material to the whole mesh.
     pub fn set_material(&mut self, material: Material) {
         if self.materials.is_none() {

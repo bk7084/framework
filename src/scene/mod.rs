@@ -7,7 +7,7 @@ use std::fmt::{Debug, Formatter};
 
 use crate::{
     app::command::{Command, CommandReceiver, CommandSender},
-    core::{camera::Camera, ConcatOrder},
+    core::{camera::Camera, ConcatOrder, Light},
 };
 use legion::{storage::IntoComponentSource, IntoQuery, World};
 use numpy as np;
@@ -217,6 +217,12 @@ impl Scene {
             raw: entity,
             node: node_id,
         }
+    }
+
+    /// Returns true if there is a light component attached to the entity.
+    pub fn has_light(&self) -> bool {
+        let mut query = <&Light>::query();
+        query.iter(&self.world).next().is_some()
     }
 
     /// Processes all commands in the command receiver.

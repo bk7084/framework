@@ -296,6 +296,17 @@ impl PyAppState {
 
     /// Prepare the scene and renderer for rendering.
     pub fn prepare(&mut self) {
+        let has_light = self.scene.read().unwrap().has_light();
+        if !has_light {
+            self.spawn_light(
+                NodeIdx::root(),
+                Light::Directional {
+                    direction: Vec3::new(1.0, -1.0, -1.0),
+                    color: Color::WHITE,
+                },
+                None,
+            );
+        }
         self.scene.write().unwrap().prepare(&mut self.main_camera);
         self.renderer.write().unwrap().prepare();
     }
