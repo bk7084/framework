@@ -162,11 +162,11 @@ impl SubMesh {
 }
 
 /// Mesh id counter. 0 and 1 are reserved for the default cube and quad.
-static MESH_ID: AtomicU64 = AtomicU64::new(2);
+static MESH_ID: AtomicU64 = AtomicU64::new(0);
 
 /// A mesh is a collection of vertices with optional indices and materials.
 /// Vertices can have different attributes such as position, normal, uv, etc.
-#[pyo3::pyclass]
+#[pyo3::pyclass(subclass)]
 pub struct Mesh {
     /// Unique id of the mesh.
     pub(crate) id: u64,
@@ -204,6 +204,7 @@ impl Clone for Mesh {
 #[pyo3::pymethods]
 impl Mesh {
     #[new]
+    #[pyo3(signature = (topology=PyTopology::TriangleList))]
     pub fn new(topology: PyTopology) -> Self {
         Self {
             id: MESH_ID.fetch_add(1, std::sync::atomic::Ordering::Relaxed),
@@ -315,8 +316,31 @@ impl Mesh {
         self.sub_meshes = Some(sub_meshes);
     }
 
+    #[setter]
+    pub fn set_vertices(&mut self, vertices: Vec<[f32; 3]>) {
+        self.attributes
+            .insert(VertexAttribute::POSITION, AttribContainer::new(&vertices));
+    }
+
+    #[setter]
+    pub fn set_normals(&mut self, normals: Vec<[f32; 3]>) {
+        self.attributes
+            .insert(VertexAttribute::NORMAL, AttribContainer::new(&normals));
+    }
+
+    #[setter]
+    pub fn set_uvs(&mut self, uvs: Vec<[f32; 2]>) {
+        self.attributes
+            .insert(VertexAttribute::UV, AttribContainer::new(&uvs));
+    }
+
+    #[setter]
+    pub fn set_triangles(&mut self, triangles: Vec<[u32; 3]>) {
+        self.indices = Some(Indices::U32(triangles.into_iter().flatten().collect()));
+    }
+
     /// Computes per vertex tangents for the mesh from the UVs.
-    pub fn update_tangents(&mut self) {
+    pub fn compute_tangents(&mut self) {
         if self.attributes.0.contains_key(&VertexAttribute::TANGENT) {
             log::warn!("Mesh already has tangents and bitangents. Skipping tangent computation.");
             return;
@@ -353,11 +377,48 @@ impl Mesh {
                 }
             },
         }
-        let tangents_raw: Vec<[f32; 4]> = tangents.iter().map(|t| t.to_array()).collect();
+        let tangents_raw: Vec<[f32; 4]> = unsafe { std::mem::transmute(tangents) };
         self.attributes.insert(
             VertexAttribute::TANGENT,
             AttribContainer::new(&tangents_raw),
         );
+    }
+
+    /// Computes per vertex normals for the mesh.
+    pub fn compute_normals(&mut self) {
+        if self.attributes.0.contains_key(&VertexAttribute::NORMAL) {
+            log::warn!("Mesh already has normals. Skipping normal computation.");
+            return;
+        }
+        if self.indices.is_none() {
+            panic!("Indices are required to compute the normals");
+        }
+        let vertices = self
+            .attributes
+            .0
+            .get(&VertexAttribute::POSITION)
+            .unwrap()
+            .as_slice::<[f32; 3]>();
+        let mut normals: Vec<Vec3> = vec![Vec3::ZERO; vertices.len()];
+        match &self.indices {
+            None => {
+                panic!("Indices are required to compute the normals");
+            }
+            Some(indices) => match indices {
+                Indices::U32(indices) => {
+                    compute_normals(&vertices, &indices, &mut normals);
+                }
+                Indices::U16(indices) => {
+                    compute_normals(&vertices, &indices, &mut normals);
+                }
+            },
+        }
+        let normals_raw: Vec<[f32; 3]> = unsafe { std::mem::transmute(normals) };
+        self.attributes
+            .insert(VertexAttribute::NORMAL, AttribContainer::new(&normals_raw));
+        // Recompute tangents.
+        self.attributes.0.remove(&VertexAttribute::TANGENT);
+        self.compute_tangents();
     }
 }
 
@@ -431,7 +492,7 @@ impl Mesh {
         attributes.insert(VertexAttribute::NORMAL, AttribContainer::new(&normals));
         attributes.insert(VertexAttribute::UV, AttribContainer::new(&uvs));
         let mut mesh = Mesh {
-            id: 0,
+            id: MESH_ID.fetch_add(1, std::sync::atomic::Ordering::Relaxed),
             topology: wgpu::PrimitiveTopology::TriangleList,
             attributes,
             indices: Some(Indices::U16(indices)),
@@ -439,7 +500,7 @@ impl Mesh {
             path: None,
             materials: None,
         };
-        mesh.update_tangents();
+        mesh.compute_tangents();
         mesh
     }
 
@@ -486,7 +547,7 @@ impl Mesh {
         attributes.insert(VertexAttribute::NORMAL, AttribContainer::new(&normals));
         attributes.insert(VertexAttribute::UV, AttribContainer::new(&uvs));
         let mut mesh = Mesh {
-            id: 1,
+            id: MESH_ID.fetch_add(1, std::sync::atomic::Ordering::Relaxed),
             topology: wgpu::PrimitiveTopology::TriangleList,
             attributes,
             indices: Some(Indices::U16(indices)),
@@ -494,7 +555,7 @@ impl Mesh {
             path: None,
             materials: None,
         };
-        mesh.update_tangents();
+        mesh.compute_tangents();
         mesh
     }
 
@@ -564,7 +625,7 @@ impl Mesh {
             path: None,
             materials: None,
         };
-        mesh.update_tangents();
+        mesh.compute_tangents();
         mesh
     }
 
@@ -599,8 +660,31 @@ impl Mesh {
             path: None,
             materials: None,
         };
-        mesh.update_tangents();
+        mesh.compute_tangents();
         mesh
+    }
+
+    /// Validates the mesh.
+    ///
+    /// A mesh is valid if it has a position attribute, uv attribute, and
+    /// indices. If the mesh has not normals, they are computed.
+    pub fn validate(&mut self) {
+        for attr in [VertexAttribute::POSITION, VertexAttribute::UV] {
+            if !self.attributes.0.contains_key(&attr) {
+                panic!("Mesh must have a {:?} attribute.", attr);
+            }
+        }
+        if self.indices.is_none() {
+            panic!("Mesh must have indices.");
+        }
+        if !self.attributes.0.contains_key(&VertexAttribute::NORMAL) {
+            log::warn!("Mesh has no normals. Computing normals.");
+            self.compute_normals();
+        }
+        if !self.attributes.0.contains_key(&VertexAttribute::TANGENT) {
+            log::warn!("Mesh has no tangents. Computing tangents.");
+            self.compute_tangents();
+        }
     }
 
     /// Loads a mesh from a wavefront obj file.
@@ -696,23 +780,7 @@ impl Mesh {
             path: None,
             materials: Some(materials),
         };
-        mesh.update_tangents();
-        // println!(
-        //     "tangents: {:?}",
-        //     mesh.attributes
-        //         .0
-        //         .get(&VertexAttribute::TANGENT)
-        //         .unwrap()
-        //         .as_slice::<[f32; 4]>()
-        // );
-        // println!(
-        //     "normals: {:?}",
-        //     mesh.attributes
-        //         .0
-        //         .get(&VertexAttribute::NORMAL)
-        //         .unwrap()
-        //         .as_slice::<[f32; 3]>()
-        // );
+        mesh.compute_tangents();
         mesh
     }
 }
@@ -835,5 +903,23 @@ fn compute_tangents<T: IndexType>(
         let n = Vec3::from(normals[i]);
         let t_perp = t - n * t.dot(n);
         tangents[i] = Vec4::from((t_perp, n.dot(t.cross(b)).signum()));
+    }
+}
+
+fn compute_normals<T: IndexType>(positions: &[[f32; 3]], indices: &[T], normals: &mut [Vec3]) {
+    for tri in indices.chunks(3) {
+        let (tri0, tri1, tri2) = (tri[0].as_usize(), tri[1].as_usize(), tri[2].as_usize());
+        let v0 = glam::Vec3::from(positions[tri0]);
+        let v1 = glam::Vec3::from(positions[tri1]);
+        let v2 = glam::Vec3::from(positions[tri2]);
+        let e1 = v1 - v0;
+        let e2 = v2 - v0;
+        let normal = e1.cross(e2).normalize();
+        normals[tri0] += normal;
+        normals[tri1] += normal;
+        normals[tri2] += normal;
+    }
+    for normal in normals.iter_mut() {
+        *normal = normal.normalize();
     }
 }

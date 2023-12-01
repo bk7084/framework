@@ -29,6 +29,8 @@ pub use context::*;
 // render calls, which is a bit slow if we iterate over all of them every frame,
 // but render bundles can speed this up.
 
+// Currently, we only support instancing for meshes (not materials).
+
 /// Shading mode.
 #[pyo3::pyclass]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]

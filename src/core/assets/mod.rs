@@ -256,7 +256,7 @@ impl AssetBundle<Texture, Vec<Option<Texture>>> {
             dimension: wgpu::TextureDimension::D2,
             format: format.unwrap_or(TextureFormat::Rgba8UnormSrgb),
             usage: wgpu::TextureUsages::COPY_DST | wgpu::TextureUsages::TEXTURE_BINDING,
-            view_formats: &[TextureFormat::Rgba8UnormSrgb],
+            view_formats: &[],
         };
         let raw = device.create_texture(&desc);
         let view = raw.create_view(&wgpu::TextureViewDescriptor::default());

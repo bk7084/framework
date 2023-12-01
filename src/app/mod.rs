@@ -174,8 +174,9 @@ impl PyAppState {
     }
 
     /// Adds a mesh to the scene.
+    // TODO: pass transform as an argument.
     #[pyo3(name = "add_mesh")]
-    pub fn add_mesh_py(&mut self, mesh: &Mesh) -> PyEntity {
+    pub fn add_mesh_py(&mut self, mesh: &mut Mesh) -> PyEntity {
         let entity = self.spawn_object_with_mesh(NodeIdx::root(), mesh);
         PyEntity {
             entity,
@@ -240,14 +241,14 @@ impl PyAppState {
     /// Spawn an object with the given mesh and parent.
     ///
     /// Returns the entity ID of the spawned object.
-    pub fn spawn_object_with_mesh(&mut self, parent: NodeIdx, mesh: &Mesh) -> Entity {
+    pub fn spawn_object_with_mesh(&mut self, parent: NodeIdx, mesh: &mut Mesh) -> Entity {
         log::debug!("Spawning object with mesh#{}", mesh.id);
         // TODO: validate the mesh before spawning.
+        mesh.validate();
         self.renderer
             .write()
             .map(|mut renderer| {
                 let (mesh_hdl, instanced) = renderer.upload_mesh(mesh);
-
                 let entity = if instanced {
                     // TODO: instancing with different materials.
                     log::debug!("Spawning instanced object with mesh#{}", mesh.id);
