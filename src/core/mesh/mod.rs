@@ -278,8 +278,8 @@ impl Mesh {
 
     /// Sets the materials of the mesh.
     #[setter]
-    pub fn set_materials(&mut self, materials: Vec<Material>) {
-        self.materials = Some(materials);
+    pub fn set_materials(&mut self, materials: Option<Vec<Material>>) {
+        self.materials = materials;
     }
 
     /// Returns the materials of the mesh.

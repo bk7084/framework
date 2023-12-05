@@ -1,4 +1,4 @@
-use crate::core::FxHashMap;
+use crate::core::{FxHashMap, SmlString};
 
 /// Pipeline kind.
 #[pyo3::pyclass]
@@ -12,13 +12,15 @@ pub enum PipelineKind {
 
 /// Key used to identify a pipeline with a specific configuration.
 ///
-/// The first 1 bit is used to identify the pipeline kind (0 = render, 1 =
-/// compute). The next 3 bits are used to identify the primitive topology.
+/// - [0]: the pipeline kind (0 = render, 1 = compute).
+/// - [1..4]: primitive topology.
+/// - [4..6]: polygon mode (0 = fill, 1 = line, 2 = point).
+/// - [6..8]: cull mode (0 = front, 1 = back, 2 = none).
 ///
 ///
-/// [0..1]       [1..4]                [4..6]
-/// PipelineType Primitive topology    Polygon mode
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+/// [0..1]       [1..4]                [4..6]         [6..8]
+/// PipelineType Primitive topology    Polygon mode   Cull mode
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct PipelineId(u64);
 
 impl PipelineId {
@@ -66,12 +68,37 @@ impl PipelineId {
             _ => unreachable!(),
         }
     }
+
+    /// Returns the cull mode.
+    pub fn cull_mode(&self) -> Option<wgpu::Face> {
+        match (self.0 >> 56) & 0b11 {
+            0 => Some(wgpu::Face::Front),
+            1 => Some(wgpu::Face::Back),
+            2 => None,
+            _ => unreachable!(),
+        }
+    }
+
+    pub fn from_states(
+        kind: PipelineKind,
+        topology: wgpu::PrimitiveTopology,
+        polygon_mode: wgpu::PolygonMode,
+        cull_mode: Option<wgpu::Face>,
+    ) -> Self {
+        PipelineIdBuilder::default()
+            .with_kind(kind)
+            .with_topology(topology)
+            .with_polygon_mode(polygon_mode)
+            .with_cull_mode(cull_mode)
+            .build()
+    }
 }
 
 pub struct PipelineIdBuilder {
     kind: PipelineKind,
     topology: wgpu::PrimitiveTopology,
     polygon_mode: wgpu::PolygonMode,
+    cull_mode: Option<wgpu::Face>,
 }
 
 impl Default for PipelineIdBuilder {
@@ -80,6 +107,7 @@ impl Default for PipelineIdBuilder {
             kind: PipelineKind::Render,
             topology: wgpu::PrimitiveTopology::TriangleList,
             polygon_mode: wgpu::PolygonMode::Fill,
+            cull_mode: None,
         }
     }
 }
@@ -90,6 +118,11 @@ impl PipelineIdBuilder {
             (self.kind as u64) << 63
                 | (self.topology as u64) << 60
                 | (self.polygon_mode as u64) << 58
+                | (self.cull_mode.map_or(2, |c| match c {
+                    wgpu::Face::Front => 0,
+                    wgpu::Face::Back => 1,
+                }) as u64)
+                    << 56
                 | 0u64,
         )
     }
@@ -108,20 +141,19 @@ impl PipelineIdBuilder {
         self.polygon_mode = polygon_mode;
         self
     }
+
+    pub fn with_cull_mode(mut self, cull_mode: Option<wgpu::Face>) -> Self {
+        self.cull_mode = cull_mode;
+        self
+    }
 }
 
 /// A collection of pipelines.
-pub struct Pipelines(pub(crate) FxHashMap<PipelineId, wgpu::RenderPipeline>);
+pub struct Pipelines(pub(crate) FxHashMap<SmlString, Vec<(PipelineId, wgpu::RenderPipeline)>>);
 
 impl Default for Pipelines {
     fn default() -> Self {
         Self::new()
-    }
-}
-
-impl Pipelines {
-    fn create_render_pipeline(&mut self) -> wgpu::RenderPipeline {
-        todo!()
     }
 }
 
@@ -132,12 +164,21 @@ impl Pipelines {
     }
 
     /// Returns the pipeline for the given key.
-    pub fn get(&self, key: PipelineId) -> Option<&wgpu::RenderPipeline> {
-        self.0.get(&key)
+    pub fn get(&self, label: &str, key: PipelineId) -> Option<&wgpu::RenderPipeline> {
+        let pipelines = self.0.get(label)?;
+        let index = pipelines.binary_search_by_key(&key, |(k, _)| *k).ok()?;
+        Some(&pipelines[index].1)
     }
 
-    /// Creates a new pipeline for the given key.
-    pub fn create(&mut self, _key: PipelineId) {}
+    pub fn insert(&mut self, label: &str, key: PipelineId, pipeline: wgpu::RenderPipeline) {
+        let pipelines = self.0.entry(label.into()).or_insert_with(Vec::new);
+        let index = pipelines.binary_search_by_key(&key, |(k, _)| *k);
+        match index {
+            Ok(index) => pipelines[index] = (key, pipeline),
+            Err(index) => pipelines.insert(index, (key, pipeline)),
+        }
+        pipelines.sort_by(|(k1, _), (k2, _)| k1.cmp(k2));
+    }
 }
 
 mod tests {
@@ -158,14 +199,18 @@ mod tests {
                 wgpu::PolygonMode::Point,
             ] {
                 for kind in [PipelineKind::Render, PipelineKind::Compute] {
-                    let id = PipelineId::builder()
-                        .with_topology(topology)
-                        .with_polygon_mode(polygon_mode)
-                        .with_kind(kind)
-                        .build();
-                    assert_eq!(id.topology(), topology);
-                    assert_eq!(id.polygon_mode(), polygon_mode);
-                    assert_eq!(id.kind(), kind);
+                    for cull_mode in [Some(wgpu::Face::Front), Some(wgpu::Face::Back), None] {
+                        let id = PipelineId::builder()
+                            .with_topology(topology)
+                            .with_polygon_mode(polygon_mode)
+                            .with_kind(kind)
+                            .with_cull_mode(cull_mode)
+                            .build();
+                        assert_eq!(id.topology(), topology);
+                        assert_eq!(id.polygon_mode(), polygon_mode);
+                        assert_eq!(id.kind(), kind);
+                        assert_eq!(id.cull_mode(), cull_mode);
+                    }
                 }
             }
         }

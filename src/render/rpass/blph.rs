@@ -10,7 +10,7 @@ use crate::{
             LightsBindGroup, Locals, LocalsBindGroup, PConsts, PntLight, PntLightArray,
             RenderingPass, DEPTH_FORMAT,
         },
-        RenderTarget, Renderer, ShadingMode,
+        PipelineId, PipelineKind, Pipelines, RenderParams, RenderTarget, Renderer, ShadingMode,
     },
     scene::{NodeIdx, Nodes, Scene},
 };
@@ -285,13 +285,19 @@ impl BlinnPhongRenderPass {
             }],
         });
 
-        let pipeline = Self::create_pipeline(
-            device,
-            &pipeline_layout,
-            format,
-            &shader_module,
-            wgpu::PolygonMode::Fill,
-        );
+        let mut pipelines = Pipelines::new();
+
+        for cull_mode in [Some(wgpu::Face::Back), None] {
+            let (id, pipeline) = Self::create_pipeline(
+                device,
+                &pipeline_layout,
+                format,
+                &shader_module,
+                wgpu::PolygonMode::Fill,
+                cull_mode,
+            );
+            pipelines.insert("entity", id, pipeline);
+        }
 
         Self {
             depth_att: None,
@@ -300,7 +306,7 @@ impl BlinnPhongRenderPass {
             materials_bind_group_layout,
             textures_bind_group_layout,
             lights_bind_group,
-            entity_pipeline: pipeline,
+            pipelines,
         }
     }
 
@@ -310,8 +316,15 @@ impl BlinnPhongRenderPass {
         output_format: wgpu::TextureFormat,
         shader_module: &wgpu::ShaderModule,
         polygon_mode: wgpu::PolygonMode,
-    ) -> wgpu::RenderPipeline {
-        device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+        cull_mode: Option<wgpu::Face>,
+    ) -> (PipelineId, wgpu::RenderPipeline) {
+        let id = PipelineId::from_states(
+            PipelineKind::Render,
+            wgpu::PrimitiveTopology::TriangleList,
+            polygon_mode,
+            cull_mode,
+        );
+        let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: Some("blinn_phong_shading_pipeline"),
             layout: Some(layout),
             vertex: wgpu::VertexState {
@@ -391,7 +404,7 @@ impl BlinnPhongRenderPass {
             primitive: wgpu::PrimitiveState {
                 topology: wgpu::PrimitiveTopology::TriangleList,
                 front_face: wgpu::FrontFace::Ccw,
-                cull_mode: Some(wgpu::Face::Back),
+                cull_mode,
                 polygon_mode,
                 ..Default::default()
             },
@@ -408,7 +421,8 @@ impl BlinnPhongRenderPass {
                 alpha_to_coverage_enabled: false,
             },
             multiview: None,
-        })
+        });
+        (id, pipeline)
     }
 }
 pub fn texture_bundle_bind_group_layout(device: &wgpu::Device) -> wgpu::BindGroupLayout {
@@ -452,12 +466,11 @@ impl RenderingPass for BlinnPhongRenderPass {
     fn record(
         &mut self,
         renderer: &Renderer,
-        target: &RenderTarget,
+        params: &RenderParams,
         scene: &Scene,
         device: &wgpu::Device,
         queue: &wgpu::Queue,
         encoder: &mut wgpu::CommandEncoder,
-        _mode: ShadingMode, // TODO: support shading mode.
     ) {
         profiling::scope!("BlinnPhongShading::record");
         let (view_mat, clear_color) = {
@@ -488,7 +501,7 @@ impl RenderingPass for BlinnPhongRenderPass {
             };
 
             let view_mat = scene.nodes.inverse_world(*node_idx).to_mat4();
-            let proj = camera.proj_matrix(target.aspect_ratio());
+            let proj = camera.proj_matrix(params.target.aspect_ratio());
             let globals = Globals {
                 view: view_mat.to_cols_array(),
                 proj: proj.to_cols_array(),
@@ -505,13 +518,13 @@ impl RenderingPass for BlinnPhongRenderPass {
             // (Re-)create depth texture if necessary.
             let need_recreate = match &self.depth_att {
                 None => true,
-                Some(depth) => target.size != depth.0.size(),
+                Some(depth) => params.target.size != depth.0.size(),
             };
 
             if need_recreate {
                 let texture = device.create_texture(&wgpu::TextureDescriptor {
                     label: Some("wireframe_depth_texture"),
-                    size: target.size,
+                    size: params.target.size,
                     mip_level_count: 1,
                     sample_count: 1,
                     dimension: wgpu::TextureDimension::D2,
@@ -529,7 +542,7 @@ impl RenderingPass for BlinnPhongRenderPass {
         let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("blinn_phong_render_pass"),
             color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                view: &target.view,
+                view: &params.target.view,
                 resolve_target: None,
                 ops: wgpu::Operations {
                     load: wgpu::LoadOp::Clear(*clear_color),
@@ -547,6 +560,8 @@ impl RenderingPass for BlinnPhongRenderPass {
             timestamp_writes: None,
             occlusion_query_set: None,
         });
+
+        let pipeline = self.pipelines.get("entity", )
 
         render_pass.set_pipeline(&self.entity_pipeline);
         render_pass.set_bind_group(0, &self.globals_bind_group, &[]);

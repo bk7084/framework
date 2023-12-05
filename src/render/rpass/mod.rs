@@ -2,7 +2,7 @@ mod blph;
 mod skybox;
 
 use crate::{
-    render::{RenderTarget, Renderer, ShadingMode},
+    render::{Pipelines, RenderParams, RenderTarget, Renderer, ShadingMode},
     scene::Scene,
 };
 pub use blph::*;
@@ -204,12 +204,11 @@ pub trait RenderingPass {
     fn record(
         &mut self,
         renderer: &Renderer,
-        target: &RenderTarget,
+        params: &RenderParams,
         scene: &Scene,
         device: &wgpu::Device,
         queue: &wgpu::Queue,
         encoder: &mut wgpu::CommandEncoder,
-        mode: ShadingMode,
     );
 }
 
@@ -225,8 +224,8 @@ pub struct BlinnPhongRenderPass {
     pub textures_bind_group_layout: wgpu::BindGroupLayout,
     /// The lights bind group.
     pub lights_bind_group: LightsBindGroup,
-    /// The render pipeline for rendering entities.
-    pub entity_pipeline: wgpu::RenderPipeline,
+    /// The pipelines.
+    pub pipelines: Pipelines,
 }
 
 impl BlinnPhongRenderPass {

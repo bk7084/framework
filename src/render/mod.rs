@@ -45,12 +45,20 @@ pub enum ShadingMode {
     BlinnPhong,
 }
 
+pub struct RenderParams {
+    /// Shading mode.
+    pub mode: ShadingMode,
+    /// Information about the render target.
+    pub target: RenderTarget,
+    /// Whether to enable face culling (back face).
+    pub face_culling: bool,
+}
+
 pub struct Renderer {
     device: Arc<wgpu::Device>,
     queue: Arc<wgpu::Queue>,
     features: wgpu::Features,
     limits: wgpu::Limits,
-    pipelines: Pipelines,
     meshes: GpuMeshAssets,
     textures: TextureAssets,
     material_bundles: MaterialBundleAssets,
@@ -120,7 +128,6 @@ impl Renderer {
             queue,
             features,
             limits,
-            pipelines: Pipelines::new(),
             meshes,
             material_bundles,
             textures,
