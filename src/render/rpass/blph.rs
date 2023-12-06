@@ -288,15 +288,17 @@ impl BlinnPhongRenderPass {
         let mut pipelines = Pipelines::new();
 
         for cull_mode in [Some(wgpu::Face::Back), None] {
-            let (id, pipeline) = Self::create_pipeline(
-                device,
-                &pipeline_layout,
-                format,
-                &shader_module,
-                wgpu::PolygonMode::Fill,
-                cull_mode,
-            );
-            pipelines.insert("entity", id, pipeline);
+            for polygon_mode in [wgpu::PolygonMode::Fill, wgpu::PolygonMode::Line] {
+                let (id, pipeline) = Self::create_pipeline(
+                    device,
+                    &pipeline_layout,
+                    format,
+                    &shader_module,
+                    polygon_mode,
+                    cull_mode,
+                );
+                pipelines.insert("entity", id, pipeline);
+            }
         }
 
         Self {
@@ -466,6 +468,7 @@ impl RenderingPass for BlinnPhongRenderPass {
     fn record(
         &mut self,
         renderer: &Renderer,
+        target: &RenderTarget,
         params: &RenderParams,
         scene: &Scene,
         device: &wgpu::Device,
@@ -501,7 +504,7 @@ impl RenderingPass for BlinnPhongRenderPass {
             };
 
             let view_mat = scene.nodes.inverse_world(*node_idx).to_mat4();
-            let proj = camera.proj_matrix(params.target.aspect_ratio());
+            let proj = camera.proj_matrix(target.aspect_ratio());
             let globals = Globals {
                 view: view_mat.to_cols_array(),
                 proj: proj.to_cols_array(),
@@ -518,13 +521,13 @@ impl RenderingPass for BlinnPhongRenderPass {
             // (Re-)create depth texture if necessary.
             let need_recreate = match &self.depth_att {
                 None => true,
-                Some(depth) => params.target.size != depth.0.size(),
+                Some(depth) => target.size != depth.0.size(),
             };
 
             if need_recreate {
                 let texture = device.create_texture(&wgpu::TextureDescriptor {
                     label: Some("wireframe_depth_texture"),
-                    size: params.target.size,
+                    size: target.size,
                     mip_level_count: 1,
                     sample_count: 1,
                     dimension: wgpu::TextureDimension::D2,
@@ -542,7 +545,7 @@ impl RenderingPass for BlinnPhongRenderPass {
         let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("blinn_phong_render_pass"),
             color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                view: &params.target.view,
+                view: &target.view,
                 resolve_target: None,
                 ops: wgpu::Operations {
                     load: wgpu::LoadOp::Clear(*clear_color),
@@ -561,9 +564,30 @@ impl RenderingPass for BlinnPhongRenderPass {
             occlusion_query_set: None,
         });
 
-        let pipeline = self.pipelines.get("entity", )
+        let pipeline = self.pipelines.get_all_filtered("entity", |id| {
+            let cull_mode = if params.back_face_culling {
+                Some(wgpu::Face::Back)
+            } else {
+                None
+            };
+            let polygon_mode = if params.wireframe {
+                wgpu::PolygonMode::Line
+            } else {
+                wgpu::PolygonMode::Fill
+            };
+            id.cull_mode() == cull_mode && id.polygon_mode() == polygon_mode
+        });
 
-        render_pass.set_pipeline(&self.entity_pipeline);
+        match pipeline {
+            None => {
+                log::error!("Missing pipeline for entity shading!");
+                return;
+            }
+            Some(pipelines) => {
+                render_pass.set_pipeline(&pipelines[0]);
+            }
+        }
+
         render_pass.set_bind_group(0, &self.globals_bind_group, &[]);
 
         {
@@ -610,12 +634,12 @@ impl RenderingPass for BlinnPhongRenderPass {
         let mut locals_offset = 0u32;
         for bundle in mesh_bundles {
             // Update locals.
-            let instancing = renderer
+            let instances = renderer
                 .instancing
-                .get(&bundle.mesh)
+                .get(&bundle)
                 .expect("Unreachable! Instancing should be created for all meshes!");
             let mut inst_count = 0;
-            for (i, node_idx) in instancing.nodes.iter().enumerate() {
+            for (i, node_idx) in instances.iter().enumerate() {
                 let node = &scene.nodes[*node_idx];
                 if !node.is_visible() {
                     continue;
@@ -647,8 +671,14 @@ impl RenderingPass for BlinnPhongRenderPass {
             locals_offset += inst_count;
             let inst_range = 0..inst_count;
 
-            let mtls = renderer.material_bundles.get(bundle.materials).unwrap();
-            let texs = renderer.texture_bundles.get(bundle.textures).unwrap();
+            let mtls = renderer
+                .material_bundles
+                .get(bundle.aesthetic.materials)
+                .unwrap();
+            let texs = renderer
+                .texture_bundles
+                .get(bundle.aesthetic.textures)
+                .unwrap();
 
             match renderer.meshes.get(bundle.mesh) {
                 None => {

@@ -1,6 +1,9 @@
-use crate::{color, core::Color};
+use crate::{
+    color,
+    core::{Color, FxHasher},
+};
 use crossbeam_channel::Receiver;
-use std::{collections::hash_map::Entry, path::Path, sync::Arc};
+use std::{collections::hash_map::Entry, hash::Hasher, path::Path, sync::Arc};
 use wgpu::util::DeviceExt;
 
 mod context;
@@ -15,8 +18,11 @@ pub use target::*;
 use crate::{
     app::command::{Command, CommandReceiver},
     core::{
-        assets::{GpuMeshAssets, Handle, MaterialBundleAssets, TextureAssets, TextureBundleAssets},
-        mesh::{GpuMesh, Mesh, MeshBundle},
+        assets::{
+            GpuMeshAssets, Handle, MaterialAssets, MaterialBundleAssets, TextureAssets,
+            TextureBundleAssets,
+        },
+        mesh::{AestheticBundle, GpuMesh, Mesh, MeshBundle},
         FxHashMap, GpuMaterial, Material, MaterialBundle, SmlString, Texture, TextureBundle,
         TextureType,
     },
@@ -35,8 +41,6 @@ pub use context::*;
 #[pyo3::pyclass]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum ShadingMode {
-    /// Wireframe, no lighting.
-    Wireframe,
     /// Flat shading.
     Flat,
     /// Gouraud shading.
@@ -48,10 +52,12 @@ pub enum ShadingMode {
 pub struct RenderParams {
     /// Shading mode.
     pub mode: ShadingMode,
-    /// Information about the render target.
-    pub target: RenderTarget,
-    /// Whether to enable face culling (back face).
-    pub face_culling: bool,
+    /// Whether to enable back face culling.
+    pub back_face_culling: bool,
+    /// Whether to enable occlusion culling. TODO: implement occlusion culling.
+    pub occlusion_culling: bool,
+    /// Whether to draw wireframe.
+    pub wireframe: bool,
 }
 
 pub struct Renderer {
@@ -61,14 +67,19 @@ pub struct Renderer {
     limits: wgpu::Limits,
     meshes: GpuMeshAssets,
     textures: TextureAssets,
+
     material_bundles: MaterialBundleAssets,
     texture_bundles: TextureBundleAssets,
-    default_texture: Handle<Texture>,
+
+    // TODO: remove these default bundles, make them inside the assets.
     default_material_bundle: Handle<MaterialBundle>,
     default_texture_bundle: Handle<TextureBundle>,
-    mesh_bundles: FxHashMap<Handle<GpuMesh>, MeshBundle>,
-    instancing: FxHashMap<Handle<GpuMesh>, Instancing>,
+    aesthetic_bundles: Vec<AestheticBundle>,
+    /// Nodes that use instancing for each mesh bundle.
+    instancing: FxHashMap<MeshBundle, Vec<NodeIdx>>,
+
     samplers: FxHashMap<SmlString, wgpu::Sampler>,
+    params: RenderParams,
     cmd_receiver: Receiver<Command>,
 }
 
@@ -84,10 +95,7 @@ impl Renderer {
         let features = context.features;
         let limits = context.limits.clone();
         let meshes = GpuMeshAssets::new(&device);
-        let mut textures = TextureAssets::new();
-        let bytes = include_bytes!("../../data/textures/checker.png");
-        let default_texture =
-            textures.load_from_bytes(&context.device, &context.queue, bytes, None, None);
+        let mut textures = TextureAssets::new(&context.device, &context.queue);
         let mut samplers = FxHashMap::default();
         let default_sampler = context.device.create_sampler(&wgpu::SamplerDescriptor {
             label: Some("sampler_default"),
@@ -117,7 +125,7 @@ impl Renderer {
             material_bundles.add(MaterialBundle::default(&context.device));
         let mut texture_bundles = TextureBundleAssets::new();
         let default_texture_bundle = texture_bundles.add(TextureBundle {
-            textures: vec![default_texture],
+            textures: vec![textures.default_texture()],
             samplers: vec!["default".into()],
             bind_group: None,
             sampler_index_buffer: None,
@@ -133,47 +141,97 @@ impl Renderer {
             textures,
             default_material_bundle,
             default_texture_bundle,
-            mesh_bundles: FxHashMap::default(),
+            aesthetic_bundles: vec![],
             instancing: FxHashMap::default(),
             samplers,
+            params: RenderParams {
+                mode: ShadingMode::BlinnPhong,
+                back_face_culling: true,
+                occlusion_culling: false,
+                wireframe: false,
+            },
             cmd_receiver: receiver,
             texture_bundles,
-            default_texture,
         }
     }
 
     /// Uploads a mesh to the GPU, creates `GpuMesh` from `Mesh` then adds it to
     /// the renderer.
-    pub fn upload_mesh(&mut self, mesh: &Mesh) -> (Handle<GpuMesh>, bool) {
-        log::debug!("Uploading mesh#{}", mesh.id);
-        self.meshes.add(&self.device, &self.queue, mesh)
+    pub fn upload_mesh(&mut self, mesh: &Mesh) -> MeshBundle {
+        log::debug!("Uploading mesh#{}", mesh.name);
+        log::debug!("Mesh materials: {:?}", mesh.materials);
+
+        let (mesh_hdl, exists) = self.meshes.add(&self.device, &self.queue, mesh);
+        // Upload materials and create a material bundle.
+        match &mesh.materials {
+            None => {
+                log::info!("Mesh#{} has no materials, use default.", mesh.name);
+                MeshBundle {
+                    mesh: mesh_hdl,
+                    aesthetic: AestheticBundle {
+                        materials: self.default_material_bundle,
+                        textures: self.default_texture_bundle,
+                    },
+                }
+            }
+            Some(materials) => {
+                let aesthetic = self.upload_materials(materials);
+                log::info!("Mesh#{} uses aesthetic: {:?}", mesh.name, aesthetic);
+                MeshBundle {
+                    mesh: mesh_hdl,
+                    aesthetic,
+                }
+            }
+        }
     }
 
     /// Creates a bundle of materials and a bundle of textures from a list of
     /// materials.
-    pub fn upload_materials(
-        &mut self,
-        materials: Option<&Vec<Material>>,
-    ) -> (Handle<MaterialBundle>, Handle<TextureBundle>) {
-        log::debug!("materials: {:?}", materials);
-        match materials {
-            None => {
-                // Mesh has no material, use default material.
-                log::debug!("Using default material and texture bundles");
-                (self.default_material_bundle, self.default_texture_bundle)
+    fn upload_materials(&mut self, materials: &Vec<Material>) -> AestheticBundle {
+        let materials_name_hashes = materials
+            .iter()
+            .map(|mtl| {
+                let mut hasher = FxHasher::default();
+                hasher.write(mtl.name.as_bytes());
+                hasher.finish()
+            })
+            .collect::<Vec<_>>();
+        log::debug!(
+            "Try to find material name hashes: {:?}",
+            materials_name_hashes
+        );
+        let mut aesthetic_bundle = None;
+        for bundle in &self.aesthetic_bundles {
+            let material_bundle = self.material_bundles.get(bundle.materials).unwrap();
+            if material_bundle.materials.len() - 1 != materials.len() {
+                continue;
             }
-            Some(mtls) => {
+            if materials_name_hashes
+                .iter()
+                .all(|mtl| material_bundle.materials.contains(mtl))
+            {
+                log::debug!("Found existing material bundle: {:?}", bundle);
+                aesthetic_bundle = Some(bundle);
+                break;
+            }
+        }
+
+        match aesthetic_bundle {
+            Some(bundle) => *bundle,
+            None => {
+                log::debug!("No existing material bundle found, create a new one.");
+                let default_material = Material::default();
                 // Material bundle size is the number of materials + 1 (for the
-                // default material).
+                // default material, last one).
+                let mtls = materials.iter().chain(std::iter::once(&default_material));
                 let mut gpu_mtls = mtls
-                    .iter()
-                    .chain(std::iter::once(&Material::default()))
+                    .clone()
                     .map(|mtl| GpuMaterial::from_material(mtl))
                     .collect::<Vec<_>>();
 
                 // Load textures and create a bundle of textures.
                 let mut textures = Vec::new();
-                for (mtl, gpu_mtl) in mtls.iter().zip(gpu_mtls.iter_mut()) {
+                for (mtl, gpu_mtl) in mtls.clone().zip(gpu_mtls.iter_mut()) {
                     for (tex_ty, tex_path) in mtl.textures.iter() {
                         let format = match tex_ty {
                             TextureType::MapNorm => Some(wgpu::TextureFormat::Rgba8Unorm),
@@ -214,10 +272,11 @@ impl Renderer {
                         }
                     }
                 }
+
                 log::debug!("loaded textures: {:?}", textures);
                 log::debug!("GpuMaterials to be uploaded: {:?}", gpu_mtls);
-                textures.push(self.default_texture);
-                let bundle = MaterialBundle::new(&self.device, &gpu_mtls);
+                textures.push(self.textures.default_texture());
+                let bundle = MaterialBundle::new(&self.device, mtls, &gpu_mtls);
                 let material_bundle = self.material_bundles.add(bundle);
                 let samplers = textures
                     .iter()
@@ -232,44 +291,45 @@ impl Renderer {
                     bind_group: None,
                     sampler_index_buffer: None,
                 });
-                (material_bundle, texture_bundle)
+                let aesthetic = AestheticBundle {
+                    materials: material_bundle,
+                    textures: texture_bundle,
+                };
+                self.aesthetic_bundles.push(aesthetic);
+                aesthetic
             }
         }
     }
 
-    /// Gets a mesh bundle.
-    pub fn get_mesh_bundle(&self, mesh: Handle<GpuMesh>) -> Option<MeshBundle> {
-        self.mesh_bundles.get(&mesh).cloned()
-    }
-
-    pub fn insert_mesh_bundle(&mut self, mesh: Handle<GpuMesh>, bundle: MeshBundle) {
-        self.mesh_bundles.insert(mesh, bundle);
-    }
+    // /// Gets a mesh bundle.
+    // pub fn get_mesh_bundle(&self, mesh: Handle<GpuMesh>) -> Option<MeshBundle> {
+    //     self.mesh_bundles.get(&mesh).cloned()
+    // }
+    //
+    // pub fn insert_mesh_bundle(&mut self, mesh: Handle<GpuMesh>, bundle:
+    // MeshBundle) {     self.mesh_bundles.insert(mesh, bundle);
+    // }
 
     /// Adds a new instancing data for a mesh.
-    pub fn add_instancing(&mut self, mesh: Handle<GpuMesh>, nodes: &[NodeIdx]) {
+    pub fn add_instancing(&mut self, mesh: MeshBundle, nodes: &[NodeIdx]) {
         if nodes.is_empty() {
             return;
         }
         match self.instancing.entry(mesh) {
             Entry::Occupied(mut instancing) => {
-                instancing.get_mut().nodes.extend(nodes.iter());
+                instancing.get_mut().extend(nodes.iter());
             }
             Entry::Vacant(_) => {
-                self.instancing.insert(
-                    mesh,
-                    Instancing {
-                        nodes: nodes.to_vec(),
-                    },
-                );
+                self.instancing.insert(mesh, nodes.to_vec());
             }
         }
+        log::debug!("Instancing: {:?}", self.instancing);
     }
 
     /// Removes one instancing data for a mesh.
-    pub fn remove_instancing(&mut self, mesh: Handle<GpuMesh>, node: NodeIdx) {
-        if let Some(instancing) = self.instancing.get_mut(&mesh) {
-            instancing.nodes.retain(|n| *n != node);
+    pub fn remove_instancing(&mut self, mesh: MeshBundle, node: NodeIdx) {
+        if let Some(nodes) = self.instancing.get_mut(&mesh) {
+            nodes.retain(|n| *n != node);
         }
     }
 
@@ -285,8 +345,20 @@ impl Renderer {
     /// Prepares the renderer for rendering.
     pub fn prepare(&mut self) {
         profiling::scope!("Renderer::prepare");
+        while let Ok(cmd) = self.cmd_receiver.try_recv() {
+            match cmd {
+                Command::EnableBackfaceCulling(enable) => {
+                    self.params.back_face_culling = enable;
+                }
+                Command::EnableWireframe(enable) => {
+                    self.params.wireframe = enable;
+                }
+                _ => {}
+            }
+        }
+
         let mut sampler_indices = [0u32; BlinnPhongRenderPass::MAX_TEXTURE_ARRAY_LEN];
-        let default_texture = self.textures.get(self.default_texture).unwrap();
+        let default_texture = self.textures.get(self.textures.default_texture()).unwrap();
         let default_sampler = self.samplers.get("default").unwrap();
         let default_texture_view = &default_texture.view;
         // Create bind groups for each texture bundle.
@@ -358,7 +430,6 @@ impl Renderer {
         scene: &Scene,
         target: &RenderTarget,
         rpass: &mut dyn RenderingPass,
-        mode: ShadingMode,
     ) -> Result<(), wgpu::SurfaceError> {
         profiling::scope!("Renderer::render");
         let mut encoder = self
@@ -370,21 +441,14 @@ impl Renderer {
         rpass.record(
             self,
             target,
+            &self.params,
             scene,
             &self.device,
             &self.queue,
             &mut encoder,
-            mode,
         );
 
         self.queue.submit(std::iter::once(encoder.finish()));
         Ok(())
     }
-}
-
-/// Instancing information for a mesh.
-#[derive(Clone, Debug, Default)]
-pub struct Instancing {
-    /// Nodes that use this mesh.
-    pub nodes: Vec<NodeIdx>,
 }

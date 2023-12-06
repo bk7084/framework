@@ -106,8 +106,8 @@ impl GpuMeshStorage {
         };
 
         GpuMesh {
-            mesh_id: mesh.id,
-            mesh_path: mesh.path.clone(),
+            name: mesh.name.clone(),
+            path: mesh.path.clone(),
             topology: mesh.topology,
             vertex_attribute_ranges,
             vertex_count: vertex_count as u32,

@@ -1,6 +1,4 @@
 use glam::{Vec3, Vec4};
-use numpy as np;
-use pyo3::Python;
 use rustc_hash::FxHashMap;
 use std::{
     fmt::Debug,
@@ -8,69 +6,18 @@ use std::{
     path::{Path, PathBuf},
     sync::atomic::AtomicU64,
 };
+use wgpu::PrimitiveTopology;
 
 mod attribute;
 
+#[path = "mesh_py.rs"]
+pub mod py;
+
 use crate::core::{
     assets::{Asset, Handle},
-    Alignment, Material, MaterialBundle, TextureBundle,
+    Alignment, Material, MaterialBundle, SmlString, TextureBundle,
 };
 pub use attribute::*;
-
-/// Topology of a mesh primitive.
-#[pyo3::pyclass]
-#[pyo3(name = "Topology")]
-#[derive(Copy, Clone, Debug, Default, Hash, Eq, PartialEq)]
-pub enum PyTopology {
-    /// Vertex data is a list of points. Each vertex is a new point.
-    PointList = 0,
-    /// Vertex data is a list of lines. Each pair of vertices composes a new
-    /// line.
-    ///
-    /// Vertices `0 1 2 3` create two lines `0 1` and `2 3`
-    LineList = 1,
-    /// Vertex data is a strip of lines. Each set of two adjacent vertices form
-    /// a line.
-    ///
-    /// Vertices `0 1 2 3` create three lines `0 1`, `1 2`, and `2 3`.
-    LineStrip = 2,
-    /// Vertex data is a list of triangles. Each set of 3 vertices composes a
-    /// new triangle.
-    ///
-    /// Vertices `0 1 2 3 4 5` create two triangles `0 1 2` and `3 4 5`
-    #[default]
-    TriangleList = 3,
-    /// Vertex data is a triangle strip. Each set of three adjacent vertices
-    /// form a triangle.
-    ///
-    /// Vertices `0 1 2 3 4 5` create four triangles `0 1 2`, `2 1 3`, `2 3 4`,
-    /// and `4 3 5`
-    TriangleStrip = 4,
-}
-
-impl From<wgpu::PrimitiveTopology> for PyTopology {
-    fn from(topology: wgpu::PrimitiveTopology) -> Self {
-        match topology {
-            wgpu::PrimitiveTopology::PointList => Self::PointList,
-            wgpu::PrimitiveTopology::LineList => Self::LineList,
-            wgpu::PrimitiveTopology::LineStrip => Self::LineStrip,
-            wgpu::PrimitiveTopology::TriangleList => Self::TriangleList,
-            wgpu::PrimitiveTopology::TriangleStrip => Self::TriangleStrip,
-        }
-    }
-}
-
-impl From<PyTopology> for wgpu::PrimitiveTopology {
-    fn from(value: PyTopology) -> Self {
-        match value {
-            PyTopology::PointList => Self::PointList,
-            PyTopology::LineList => Self::LineList,
-            PyTopology::LineStrip => Self::LineStrip,
-            PyTopology::TriangleList => Self::TriangleList,
-            PyTopology::TriangleStrip => Self::TriangleStrip,
-        }
-    }
-}
 
 pub trait IndexType: Copy + Debug {
     fn as_u32(&self) -> u32;
@@ -152,12 +99,37 @@ pub struct SubMesh {
 
 #[pyo3::pymethods]
 impl SubMesh {
+    /// Creates a new submesh from a range of indices of triangles.
     #[new]
+    pub fn new_py(start: u32, end: u32, index: u32) -> Self {
+        Self {
+            range: start * 3..end * 3,
+            material: Some(index),
+        }
+    }
+}
+
+impl SubMesh {
+    /// Creates a new submesh.
+    ///
+    /// Note: the range is in number of indices, not vertices.
+    ///
+    /// # Arguments
+    ///
+    /// * `start` - The start index of the submesh.
+    /// * `end` - The end index of the submesh.
+    /// * `index` - The material index of the submesh (index into the material
+    /// array of the mesh).
     pub fn new(start: u32, end: u32, index: u32) -> Self {
         Self {
             range: start..end,
             material: Some(index),
         }
+    }
+
+    /// Returns the number of indices in the submesh.
+    pub fn len(&self) -> usize {
+        self.range.end as usize - self.range.start as usize
     }
 }
 
@@ -167,9 +139,10 @@ static MESH_ID: AtomicU64 = AtomicU64::new(0);
 /// A mesh is a collection of vertices with optional indices and materials.
 /// Vertices can have different attributes such as position, normal, uv, etc.
 #[pyo3::pyclass(subclass)]
+#[derive(Clone)]
 pub struct Mesh {
-    /// Unique id of the mesh.
-    pub(crate) id: u64,
+    /// Unique name of the mesh.
+    pub(crate) name: SmlString,
     /// Topology of the mesh primitive.
     pub(crate) topology: wgpu::PrimitiveTopology,
     /// Vertex attributes of the mesh.
@@ -187,241 +160,6 @@ pub struct Mesh {
 
 impl Asset for Mesh {}
 
-impl Clone for Mesh {
-    fn clone(&self) -> Self {
-        Self {
-            id: MESH_ID.fetch_add(1, std::sync::atomic::Ordering::Relaxed),
-            topology: self.topology,
-            attributes: self.attributes.clone(),
-            indices: self.indices.clone(),
-            sub_meshes: self.sub_meshes.clone(),
-            path: self.path.clone(),
-            materials: self.materials.clone(),
-        }
-    }
-}
-
-#[pyo3::pymethods]
-impl Mesh {
-    #[new]
-    #[pyo3(signature = (topology=PyTopology::TriangleList))]
-    pub fn new(topology: PyTopology) -> Self {
-        Self {
-            id: MESH_ID.fetch_add(1, std::sync::atomic::Ordering::Relaxed),
-            path: None,
-            topology: topology.into(),
-            attributes: VertexAttributes::default(),
-            indices: None,
-            sub_meshes: None,
-            materials: None,
-        }
-    }
-
-    #[staticmethod]
-    #[pyo3(name = "create_cube")]
-    pub fn new_cube_py(length: f32) -> Self {
-        Self::cube(length)
-    }
-
-    #[staticmethod]
-    #[pyo3(name = "create_quad")]
-    pub fn new_quad_py(length: f32, align: Alignment) -> Self {
-        Self::plane(length, align)
-    }
-
-    #[staticmethod]
-    #[pyo3(name = "create_sphere")]
-    pub fn new_sphere_py(radius: f32, segments: u32, rings: u32) -> Self {
-        Self::sphere(radius, segments, rings)
-    }
-
-    #[staticmethod]
-    #[pyo3(name = "create_triangle")]
-    pub fn new_triangle_py(
-        p0: &np::PyArray2<f32>,
-        p1: &np::PyArray2<f32>,
-        p2: &np::PyArray2<f32>,
-    ) -> Self {
-        log::debug!("Creating triangle.");
-        Python::with_gil(|_py| {
-            let v0 = Vec3::from_slice(p0.readonly().as_slice().unwrap());
-            let v1 = Vec3::from_slice(p1.readonly().as_slice().unwrap());
-            let v2 = Vec3::from_slice(p2.readonly().as_slice().unwrap());
-            Self::triangle(&[v0, v1, v2])
-        })
-    }
-
-    #[staticmethod]
-    #[pyo3(name = "load_from")]
-    pub fn load_from_py(path: &str) -> Self {
-        let path = PathBuf::from(path);
-        Self::load_from_obj(&path)
-    }
-
-    #[deprecated]
-    pub fn apply_material(&mut self, material: Material) {
-        self.set_material(material)
-    }
-
-    /// Applies a single material to the whole mesh.
-    pub fn set_material(&mut self, material: Material) {
-        if self.materials.is_none() {
-            self.materials = Some(Vec::new());
-        }
-        self.materials.as_mut().unwrap().push(material);
-        let material_index = self.materials.as_ref().unwrap().len() as u32 - 1;
-        self.sub_meshes = Some(vec![SubMesh {
-            range: 0..self.indices.as_ref().unwrap().len() as u32,
-            material: Some(material_index),
-        }]);
-    }
-
-    /// Sets the materials of the mesh.
-    #[setter]
-    pub fn set_materials(&mut self, materials: Option<Vec<Material>>) {
-        self.materials = materials;
-    }
-
-    /// Returns the materials of the mesh.
-    #[getter]
-    pub fn get_materials(&self) -> Option<Vec<Material>> {
-        self.materials.clone()
-    }
-
-    /// Appends a material to the current list of materials of the mesh.
-    pub fn append_material(&mut self, material: Material) -> u32 {
-        if self.materials.is_none() {
-            self.materials = Some(Vec::new());
-        }
-        self.materials.as_mut().unwrap().push(material);
-        self.materials.as_ref().unwrap().len() as u32 - 1
-    }
-
-    /// Appends a list of materials to the current list of materials of the
-    /// mesh.
-    pub fn append_materials(&mut self, materials: Vec<Material>) -> Vec<u32> {
-        if self.materials.is_none() {
-            self.materials = Some(Vec::new());
-        }
-        let existing = self.materials.as_mut().unwrap();
-        let base_index = existing.len() as u32;
-        let num = materials.len() as u32;
-        existing.extend(materials);
-        (base_index..base_index + num).collect()
-    }
-
-    /// Sets the submeshes of the mesh.
-    #[setter]
-    pub fn set_sub_meshes(&mut self, sub_meshes: Vec<SubMesh>) {
-        self.sub_meshes = Some(sub_meshes);
-    }
-
-    #[setter]
-    pub fn set_vertices(&mut self, vertices: Vec<[f32; 3]>) {
-        self.attributes
-            .insert(VertexAttribute::POSITION, AttribContainer::new(&vertices));
-    }
-
-    #[setter]
-    pub fn set_normals(&mut self, normals: Vec<[f32; 3]>) {
-        self.attributes
-            .insert(VertexAttribute::NORMAL, AttribContainer::new(&normals));
-    }
-
-    #[setter]
-    pub fn set_uvs(&mut self, uvs: Vec<[f32; 2]>) {
-        self.attributes
-            .insert(VertexAttribute::UV, AttribContainer::new(&uvs));
-    }
-
-    #[setter]
-    pub fn set_triangles(&mut self, triangles: Vec<[u32; 3]>) {
-        self.indices = Some(Indices::U32(triangles.into_iter().flatten().collect()));
-    }
-
-    /// Computes per vertex tangents for the mesh from the UVs.
-    pub fn compute_tangents(&mut self) {
-        if self.attributes.0.contains_key(&VertexAttribute::TANGENT) {
-            log::warn!("Mesh already has tangents and bitangents. Skipping tangent computation.");
-            return;
-        }
-        let vertices = self
-            .attributes
-            .0
-            .get(&VertexAttribute::POSITION)
-            .unwrap()
-            .as_slice::<[f32; 3]>();
-        let uvs = self
-            .attributes
-            .0
-            .get(&VertexAttribute::UV)
-            .unwrap()
-            .as_slice::<[f32; 2]>();
-        let normals = self
-            .attributes
-            .0
-            .get(&VertexAttribute::NORMAL)
-            .unwrap()
-            .as_slice::<[f32; 3]>();
-        let mut tangents: Vec<Vec4> = vec![Vec4::ZERO; vertices.len()];
-        match &self.indices {
-            None => {
-                panic!("Indices are required to compute the bi/tangents");
-            }
-            Some(indices) => match indices {
-                Indices::U32(indices) => {
-                    compute_tangents(&vertices, indices, &uvs, normals, &mut tangents);
-                }
-                Indices::U16(indices) => {
-                    compute_tangents(&vertices, indices, &uvs, normals, &mut tangents)
-                }
-            },
-        }
-        let tangents_raw: Vec<[f32; 4]> = unsafe { std::mem::transmute(tangents) };
-        self.attributes.insert(
-            VertexAttribute::TANGENT,
-            AttribContainer::new(&tangents_raw),
-        );
-    }
-
-    /// Computes per vertex normals for the mesh.
-    pub fn compute_normals(&mut self) {
-        if self.attributes.0.contains_key(&VertexAttribute::NORMAL) {
-            log::warn!("Mesh already has normals. Skipping normal computation.");
-            return;
-        }
-        if self.indices.is_none() {
-            panic!("Indices are required to compute the normals");
-        }
-        let vertices = self
-            .attributes
-            .0
-            .get(&VertexAttribute::POSITION)
-            .unwrap()
-            .as_slice::<[f32; 3]>();
-        let mut normals: Vec<Vec3> = vec![Vec3::ZERO; vertices.len()];
-        match &self.indices {
-            None => {
-                panic!("Indices are required to compute the normals");
-            }
-            Some(indices) => match indices {
-                Indices::U32(indices) => {
-                    compute_normals(&vertices, &indices, &mut normals);
-                }
-                Indices::U16(indices) => {
-                    compute_normals(&vertices, &indices, &mut normals);
-                }
-            },
-        }
-        let normals_raw: Vec<[f32; 3]> = unsafe { std::mem::transmute(normals) };
-        self.attributes
-            .insert(VertexAttribute::NORMAL, AttribContainer::new(&normals_raw));
-        // Recompute tangents.
-        self.attributes.0.remove(&VertexAttribute::TANGENT);
-        self.compute_tangents();
-    }
-}
-
 pub struct VertexBufferLayout {
     pub array_stride: wgpu::BufferAddress,
     pub step_mode: wgpu::VertexStepMode,
@@ -429,6 +167,33 @@ pub struct VertexBufferLayout {
 }
 
 impl Mesh {
+    pub fn new(topology: PrimitiveTopology) -> Self {
+        Self {
+            name: SmlString::from(format!(
+                "mesh_{}",
+                MESH_ID.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+            )),
+            topology,
+            attributes: Default::default(),
+            indices: None,
+            sub_meshes: None,
+            path: None,
+            materials: None,
+        }
+    }
+
+    pub fn new_with_name(name: &str, topology: PrimitiveTopology) -> Self {
+        Self {
+            name: SmlString::from(name),
+            topology,
+            attributes: Default::default(),
+            indices: None,
+            sub_meshes: None,
+            path: None,
+            materials: None,
+        }
+    }
+
     #[rustfmt::skip]
     /// Creates a unit cube of side length 1 centered at the origin.
     pub fn cube(length: f32) -> Self {
@@ -491,15 +256,9 @@ impl Mesh {
         attributes.insert(VertexAttribute::POSITION, AttribContainer::new(&vertices));
         attributes.insert(VertexAttribute::NORMAL, AttribContainer::new(&normals));
         attributes.insert(VertexAttribute::UV, AttribContainer::new(&uvs));
-        let mut mesh = Mesh {
-            id: MESH_ID.fetch_add(1, std::sync::atomic::Ordering::Relaxed),
-            topology: wgpu::PrimitiveTopology::TriangleList,
-            attributes,
-            indices: Some(Indices::U16(indices)),
-            sub_meshes: None,
-            path: None,
-            materials: None,
-        };
+        let mut mesh = Mesh::new(PrimitiveTopology::TriangleList);
+        mesh.attributes = attributes;
+        mesh.indices = Some(Indices::U16(indices));
         mesh.compute_tangents();
         mesh
     }
@@ -546,15 +305,9 @@ impl Mesh {
         attributes.insert(VertexAttribute::POSITION, AttribContainer::new(&vertices));
         attributes.insert(VertexAttribute::NORMAL, AttribContainer::new(&normals));
         attributes.insert(VertexAttribute::UV, AttribContainer::new(&uvs));
-        let mut mesh = Mesh {
-            id: MESH_ID.fetch_add(1, std::sync::atomic::Ordering::Relaxed),
-            topology: wgpu::PrimitiveTopology::TriangleList,
-            attributes,
-            indices: Some(Indices::U16(indices)),
-            sub_meshes: None,
-            path: None,
-            materials: None,
-        };
+        let mut mesh = Mesh::new(PrimitiveTopology::TriangleList);
+        mesh.attributes = attributes;
+        mesh.indices = Some(Indices::U16(indices));
         mesh.compute_tangents();
         mesh
     }
@@ -615,16 +368,9 @@ impl Mesh {
         attributes.insert(VertexAttribute::POSITION, AttribContainer::new(&vertices));
         attributes.insert(VertexAttribute::NORMAL, AttribContainer::new(&normals));
         attributes.insert(VertexAttribute::UV, AttribContainer::new(&uvs));
-
-        let mut mesh = Mesh {
-            id: MESH_ID.fetch_add(1, std::sync::atomic::Ordering::Relaxed),
-            topology: wgpu::PrimitiveTopology::TriangleList,
-            attributes,
-            indices: Some(Indices::U32(indices)),
-            sub_meshes: None,
-            path: None,
-            materials: None,
-        };
+        let mut mesh = Mesh::new(PrimitiveTopology::TriangleList);
+        mesh.attributes = attributes;
+        mesh.indices = Some(Indices::U32(indices));
         mesh.compute_tangents();
         mesh
     }
@@ -650,16 +396,9 @@ impl Mesh {
         attributes.insert(VertexAttribute::POSITION, AttribContainer::new(&vertices));
         attributes.insert(VertexAttribute::NORMAL, AttribContainer::new(&normals));
         attributes.insert(VertexAttribute::UV, AttribContainer::new(&uvs));
-
-        let mut mesh = Mesh {
-            id: MESH_ID.fetch_add(1, std::sync::atomic::Ordering::Relaxed),
-            topology: wgpu::PrimitiveTopology::TriangleList,
-            attributes,
-            indices: Some(Indices::U32(indices)),
-            sub_meshes: None,
-            path: None,
-            materials: None,
-        };
+        let mut mesh = Mesh::new(PrimitiveTopology::TriangleList);
+        mesh.attributes = attributes;
+        mesh.indices = Some(Indices::U32(indices));
         mesh.compute_tangents();
         mesh
     }
@@ -669,6 +408,7 @@ impl Mesh {
     /// A mesh is valid if it has a position attribute, uv attribute, and
     /// indices. If the mesh has not normals, they are computed.
     pub fn validate(&mut self) {
+        log::info!("Validating mesh: {}.", self.name);
         for attr in [VertexAttribute::POSITION, VertexAttribute::UV] {
             if !self.attributes.0.contains_key(&attr) {
                 panic!("Mesh must have a {:?} attribute.", attr);
@@ -767,30 +507,110 @@ impl Mesh {
         log::debug!("- Processed materials: {:?}", materials);
         log::debug!("- Loaded submeshes: {:?}", sub_meshes);
 
-        let mut mesh = Mesh {
-            id,
-            topology: wgpu::PrimitiveTopology::TriangleList,
-            attributes,
-            indices: if !indices.is_empty() {
-                Some(Indices::U32(indices))
-            } else {
-                None
-            },
-            sub_meshes: Some(sub_meshes),
-            path: None,
-            materials: Some(materials),
+        let mut mesh = Mesh::new(PrimitiveTopology::TriangleList);
+        mesh.name = SmlString::from(path.as_ref().file_name().unwrap().to_str().unwrap());
+        mesh.attributes = attributes;
+        mesh.indices = if !indices.is_empty() {
+            Some(Indices::U32(indices))
+        } else {
+            None
         };
+        mesh.sub_meshes = Some(sub_meshes);
+        mesh.materials = Some(materials);
+        mesh.path = Some(path.as_ref().to_path_buf());
         mesh.compute_tangents();
         mesh
+    }
+
+    /// Computes per vertex normals for the mesh.
+    pub fn compute_normals(&mut self) {
+        if self.attributes.0.contains_key(&VertexAttribute::NORMAL) {
+            log::warn!("Mesh already has normals. Skipping normal computation.");
+            return;
+        }
+        if self.indices.is_none() {
+            panic!("Indices are required to compute the normals");
+        }
+        let vertices = self
+            .attributes
+            .0
+            .get(&VertexAttribute::POSITION)
+            .unwrap()
+            .as_slice::<[f32; 3]>();
+        let mut normals: Vec<Vec3> = vec![Vec3::ZERO; vertices.len()];
+        match &self.indices {
+            None => {
+                panic!("Indices are required to compute the normals");
+            }
+            Some(indices) => match indices {
+                Indices::U32(indices) => {
+                    compute_normals(&vertices, &indices, &mut normals);
+                }
+                Indices::U16(indices) => {
+                    compute_normals(&vertices, &indices, &mut normals);
+                }
+            },
+        }
+        let normals_raw: Vec<[f32; 3]> = unsafe { std::mem::transmute(normals) };
+        self.attributes
+            .insert(VertexAttribute::NORMAL, AttribContainer::new(&normals_raw));
+        // Recompute tangents.
+        self.attributes.0.remove(&VertexAttribute::TANGENT);
+        self.compute_tangents();
+    }
+
+    /// Computes per vertex tangents for the mesh from the UVs.
+    pub fn compute_tangents(&mut self) {
+        if self.attributes.0.contains_key(&VertexAttribute::TANGENT) {
+            log::warn!("Mesh already has tangents and bitangents. Skipping tangent computation.");
+            return;
+        }
+        let vertices = self
+            .attributes
+            .0
+            .get(&VertexAttribute::POSITION)
+            .unwrap()
+            .as_slice::<[f32; 3]>();
+        let uvs = self
+            .attributes
+            .0
+            .get(&VertexAttribute::UV)
+            .unwrap()
+            .as_slice::<[f32; 2]>();
+        let normals = self
+            .attributes
+            .0
+            .get(&VertexAttribute::NORMAL)
+            .unwrap()
+            .as_slice::<[f32; 3]>();
+        let mut tangents: Vec<Vec4> = vec![Vec4::ZERO; vertices.len()];
+        match &self.indices {
+            None => {
+                panic!("Indices are required to compute the bi/tangents");
+            }
+            Some(indices) => match indices {
+                Indices::U32(indices) => {
+                    compute_tangents(&vertices, indices, &uvs, normals, &mut tangents);
+                }
+                Indices::U16(indices) => {
+                    compute_tangents(&vertices, indices, &uvs, normals, &mut tangents)
+                }
+            },
+        }
+        let tangents_raw: Vec<[f32; 4]> = unsafe { std::mem::transmute(tangents) };
+        self.attributes.insert(
+            VertexAttribute::TANGENT,
+            AttribContainer::new(&tangents_raw),
+        );
     }
 }
 
 /// A mesh on the GPU.
 pub struct GpuMesh {
-    /// Unique id of the mesh from which it was created.
-    pub mesh_id: u64,
+    /// Name of the GpuMesh inherited from the Mesh.
+    pub name: SmlString,
     /// Path to the mesh file, if it's loaded from a file.
-    pub mesh_path: Option<PathBuf>,
+    pub path: Option<PathBuf>,
     /// Topology of the mesh primitive.
     pub topology: wgpu::PrimitiveTopology,
     /// Vertex attributes of the mesh.
@@ -813,8 +633,8 @@ impl GpuMesh {
     /// Creates a new empty gpu mesh.
     pub fn empty(topology: wgpu::PrimitiveTopology) -> Self {
         Self {
-            mesh_id: u64::MAX,
-            mesh_path: None,
+            name: SmlString::from("empty"),
+            path: None,
             topology,
             vertex_attribute_ranges: Vec::new(),
             vertex_count: 0,
@@ -837,6 +657,11 @@ impl GpuMesh {
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
 pub struct MeshBundle {
     pub mesh: Handle<GpuMesh>,
+    pub aesthetic: AestheticBundle,
+}
+
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
+pub struct AestheticBundle {
     pub textures: Handle<TextureBundle>,
     pub materials: Handle<MaterialBundle>,
 }

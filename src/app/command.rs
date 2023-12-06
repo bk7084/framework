@@ -55,6 +55,10 @@ pub enum Command {
     SetAsMainCamera { entity: Entity },
     /// Clears the material override.
     ClearMaterialOverride { entity: Entity },
+    /// Enables or disables backface culling.
+    EnableBackfaceCulling(bool),
+    /// Enables or disables wireframe rendering.
+    EnableWireframe(bool),
 }
 
 /// Receiver of commands.

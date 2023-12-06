@@ -1,7 +1,7 @@
 mod node;
 pub use node::*;
 
-use crossbeam_channel::Sender;
+use crossbeam_channel::{Receiver, Sender};
 use glam::{Mat4, Quat, Vec3};
 use std::fmt::{Debug, Formatter};
 
@@ -162,8 +162,7 @@ impl Debug for Scene {
 impl Scene {
     // TODO: separate GPU resources from scene graph
     /// Creates a new empty scene.
-    pub fn new() -> Self {
-        let (sender, receiver) = crossbeam_channel::unbounded::<Command>();
+    pub fn new(sender: Sender<Command>, receiver: Receiver<Command>) -> Self {
         Self {
             world: World::default(),
             nodes: Nodes::default(),
@@ -352,6 +351,7 @@ impl Scene {
                     camera.is_main = true;
                     *main_camera = Some(entity);
                 }
+                _ => {}
             }
         }
     }
@@ -374,7 +374,8 @@ mod tests {
     fn entity_spawning() {
         use super::NodeIdx;
 
-        let mut scene = super::Scene::new();
+        let (sender, receiver) = crossbeam_channel::unbounded();
+        let mut scene = super::Scene::new(sender, receiver);
         let _entity = scene.spawn(NodeIdx::root(), ());
         assert_eq!(scene.nodes.len(), 2);
         assert_eq!(scene.nodes[NodeIdx(1)].parent, Some(NodeIdx::root()));
@@ -395,7 +396,8 @@ mod tests {
     #[test]
     #[should_panic]
     fn entity_spawning_failed() {
-        let mut scene = super::Scene::new();
+        let (sender, receiver) = crossbeam_channel::unbounded();
+        let mut scene = super::Scene::new(sender, receiver);
         let _ = scene.spawn(super::NodeIdx(1), ());
     }
 }

@@ -13,10 +13,7 @@ use crate::{
         mesh::{Mesh, MeshBundle},
         Color, ConcatOrder, FxHashMap, Light, SmlString,
     },
-    render::{
-        rpass::BlinnPhongRenderPass, surface::Surface, GpuContext, RenderTarget, Renderer,
-        ShadingMode,
-    },
+    render::{rpass::BlinnPhongRenderPass, surface::Surface, GpuContext, RenderTarget, Renderer},
     scene::{Entity, NodeIdx, PyEntity, Scene},
 };
 use crossbeam_channel::Sender;
@@ -58,7 +55,8 @@ pub struct PyAppState {
     context: Arc<GpuContext>,
     scene: Arc<RwLock<Scene>>,
     renderer: Arc<RwLock<Renderer>>,
-    sender: Sender<Command>,
+    scene_cmd_sender: Sender<Command>,
+    renderer_cmd_sender: Sender<Command>,
     main_camera: Option<Entity>,
 }
 
@@ -70,9 +68,11 @@ impl PyAppState {
         env_logger::init();
         let now = std::time::Instant::now();
         let context = Arc::new(GpuContext::new(None));
-        let scene = Scene::new();
-        let sender = scene.cmd_sender().clone();
-        let renderer = Renderer::new(&context, scene.cmd_receiver().clone());
+        let (scene_cmd_sender, scene_cmd_receiver) = crossbeam_channel::unbounded::<Command>();
+        let scene = Scene::new(scene_cmd_sender.clone(), scene_cmd_receiver);
+        let (renderer_cmd_sender, renderer_cmd_receiver) =
+            crossbeam_channel::unbounded::<Command>();
+        let renderer = Renderer::new(&context, renderer_cmd_receiver);
         Ok(Self {
             context,
             input: InputState::default(),
@@ -83,7 +83,8 @@ impl PyAppState {
             curr_time: now,
             scene: Arc::new(RwLock::new(scene)),
             renderer: Arc::new(RwLock::new(renderer)),
-            sender,
+            scene_cmd_sender,
+            renderer_cmd_sender,
             main_camera: None,
         })
     }
@@ -137,6 +138,20 @@ impl PyAppState {
         })
     }
 
+    /// Set the backface culling state.
+    pub fn enable_backface_culling(&mut self, enabled: bool) {
+        self.renderer_cmd_sender
+            .send(Command::EnableBackfaceCulling(enabled))
+            .unwrap();
+    }
+
+    /// Set the wireframe rendering state.
+    pub fn enable_wireframe(&mut self, enabled: bool) {
+        self.renderer_cmd_sender
+            .send(Command::EnableWireframe(enabled))
+            .unwrap();
+    }
+
     /// Create a camera
     ///
     /// # Arguments
@@ -168,7 +183,7 @@ impl PyAppState {
             let entity = self.create_camera(proj, pos, target, background);
             PyEntity {
                 entity,
-                cmd_sender: self.sender.clone(),
+                cmd_sender: self.scene_cmd_sender.clone(),
             }
         })
     }
@@ -180,7 +195,7 @@ impl PyAppState {
         let entity = self.spawn_object_with_mesh(NodeIdx::root(), mesh);
         PyEntity {
             entity,
-            cmd_sender: self.sender.clone(),
+            cmd_sender: self.scene_cmd_sender.clone(),
         }
     }
 
@@ -190,7 +205,7 @@ impl PyAppState {
         let entity = self.spawn_light(NodeIdx::root(), Light::Point { color }, Some(position));
         PyEntity {
             entity,
-            cmd_sender: self.sender.clone(),
+            cmd_sender: self.scene_cmd_sender.clone(),
         }
     }
 
@@ -205,7 +220,7 @@ impl PyAppState {
         );
         PyEntity {
             entity,
-            cmd_sender: self.sender.clone(),
+            cmd_sender: self.scene_cmd_sender.clone(),
         }
     }
 }
@@ -242,39 +257,18 @@ impl PyAppState {
     ///
     /// Returns the entity ID of the spawned object.
     pub fn spawn_object_with_mesh(&mut self, parent: NodeIdx, mesh: &mut Mesh) -> Entity {
-        log::debug!("Spawning object with mesh#{}", mesh.id);
-        // TODO: validate the mesh before spawning.
+        log::debug!("Spawning object with mesh#{}", mesh.name);
         mesh.validate();
         self.renderer
             .write()
             .map(|mut renderer| {
-                let (mesh_hdl, instanced) = renderer.upload_mesh(mesh);
-                let entity = if instanced {
-                    // TODO: instancing with different materials.
-                    log::debug!("Spawning instanced object with mesh#{}", mesh.id);
-                    let bundle = renderer.get_mesh_bundle(mesh_hdl).unwrap();
-                    self.scene
-                        .write()
-                        .map(|mut scene| scene.spawn(parent, (bundle,)))
-                        .unwrap()
-                } else {
-                    log::debug!("Spawning object with mesh#{}", mesh.id);
-                    log::debug!("Uploading materials for mesh#{}", mesh.id);
-                    let (materials, textures) = renderer.upload_materials(mesh.materials.as_ref());
-                    let bundle = MeshBundle {
-                        mesh: mesh_hdl,
-                        textures,
-                        materials,
-                    };
-                    renderer.insert_mesh_bundle(mesh_hdl, bundle);
-                    self.scene
-                        .write()
-                        .map(|mut scene| scene.spawn(parent, (bundle,)))
-                        .unwrap()
-                };
-
-                renderer.add_instancing(mesh_hdl, &[entity.node]);
-
+                let mesh_bundle = renderer.upload_mesh(mesh);
+                let entity = self
+                    .scene
+                    .write()
+                    .map(|mut scene| scene.spawn(parent, (mesh_bundle,)))
+                    .unwrap();
+                renderer.add_instancing(mesh_bundle, &[entity.node]);
                 entity
             })
             .expect("Failed to spawn object with mesh!")
@@ -440,7 +434,7 @@ impl PyAppState {
                         let rot = Quat::from_mat4(
                             &(Mat4::from_rotation_y(horiz) * Mat4::from_rotation_x(vert)),
                         );
-                        self.sender
+                        self.scene_cmd_sender
                             .send(Command::Rotate {
                                 entity: self.main_camera.unwrap(),
                                 rotation: rot,
@@ -450,7 +444,7 @@ impl PyAppState {
                     }
                     (true, false) => {
                         // Pan the camera.
-                        self.sender
+                        self.scene_cmd_sender
                             .send(Command::CameraPan {
                                 entity: self.main_camera.unwrap(),
                                 delta_x: horiz,
@@ -460,7 +454,7 @@ impl PyAppState {
                     }
                     (false, _) => {
                         // Orbit the camera around the target.
-                        self.sender
+                        self.scene_cmd_sender
                             .send(Command::CameraOrbit {
                                 entity: self.main_camera.unwrap(),
                                 rotation_x: vert,
@@ -479,7 +473,7 @@ impl PyAppState {
             } else {
                 1.0
             };
-            self.sender
+            self.scene_cmd_sender
                 .send(Command::Translate {
                     entity: self.main_camera.unwrap(),
                     translation: Vec3::new(0.0, 0.0, input.scroll_delta() * dt * scale),
@@ -506,8 +500,6 @@ pub fn run_main_loop(mut app: PyAppState, builder: PyWindowBuilder) {
     let mut surface = Surface::new(&context, &window);
 
     let mut blph_render_pass = BlinnPhongRenderPass::new(&context.device, surface.format());
-
-    let mut shading_mode = ShadingMode::BlinnPhong;
 
     // let mut cube = Mesh::cube(1.0);
     // let mut textures = FxHashMap::default();
@@ -690,18 +682,6 @@ pub fn run_main_loop(mut app: PyAppState, builder: PyWindowBuilder) {
                     if app.input.is_key_pressed(KeyCode::Escape) {
                         control_flow.set_exit();
                     }
-                    if app.input.is_key_pressed(KeyCode::LControl)
-                        && app.input.is_key_pressed(KeyCode::LShift)
-                        && app.input.is_key_pressed(KeyCode::B)
-                    {
-                        shading_mode = ShadingMode::BlinnPhong;
-                    }
-                    if app.input.is_key_pressed(KeyCode::LControl)
-                        && app.input.is_key_pressed(KeyCode::LShift)
-                        && app.input.is_key_pressed(KeyCode::N)
-                    {
-                        shading_mode = ShadingMode::Wireframe;
-                    }
                 }
             }
             Event::RedrawRequested(window_id) if window_id == win_id => {
@@ -718,12 +698,12 @@ pub fn run_main_loop(mut app: PyAppState, builder: PyWindowBuilder) {
                 };
 
                 let scene = app.scene.read().unwrap();
-                match app.renderer.write().unwrap().render(
-                    &scene,
-                    &target,
-                    &mut blph_render_pass,
-                    shading_mode,
-                ) {
+                match app
+                    .renderer
+                    .write()
+                    .unwrap()
+                    .render(&scene, &target, &mut blph_render_pass)
+                {
                     Ok(_) => {}
                     Err(wgpu::SurfaceError::Lost | wgpu::SurfaceError::Outdated) => {
                         surface.resize(&context.device, surface.width(), surface.height());

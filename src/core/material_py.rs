@@ -1,20 +1,16 @@
 use crate::core::{Color, IllumModel, Material, SmlString, TextureType};
 use pyo3::types::PyDict;
-use std::{path::PathBuf, sync::atomic::AtomicU32};
-
-/// Material name counter.
-static DEFAULT_MATERIAL_NAME_COUNTER: AtomicU32 = AtomicU32::new(0);
+use std::path::PathBuf;
 
 #[pyo3::pymethods]
 impl Material {
     #[new]
-    pub fn new_py() -> Self {
-        let mut mat = Self::default();
-        mat.name = SmlString::from(format!(
-            "material_{}",
-            DEFAULT_MATERIAL_NAME_COUNTER.fetch_add(1, std::sync::atomic::Ordering::SeqCst)
-        ));
-        mat
+    #[pyo3(signature = (name=None))]
+    pub fn new_py(name: Option<String>) -> Self {
+        match name {
+            None => Self::new(),
+            Some(name) => Self::new_with_name(name.as_str()),
+        }
     }
 
     #[setter]

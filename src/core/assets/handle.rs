@@ -12,7 +12,7 @@ use std::{
 pub struct Handle<T: Asset> {
     pub(crate) generation: u32,
     pub(crate) index: u32,
-    _marker: PhantomData<T>,
+    pub(crate) marker: PhantomData<T>,
 }
 
 impl<T: Asset> PartialEq for Handle<T> {
@@ -55,7 +55,7 @@ impl<T: Asset> Clone for Handle<T> {
         Self {
             generation: self.generation,
             index: self.index,
-            _marker: Default::default(),
+            marker: Default::default(),
         }
     }
 }
@@ -124,7 +124,7 @@ where
             index: self
                 .next_index
                 .fetch_add(1, std::sync::atomic::Ordering::Relaxed),
-            _marker: Default::default(),
+            marker: Default::default(),
         }
     }
 

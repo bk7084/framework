@@ -204,6 +204,7 @@ pub trait RenderingPass {
     fn record(
         &mut self,
         renderer: &Renderer,
+        target: &RenderTarget,
         params: &RenderParams,
         scene: &Scene,
         device: &wgpu::Device,

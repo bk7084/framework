@@ -1,13 +1,18 @@
 use crate::core::assets::Asset;
 use bytemuck::{Pod, Zeroable};
 use std::{
+    hash::{Hash, Hasher},
     ops::Deref,
     path::{Path, PathBuf},
+    sync::atomic::AtomicU64,
 };
 use tobj::NormalTexture;
 use wgpu::util::DeviceExt;
 
-use crate::core::{FxHashMap, SmlString};
+use crate::core::{FxHashMap, FxHasher, SmlString};
+
+#[path = "material_py.rs"]
+pub mod py;
 
 /// Texture type.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -23,6 +28,10 @@ pub enum TextureType {
     MapNorm,  // normal,
     Unknown,  // unknown
 }
+
+/// Material name counter.
+static MATERIAL_NAME_COUNTER: AtomicU64 = AtomicU64::new(0);
+static MATERIAL_ID_COUNTER: AtomicU64 = AtomicU64::new(0);
 
 /// Material description derived from a `MTL` file.
 ///
@@ -88,9 +97,19 @@ impl PartialEq for Material {
 
 impl Material {
     /// Creates a new material with a unique name.
-    pub fn new(name: SmlString) -> Self {
+    pub fn new_with_name(name: &str) -> Self {
         Self {
-            name,
+            name: SmlString::from(name),
+            ..Default::default()
+        }
+    }
+
+    pub fn new() -> Self {
+        Self {
+            name: SmlString::from(format!(
+                "material_{}",
+                MATERIAL_NAME_COUNTER.fetch_add(1, std::sync::atomic::Ordering::SeqCst)
+            )),
             ..Default::default()
         }
     }
@@ -281,6 +300,8 @@ impl GpuMaterial {
 
 /// A collection of materials that uploaded to the GPU.
 pub struct MaterialBundle {
+    /// List of materials (hash values of the material names).
+    pub materials: Vec<u64>,
     /// Buffer containing the material data.
     pub buffer: wgpu::Buffer,
     /// Bind group for the material buffer.
@@ -316,9 +337,10 @@ impl MaterialBundle {
     }
 
     pub fn default(device: &wgpu::Device) -> Self {
+        let material = Material::default();
         let material_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("default_material_bundle_buffer"),
-            contents: bytemuck::cast_slice(&[GpuMaterial::from_material(&Material::default())]),
+            contents: bytemuck::cast_slice(&[GpuMaterial::from_material(&material)]),
             usage: wgpu::BufferUsages::UNIFORM
                 | wgpu::BufferUsages::COPY_DST
                 | wgpu::BufferUsages::STORAGE,
@@ -332,14 +354,20 @@ impl MaterialBundle {
                 resource: material_buffer.as_entire_binding(),
             }],
         });
+        let mut hasher = FxHasher::default();
+        hasher.write(&material.name.as_bytes());
         Self {
+            materials: vec![hasher.finish()],
             buffer: material_buffer,
             bind_group,
             n_materials: 1,
         }
     }
 
-    pub fn new(device: &wgpu::Device, mtls: &[GpuMaterial]) -> Self {
+    pub fn new<'a, M>(device: &wgpu::Device, materials: M, mtls: &[GpuMaterial]) -> Self
+    where
+        M: Iterator<Item = &'a Material>,
+    {
         log::debug!(
             "Creating material bundle with {} materials: \n{:?}",
             mtls.len(),
@@ -361,7 +389,16 @@ impl MaterialBundle {
                 resource: buffer.as_entire_binding(),
             }],
         });
+        let materials = materials
+            .map(|m| {
+                let mut hasher = FxHasher::default();
+                hasher.write(&m.name.as_bytes());
+                hasher.finish()
+            })
+            .collect();
+        log::debug!("Material bundle created with materials: {:?}", materials);
         Self {
+            materials,
             buffer,
             bind_group,
             n_materials: mtls.len() as u32,

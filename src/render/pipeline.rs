@@ -163,11 +163,33 @@ impl Pipelines {
         Self(FxHashMap::default())
     }
 
-    /// Returns the pipeline for the given key.
+    /// Returns the pipeline with the given label and key.
     pub fn get(&self, label: &str, key: PipelineId) -> Option<&wgpu::RenderPipeline> {
         let pipelines = self.0.get(label)?;
         let index = pipelines.binary_search_by_key(&key, |(k, _)| *k).ok()?;
         Some(&pipelines[index].1)
+    }
+
+    /// Returns all pipelines with the given label.
+    pub fn get_all(&self, label: &str) -> Option<&Vec<(PipelineId, wgpu::RenderPipeline)>> {
+        self.0.get(label)
+    }
+
+    /// Returns pipelines with the given label and satisfying the given
+    /// predicate.
+    pub fn get_all_filtered(
+        &self,
+        label: &str,
+        predicate: impl Fn(&PipelineId) -> bool,
+    ) -> Option<Vec<&wgpu::RenderPipeline>> {
+        let pipelines = self.0.get(label)?;
+        Some(
+            pipelines
+                .iter()
+                .filter(|(k, _)| predicate(k))
+                .map(|(_, p)| p)
+                .collect(),
+        )
     }
 
     pub fn insert(&mut self, label: &str, key: PipelineId, pipeline: wgpu::RenderPipeline) {
