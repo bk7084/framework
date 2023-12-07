@@ -92,7 +92,7 @@ impl Renderer {
         let features = context.features;
         let limits = context.limits.clone();
         let meshes = GpuMeshAssets::new(&device);
-        let mut textures = TextureAssets::new(&context.device, &context.queue);
+        let textures = TextureAssets::new(&context.device, &context.queue);
         let mut samplers = FxHashMap::default();
         let default_sampler = context.device.create_sampler(&wgpu::SamplerDescriptor {
             label: Some("sampler_default"),
@@ -297,15 +297,6 @@ impl Renderer {
             }
         }
     }
-
-    // /// Gets a mesh bundle.
-    // pub fn get_mesh_bundle(&self, mesh: Handle<GpuMesh>) -> Option<MeshBundle> {
-    //     self.mesh_bundles.get(&mesh).cloned()
-    // }
-    //
-    // pub fn insert_mesh_bundle(&mut self, mesh: Handle<GpuMesh>, bundle:
-    // MeshBundle) {     self.mesh_bundles.insert(mesh, bundle);
-    // }
 
     /// Adds a new instancing data for a mesh.
     pub fn add_instancing(&mut self, mesh: MeshBundle, nodes: &[NodeIdx]) {
