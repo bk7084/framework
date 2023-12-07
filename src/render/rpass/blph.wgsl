@@ -102,11 +102,9 @@ struct VSOutput {
 }
 
 @group(0) @binding(0) var<uniform> globals : Globals;
-
 @group(1) @binding(0) var<storage> instances : array<Locals>;
 
 @group(2) @binding(0) var<storage> materials : array<Material>;
-
 @group(3) @binding(0) var textures : binding_array<texture_2d<f32>>;
 @group(3) @binding(1) var<storage> texture_sampler_ids : array<u32>;
 @group(3) @binding(2) var samplers : binding_array<sampler>;
@@ -115,6 +113,12 @@ struct VSOutput {
 @group(4) @binding(1) var<storage> point_lights : PointLightArray;
 
 var<push_constant> pconsts : PConsts;
+
+@vertex
+fn vs_bake_shadow(@location(0) position: vec3<f32>) -> @builtin(position) vec4<f32> {
+    let locals = instances[gl_InstanceIndex + pconsts.instance_base_index];
+    return globals.proj * globals.view * locals.model * vec4<f32>(position, 1.0);
+}
 
 @vertex
 fn vs_main(vin : VSInput)->VSOutput {
@@ -204,7 +208,7 @@ fn tbn_matrix(tangent: vec4<f32>, normal: vec3<f32>) -> mat3x3<f32> {
     let n = normalize(normal);
     var t = normalize(tangent.xyz);
     t = normalize(t - n * dot(t, n));
-    let b = normalize(cross(n, t) * tangent.w); // sign(dot(cross(n, t), n))
+    let b = normalize(cross(n, t) * tangent.w);
     return mat3x3<f32>(t, b, n);
 }
 
