@@ -18,11 +18,8 @@ pub use target::*;
 use crate::{
     app::command::{Command, CommandReceiver},
     core::{
-        assets::{
-            GpuMeshAssets, Handle, MaterialAssets, MaterialBundleAssets, TextureAssets,
-            TextureBundleAssets,
-        },
-        mesh::{AestheticBundle, GpuMesh, Mesh, MeshBundle},
+        assets::{GpuMeshAssets, Handle, MaterialBundleAssets, TextureAssets, TextureBundleAssets},
+        mesh::{AestheticBundle, Mesh, MeshBundle},
         FxHashMap, GpuMaterial, Material, MaterialBundle, SmlString, Texture, TextureBundle,
         TextureType,
     },

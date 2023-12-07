@@ -2,7 +2,7 @@ use crate::core::{
     mesh::{AttribContainer, Indices, Mesh, SubMesh, VertexAttribute},
     Alignment, Material,
 };
-use glam::{Vec3, Vec4};
+use glam::Vec3;
 use numpy as np;
 use pyo3::Python;
 use std::path::PathBuf;
@@ -168,24 +168,34 @@ impl Mesh {
 
     /// Sets the submeshes of the mesh.
     #[setter]
-    pub fn set_sub_meshes(&mut self, sub_meshes: Vec<SubMesh>) {
+    pub fn set_sub_meshes(&mut self, sub_meshes: Option<Vec<SubMesh>>) {
         // Check that the submeshes are valid.
-        for submesh in &sub_meshes {
-            if submesh.range.end > self.indices.as_ref().unwrap().len() as u32 {
-                panic!(
-                    "Submesh range end {} is greater than the number of indices {}",
-                    submesh.range.end,
-                    self.indices.as_ref().unwrap().len()
-                );
+        let indices_len = self.indices.as_ref().unwrap().len() as u32;
+        match &sub_meshes {
+            Some(sub_meshes) => {
+                for submesh in sub_meshes {
+                    if submesh.range.start > indices_len || submesh.range.end > indices_len {
+                        panic!(
+                            "Submesh range is greater than the number of indices {}",
+                            indices_len
+                        );
+                    }
+                    if submesh.range.end < submesh.range.start {
+                        panic!("Submesh range end is smaller than start");
+                    }
+                }
             }
+            None => {}
         }
-        self.sub_meshes = Some(sub_meshes);
+        self.sub_meshes = sub_meshes;
     }
 
     #[setter]
-    pub fn set_positions(&mut self, vertices: Vec<[f32; 3]>) {
-        self.attributes
-            .insert(VertexAttribute::POSITION, AttribContainer::new(&vertices));
+    pub fn set_positions(&mut self, vertices: Option<Vec<[f32; 3]>>) {
+        if let Some(vertices) = vertices {
+            self.attributes
+                .insert(VertexAttribute::POSITION, AttribContainer::new(&vertices));
+        }
     }
 
     #[setter]
@@ -195,19 +205,28 @@ impl Mesh {
     }
 
     #[setter]
-    pub fn set_texcoords(&mut self, uvs: Vec<[f32; 2]>) {
-        self.attributes
-            .insert(VertexAttribute::UV, AttribContainer::new(&uvs));
+    pub fn set_texcoords(&mut self, uvs: Option<Vec<[f32; 2]>>) {
+        if let Some(uvs) = uvs {
+            self.attributes
+                .insert(VertexAttribute::UV, AttribContainer::new(&uvs));
+        }
     }
 
     #[setter]
-    pub fn set_triangles(&mut self, triangles: Vec<[u32; 3]>) {
-        self.indices = Some(Indices::U32(triangles.into_iter().flatten().collect()));
+    pub fn set_triangles(&mut self, triangles: Option<Vec<[u32; 3]>>) {
+        if let Some(triangles) = triangles {
+            self.indices = Some(Indices::U32(triangles.into_iter().flatten().collect()));
+        }
     }
 
     #[getter]
-    pub fn name(&self) -> &str {
+    pub fn get_name(&self) -> &str {
         self.name.as_str()
+    }
+
+    #[setter]
+    pub fn set_name(&mut self, name: String) {
+        self.name = name.into();
     }
 
     /// Computes per vertex normals for the mesh from the UVs.

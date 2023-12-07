@@ -10,7 +10,7 @@ use crate::{
             LightsBindGroup, Locals, LocalsBindGroup, PConsts, PntLight, PntLightArray,
             RenderingPass, DEPTH_FORMAT,
         },
-        PipelineId, PipelineKind, Pipelines, RenderParams, RenderTarget, Renderer, ShadingMode,
+        PipelineId, PipelineKind, Pipelines, RenderParams, RenderTarget, Renderer,
     },
     scene::{NodeIdx, Nodes, Scene},
 };

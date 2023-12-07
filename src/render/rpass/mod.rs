@@ -2,7 +2,7 @@ mod blph;
 mod skybox;
 
 use crate::{
-    render::{Pipelines, RenderParams, RenderTarget, Renderer, ShadingMode},
+    render::{Pipelines, RenderParams, RenderTarget, Renderer},
     scene::Scene,
 };
 pub use blph::*;

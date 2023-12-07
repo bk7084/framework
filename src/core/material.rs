@@ -31,7 +31,6 @@ pub enum TextureType {
 
 /// Material name counter.
 static MATERIAL_NAME_COUNTER: AtomicU64 = AtomicU64::new(0);
-static MATERIAL_ID_COUNTER: AtomicU64 = AtomicU64::new(0);
 
 /// Material description derived from a `MTL` file.
 ///
