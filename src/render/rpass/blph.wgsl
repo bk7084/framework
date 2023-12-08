@@ -32,6 +32,17 @@ struct PConsts {
     material_index: u32,
 }
 
+const PNT_LIGHT: f32 = 1.0;
+const DIR_LIGHT: f32 = 0.0;
+
+struct Light {
+    // The last component is 0 for directional light and 1 for point light.
+    direction_or_position: vec4<f32>,
+    color: vec3<f32>,
+}
+
+// TODO: merge directional and point lights into one array.
+
 /// Data for a directional light.
 struct DirectionalLight {
     /// Direction of light.
@@ -102,21 +113,25 @@ struct VSOutput {
 }
 
 @group(0) @binding(0) var<uniform> globals : Globals;
-@group(1) @binding(0) var<storage> instances : array<Locals>;
+@group(1) @binding(0) var<storage, read> instances : array<Locals>;
 
-@group(2) @binding(0) var<storage> materials : array<Material>;
+@group(2) @binding(0) var<storage, read> materials : array<Material>;
 @group(3) @binding(0) var textures : binding_array<texture_2d<f32>>;
-@group(3) @binding(1) var<storage> texture_sampler_ids : array<u32>;
+@group(3) @binding(1) var<storage, read> texture_sampler_ids : array<u32>;
 @group(3) @binding(2) var samplers : binding_array<sampler>;
 
 @group(4) @binding(0) var<storage> directional_lights : DirectionalLightArray;
 @group(4) @binding(1) var<storage> point_lights : PointLightArray;
 
+@group(5) @binding(0) var smap: texture_depth_2d_array;
+@group(5) @binding(1) var smap_sampler: sampler_comparison;
+
 var<push_constant> pconsts : PConsts;
 
 @vertex
-fn vs_bake_shadow(@location(0) position: vec3<f32>) -> @builtin(position) vec4<f32> {
-    let locals = instances[gl_InstanceIndex + pconsts.instance_base_index];
+fn vs_bake_shadow(@builtin(instance_index) instance_index: u32, 
+                  @location(0) position: vec3<f32>) -> @builtin(position) vec4<f32> {
+    let locals = instances[instance_index + pconsts.instance_base_index];
     return globals.proj * globals.view * locals.model * vec4<f32>(position, 1.0);
 }
 
@@ -210,6 +225,20 @@ fn tbn_matrix(tangent: vec4<f32>, normal: vec3<f32>) -> mat3x3<f32> {
     t = normalize(t - n * dot(t, n));
     let b = normalize(cross(n, t) * tangent.w);
     return mat3x3<f32>(t, b, n);
+}
+
+fn fetch_shadow(light_idx: u32, pos_light_space: vec4<f32>) -> f32 {
+    if (pos_light_space.w <= 0.0) {
+        // The point is outside the light frustum.
+        return 0.0;
+    }
+    // Compensate for the Y-flip difference between the NDC space and the texture space.
+    let flip_correction = vec2<f32>(0.5, -0.5);
+    let proj_correction = 1.0 / pos_light_space.w;
+    // Compute texture coordinates for shadow map lookup. Transform from [-1, 1] to [0, 1]. * 0.5 + 0.5
+    let light_local = pos_light_space.xy * flip_correction * proj_correction + vec2<f32>(0.5, 0.5);
+    // Fetch shadow map, use HW PCF and comparison                                    current depth
+    return textureSampleCompareLevel(smap, smap_sampler, light_local, i32(light_idx), pos_light_space.z * proj_correction);
 }
 
 @fragment
