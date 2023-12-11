@@ -93,7 +93,7 @@ struct VSInput {
     @builtin(instance_index) instance_index: u32,
     @location(0) position: vec3<f32>,
     @location(1) normal: vec3<f32>,
-    @location(2) uv: vec2<f32>,
+    @location(2) texcoord: vec2<f32>,
     @location(3) tangent: vec4<f32>,
 }
 
@@ -104,7 +104,7 @@ struct VSOutput {
     @location(0) pos_eye_space: vec3<f32>,
     @location(1) normal_eye_space: vec3<f32>,
     @location(2) tangent_eye_space: vec4<f32>,
-    @location(3) uv: vec2<f32>,
+    @location(3) texcoord: vec2<f32>,
     @location(4) material_index: u32,
     @location(5) view_mat_x: vec4<f32>, // View matrix.
     @location(6) view_mat_y: vec4<f32>,
@@ -151,7 +151,7 @@ fn vs_main(vin : VSInput)->VSOutput {
 
     let nrm_mat = mat3x3(locals.model_view_it.x.xyz, locals.model_view_it.y.xyz, locals.model_view_it.z.xyz);
     out.position = globals.proj * pos_eye_space;
-    out.uv = vin.uv;
+    out.texcoord = vin.texcoord;
     out.pos_eye_space = pos_eye_space.xyz / pos_eye_space.w;
     out.normal_eye_space = normalize(nrm_mat * vin.normal);
     out.tangent_eye_space = vec4<f32>(normalize(nrm_mat * vin.tangent.xyz), vin.tangent.w);
@@ -212,8 +212,8 @@ fn blinn_phong_shading_eye_space(view_mat: mat4x4<f32>, pos_eye_space: vec3<f32>
 /// Unpack normal from normal map.
 ///
 /// The normal map is assumed to be in tangent space. The normal is unpacked to [-1, 1].
-fn unpack_normal_map(map: u32, uv: vec2<f32>) -> vec3<f32> {
-    var m = textureSample(textures[map], samplers[texture_sampler_ids[map]], uv).xyz;
+fn unpack_normal_map(map: u32, texcoord: vec2<f32>) -> vec3<f32> {
+    var m = textureSample(textures[map], samplers[texture_sampler_ids[map]], texcoord).xyz;
     m = m * 2.0 - vec3<f32>(1.0);
     return normalize(m);
 }
@@ -245,24 +245,24 @@ fn fetch_shadow(light_idx: u32, pos_light_space: vec4<f32>) -> f32 {
 fn fs_main(vout : VSOutput) -> @location(0) vec4<f32> {
     var materials_count : u32 = arrayLength(&materials);
     var default_material_index : u32 = materials_count - 1u;
-
     var material = materials[vout.material_index];
+    let texcoord = vec2<f32>(vout.texcoord.x, 1.0 - vout.texcoord.y);
 
     var kd = material.kd.rgb;
     if (material.map_kd != INVALID_INDEX) {
-        kd = textureSample(textures[material.map_kd], samplers[texture_sampler_ids[material.map_kd]], vout.uv).rgb;
+        kd = textureSample(textures[material.map_kd], samplers[texture_sampler_ids[material.map_kd]], texcoord).rgb;
     }
 
     var color = materials[default_material_index].kd.rgb;
 
     var ks = material.ks.rgb;
     if (material.map_ks != INVALID_INDEX) {
-        ks = textureSample(textures[material.map_ks], samplers[texture_sampler_ids[material.map_ks]], vout.uv).rgb;
+        ks = textureSample(textures[material.map_ks], samplers[texture_sampler_ids[material.map_ks]], texcoord).rgb;
     }
 
     var ns = material.ns;
     if (material.map_ns != INVALID_INDEX) {
-        ns = textureSample(textures[material.map_ns], samplers[texture_sampler_ids[material.map_ns]], vout.uv).r;
+        ns = textureSample(textures[material.map_ns], samplers[texture_sampler_ids[material.map_ns]], texcoord).r;
     }
 
     // Output kd as color.
@@ -275,12 +275,12 @@ fn fs_main(vout : VSOutput) -> @location(0) vec4<f32> {
     }
 
     if (material.illum == 13u) {
-        return vec4<f32>(vout.uv, 0.0, 1.0);
+        return vec4<f32>(texcoord, 0.0, 1.0);
     }
 
     var n = normalize(vout.normal_eye_space);
     if (material.map_norm != INVALID_INDEX) {
-        n = unpack_normal_map(material.map_norm, vout.uv);
+        n = unpack_normal_map(material.map_norm, texcoord);
         let tbn = tbn_matrix(vout.tangent_eye_space, vout.normal_eye_space);
         n = normalize(tbn * n);
     }
@@ -291,7 +291,7 @@ fn fs_main(vout : VSOutput) -> @location(0) vec4<f32> {
     if (material.illum != 0u) {
         var ka = material.ka.rgb;
         if (material.map_ka != INVALID_INDEX) {
-            ka = textureSample(textures[material.map_ka], samplers[texture_sampler_ids[material.map_ka]], vout.uv).rgb;
+            ka = textureSample(textures[material.map_ka], samplers[texture_sampler_ids[material.map_ka]], texcoord).rgb;
         }
 
         var ia = vec3<f32>(0.0, 0.0, 0.0);
