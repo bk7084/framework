@@ -36,37 +36,17 @@ const PNT_LIGHT: f32 = 1.0;
 const DIR_LIGHT: f32 = 0.0;
 
 struct Light {
-    // The last component is 0 for directional light and 1 for point light.
-    direction_or_position: vec4<f32>,
-    color: vec3<f32>,
+   /// Direction or position of light. The last component is 0 for directional light and 1 for point light.
+   dir_or_pos: vec4<f32>,
+   /// Color/intensity of light.
+   color: vec3<f32>,
+   /// Matrix transforming from world space to light space.
+   world_to_light: mat4x4<f32>,
 }
 
-// TODO: merge directional and point lights into one array.
-
-/// Data for a directional light.
-struct DirectionalLight {
-    /// Direction of light.
-    direction: vec3<f32>,
-    /// Color/intensity of light.
-    color: vec3<f32>,
-}
-
-struct PointLight {
-    /// Position of light.
-    position: vec3<f32>,
-    /// Color/intensity of light.
-    color: vec3<f32>,
-}
-
-/// Data for multiple directional lights.
-struct DirectionalLightArray {
-     len: u32,
-     data: array<DirectionalLight>,
-}
-
-struct PointLightArray {
-     len: u32,
-     data: array<PointLight>,
+struct LightArray {
+    len: u32,
+    data: array<Light>,
 }
 
 struct Material {
@@ -120,8 +100,7 @@ struct VSOutput {
 @group(3) @binding(1) var<storage, read> texture_sampler_ids : array<u32>;
 @group(3) @binding(2) var samplers : binding_array<sampler>;
 
-@group(4) @binding(0) var<storage> directional_lights : DirectionalLightArray;
-@group(4) @binding(1) var<storage> point_lights : PointLightArray;
+@group(4) @binding(0) var<storage, read> lights: LightArray;
 
 @group(5) @binding(0) var smap: texture_depth_2d_array;
 @group(5) @binding(1) var smap_sampler: sampler_comparison;
@@ -186,24 +165,23 @@ fn blinn_phong_shading_eye_space(view_mat: mat4x4<f32>, pos_eye_space: vec3<f32>
     // View direction in camera space.
     let wo = normalize(-pos_eye_space);
 
-    for (var i : u32 = 0u; i < directional_lights.len; i++) {
-        var light = directional_lights.data[i];
-        // Light direction in view space.
-        var wi = (view_mat * vec4<f32>(normalize(light.direction), 0.0)).xyz;
-        var coeff = blinn_phong_brdf(wi, wo, n, kd, ks, ns, illum);
-        color += coeff * light.color;
-    }
-
-    for (var i : u32 = 0u; i < point_lights.len; i = i + 1u) {
-        var light = point_lights.data[i];
-        // Light position in view space.
-        var light_pos = (view_mat * vec4<f32>(light.position, 1.0));
-        var pos_to_light = (light_pos / light_pos.w).xyz - pos_eye_space;
-        var dist = length(pos_to_light);
-        var light_color = light.color * (1.0 / (1.0 + 0.02 * dist * dist));
-        var wi = normalize(pos_to_light);
-        var coeff = blinn_phong_brdf(wi, wo, n, kd, ks, ns, illum);
-        color += coeff * light_color;
+    for (var i: u32 = 0u; i < lights.len; i++) {
+        let light = lights.data[i];
+        if (light.dir_or_pos.w == DIR_LIGHT) {
+            // Light direction in view space.
+            let wi = (view_mat * light.dir_or_pos).xyz;
+            let coeff = blinn_phong_brdf(wi, wo, n, kd, ks, ns, illum);
+            color += coeff * light.color;
+        } else if (light.dir_or_pos.w == PNT_LIGHT) {
+            // Light position in view space.
+            var light_pos = view_mat * light.dir_or_pos;
+            var pos_to_light = (light_pos / light_pos.w).xyz - pos_eye_space;
+            var dist = length(pos_to_light);
+            var light_color = light.color * (1.0 / (1.0 + 0.02 * dist * dist));
+            var wi = normalize(pos_to_light);
+            var coeff = blinn_phong_brdf(wi, wo, n, kd, ks, ns, illum);
+            color += coeff * light_color;
+        }
     }
 
     return color;
@@ -295,13 +273,10 @@ fn fs_main(vout : VSOutput) -> @location(0) vec4<f32> {
         }
 
         var ia = vec3<f32>(0.0, 0.0, 0.0);
-        for (var i : u32 = 0u; i < directional_lights.len; i++) {
-            ia += directional_lights.data[i].color;
+        for (var i : u32 = 0u; i < lights.len; i++) {
+            ia += lights.data[i].color;
         }
-        for (var i : u32 = 0u; i < point_lights.len; i++) {
-            ia += point_lights.data[i].color;
-        }
-        ia = 0.08 * ia / f32(directional_lights.len + point_lights.len);
+        ia = 0.08 * ia / f32(lights.len);
         color += ka * ia * kd;
     }
 

@@ -6,9 +6,8 @@ use crate::{
     },
     render::{
         rpass::{
-            BlinnPhongRenderPass, DirLight, DirLightArray, Globals, GlobalsBindGroup,
-            LightsBindGroup, Locals, LocalsBindGroup, PConsts, PntLight, PntLightArray,
-            RenderingPass, DEPTH_FORMAT,
+            BlinnPhongRenderPass, Globals, GlobalsBindGroup, GpuLight, LightArray, LightsBindGroup,
+            Locals, LocalsBindGroup, PConsts, RenderingPass, DEPTH_FORMAT,
         },
         PipelineId, PipelineKind, Pipelines, RenderParams, RenderTarget, Renderer,
     },
@@ -130,42 +129,22 @@ impl LightsBindGroup {
     pub fn new(device: &wgpu::Device) -> Self {
         let layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("blph_lights_bg_layout"),
-            entries: &[
-                wgpu::BindGroupLayoutEntry {
-                    binding: 0,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Storage { read_only: true },
-                        has_dynamic_offset: false,
-                        min_binding_size: DirLightArray::BUFFER_SIZE,
-                    },
-                    count: None,
+            entries: &[wgpu::BindGroupLayoutEntry {
+                binding: 0,
+                visibility: wgpu::ShaderStages::FRAGMENT,
+                ty: wgpu::BindingType::Buffer {
+                    ty: wgpu::BufferBindingType::Storage { read_only: true },
+                    has_dynamic_offset: false,
+                    min_binding_size: LightArray::BUFFER_SIZE,
                 },
-                wgpu::BindGroupLayoutEntry {
-                    binding: 1,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Storage { read_only: true },
-                        has_dynamic_offset: false,
-                        min_binding_size: PntLightArray::BUFFER_SIZE,
-                    },
-                    count: None,
-                },
-            ],
+                count: None,
+            }],
         });
 
-        // Preallocate a buffer for directional lights.
-        let dir_lights_buffer = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("blph_dir_lights_buffer"),
-            size: DirLightArray::SIZE as u64,
-            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
-            mapped_at_creation: false,
-        });
-
-        // Preallocate a buffer for point lights.
-        let pnt_lights_buffer = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("blph_pnt_lights_buffer"),
-            size: PntLightArray::SIZE as u64,
+        // Preallocate a buffer for lights.
+        let lights_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("blph_lights_buffer"),
+            size: LightArray::SIZE as u64,
             usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
@@ -173,25 +152,17 @@ impl LightsBindGroup {
         let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("blph_lights_bind_group"),
             layout: &layout,
-            entries: &[
-                wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: dir_lights_buffer.as_entire_binding(),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 1,
-                    resource: pnt_lights_buffer.as_entire_binding(),
-                },
-            ],
+            entries: &[wgpu::BindGroupEntry {
+                binding: 0,
+                resource: lights_buffer.as_entire_binding(),
+            }],
         });
 
         Self {
             group: bind_group,
             layout,
-            dir_lights_buffer,
-            pnt_lights_buffer,
-            dir_lights: DirLightArray::default(),
-            pnt_lights: PntLightArray::default(),
+            lights_buffer,
+            lights: LightArray::default(),
         }
     }
 
@@ -201,42 +172,33 @@ impl LightsBindGroup {
     where
         L: Iterator<Item = (&'a Light, &'a NodeIdx)>,
     {
-        self.dir_lights.clear();
-        self.pnt_lights.clear();
+        self.lights.clear();
 
         for (light, node_idx) in lights {
-            match light {
+            let len = self.lights.len[0] as usize;
+            self.lights.lights[len] = match light {
                 Light::Directional { direction, color } => {
-                    let len = self.dir_lights.len[0] as usize;
-                    self.dir_lights.lights[len] = DirLight {
-                        direction: [-direction.x, -direction.y, -direction.z, 0.0],
+                    let normalized = direction.normalize();
+                    GpuLight {
+                        dir_or_pos: [-normalized.x, -normalized.y, -normalized.z, 0.0],
                         color: [color.r as f32, color.g as f32, color.b as f32, 1.0],
-                    };
-                    self.dir_lights.len[0] += 1;
+                        w2l: [0.0; 16],
+                    }
                 }
                 Light::Point { color } => {
                     let transform = nodes.world(*node_idx);
                     let position = transform.translation;
-                    let len = self.pnt_lights.len[0] as usize;
-                    self.pnt_lights.lights[len] = PntLight {
-                        position: [position.x, position.y, position.z, 1.0],
+                    GpuLight {
+                        dir_or_pos: [position.x, position.y, position.z, 1.0],
                         color: [color.r as f32, color.g as f32, color.b as f32, 1.0],
-                    };
-                    self.pnt_lights.len[0] += 1;
+                        w2l: [0.0; 16],
+                    }
                 }
-            }
+            };
+            self.lights.len[0] += 1;
         }
         // Update light buffers.
-        queue.write_buffer(
-            &self.dir_lights_buffer,
-            0,
-            bytemuck::bytes_of(&self.dir_lights),
-        );
-        queue.write_buffer(
-            &self.pnt_lights_buffer,
-            0,
-            bytemuck::bytes_of(&self.pnt_lights),
-        );
+        queue.write_buffer(&self.lights_buffer, 0, bytemuck::bytes_of(&self.lights));
     }
 }
 

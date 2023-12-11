@@ -10,15 +10,7 @@ use bytemuck::{Pod, Zeroable};
 use glam::Mat4;
 use std::ops::Deref;
 
-crate::impl_size_constant!(
-    Globals,
-    Locals,
-    PConsts,
-    DirLight,
-    DirLightArray,
-    PntLight,
-    PntLightArray
-);
+crate::impl_size_constant!(Globals, Locals, PConsts, GpuLight, LightArray);
 
 /// The global uniforms for the rendering passes.
 #[repr(C)]
@@ -112,65 +104,36 @@ impl LocalsBindGroup {
     pub const INITIAL_INSTANCE_CAPACITY: usize = 1024;
 }
 
-/// Directional light information in the shader.
+/// Light information for the shader.
 #[repr(C)]
 #[derive(Debug, Clone, Copy, Default, Pod, Zeroable)]
-pub struct DirLight {
-    pub direction: [f32; 4],
+pub struct GpuLight {
+    pub dir_or_pos: [f32; 4],
     pub color: [f32; 4],
+    pub w2l: [f32; 16],
 }
 
-/// Array of directional lights passed to the shader as a storage buffer.
+/// Array of lights passed to the shader as a storage buffer.
 #[repr(C)]
 #[derive(Debug, Clone, Copy, Pod, Zeroable)]
-pub struct DirLightArray {
+pub struct LightArray {
     pub len: [u32; 4], // with padding to make sure the array is 16-byte aligned.
-    pub lights: [DirLight; BlinnPhongRenderPass::MAX_DIR_LIGHTS],
+    pub lights: [GpuLight; BlinnPhongRenderPass::MAX_LIGHTS],
 }
 
-impl Default for DirLightArray {
+impl Default for LightArray {
     fn default() -> Self {
         Self {
-            len: [0, 0, 0, 0],
-            lights: [DirLight::default(); BlinnPhongRenderPass::MAX_DIR_LIGHTS],
+            len: [0; 4],
+            lights: [GpuLight::default(); BlinnPhongRenderPass::MAX_LIGHTS],
         }
     }
 }
 
-impl DirLightArray {
+impl LightArray {
+    /// Only reset the length of the array.
     pub fn clear(&mut self) {
-        self.len = [0, 0, 0, 0];
-    }
-}
-
-/// Point light information in the shader.
-#[repr(C)]
-#[derive(Debug, Clone, Copy, Default, Pod, Zeroable)]
-pub struct PntLight {
-    pub position: [f32; 4],
-    pub color: [f32; 4],
-}
-
-/// Array of point lights passed to the shader as a storage buffer.
-#[repr(C)]
-#[derive(Debug, Clone, Copy, Pod, Zeroable)]
-pub struct PntLightArray {
-    pub len: [u32; 4], // with padding to make sure the array is 16-byte aligned.
-    pub lights: [PntLight; BlinnPhongRenderPass::MAX_PNT_LIGHTS],
-}
-
-impl Default for PntLightArray {
-    fn default() -> Self {
-        Self {
-            len: [0, 0, 0, 0],
-            lights: [PntLight::default(); BlinnPhongRenderPass::MAX_PNT_LIGHTS],
-        }
-    }
-}
-
-impl PntLightArray {
-    pub fn clear(&mut self) {
-        self.len = [0, 0, 0, 0];
+        self.len = [0; 4];
     }
 }
 
@@ -180,16 +143,11 @@ pub struct LightsBindGroup {
     pub group: wgpu::BindGroup,
     /// The layout of the bind group.
     pub layout: wgpu::BindGroupLayout,
-    /// The storage buffer containing the directional lights.
-    /// See [`DirLightArray`].
-    pub dir_lights_buffer: wgpu::Buffer,
-    /// The storage buffer containing the point lights.
-    /// See [`PntLightArray`].
-    pub pnt_lights_buffer: wgpu::Buffer,
-    /// Cached directional lights of each frame to avoid unnecessary allocation.
-    dir_lights: DirLightArray,
-    /// Cached point lights of each frame to avoid unnecessary allocation.
-    pnt_lights: PntLightArray,
+    /// The storage buffer containing the lights.
+    /// See [`LightArray`].
+    pub lights_buffer: wgpu::Buffer,
+    /// Cached lights of each frame to avoid unnecessary allocation.
+    lights: LightArray,
 }
 
 impl Deref for LightsBindGroup {
@@ -231,9 +189,11 @@ pub struct BlinnPhongRenderPass {
 
 impl BlinnPhongRenderPass {
     /// Maximum number of directional lights.
-    pub const MAX_DIR_LIGHTS: usize = 256;
+    pub const MAX_DIR_LIGHTS: usize = 64;
     /// Maximum number of point lights.
-    pub const MAX_PNT_LIGHTS: usize = 256;
+    pub const MAX_PNT_LIGHTS: usize = 448;
+    /// Maximum number of lights.
+    pub const MAX_LIGHTS: usize = Self::MAX_DIR_LIGHTS + Self::MAX_PNT_LIGHTS;
     /// Maximum number of textures in a texture binding array.
     pub const MAX_TEXTURE_ARRAY_LEN: usize = 128;
     /// Maximum number of texture sampler in a texture sampler binding array.
