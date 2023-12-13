@@ -10,7 +10,14 @@ use bytemuck::{Pod, Zeroable};
 use glam::Mat4;
 use std::ops::Deref;
 
-crate::impl_size_constant!(Globals, Locals, PConsts, GpuLight, LightArray);
+crate::impl_size_constant!(
+    Globals,
+    Locals,
+    ShadowPassLocals,
+    PConsts,
+    GpuLight,
+    LightArray
+);
 
 /// The global uniforms for the rendering passes.
 #[repr(C)]
@@ -42,6 +49,31 @@ impl Locals {
             material_index: [u32::MAX; 4],
         }
     }
+}
+
+#[repr(C)]
+#[derive(Debug, Clone, Copy, Pod, Zeroable)]
+struct ShadowPassLocals {
+    /// The model matrix.
+    model: [f32; 16],
+}
+
+impl ShadowPassLocals {
+    pub const fn identity() -> Self {
+        Self {
+            model: Mat4::IDENTITY.to_cols_array(),
+        }
+    }
+}
+
+impl InstanceLocals for Locals {
+    const SIZE: usize = Self::SIZE;
+    const BUFFER_SIZE: Option<wgpu::BufferSize> = Self::BUFFER_SIZE;
+}
+
+impl InstanceLocals for ShadowPassLocals {
+    const SIZE: usize = Self::SIZE;
+    const BUFFER_SIZE: Option<wgpu::BufferSize> = Self::BUFFER_SIZE;
 }
 
 /// Push constants for the shading pipeline.
@@ -77,10 +109,16 @@ impl Deref for GlobalsBindGroup {
     }
 }
 
+/// The local information (per entity/instance) for the rendering passes.
+pub trait InstanceLocals {
+    const SIZE: usize;
+    const BUFFER_SIZE: Option<wgpu::BufferSize>;
+}
+
 /// The binding group for the local information (per entity/instance).
 ///
 /// See [`Locals`] for the uniforms.
-pub struct LocalsBindGroup {
+pub struct LocalsBindGroup<L: InstanceLocals> {
     /// The bind group.
     pub group: wgpu::BindGroup,
     /// The layout of the bind group.
@@ -89,9 +127,10 @@ pub struct LocalsBindGroup {
     pub buffer: wgpu::Buffer,
     /// Maximum number of instances in the storage buffer.
     capacity: u32,
+    _marker: std::marker::PhantomData<[L]>,
 }
 
-impl Deref for LocalsBindGroup {
+impl<L: InstanceLocals> Deref for LocalsBindGroup<L> {
     type Target = wgpu::BindGroup;
 
     fn deref(&self) -> &Self::Target {
@@ -99,7 +138,7 @@ impl Deref for LocalsBindGroup {
     }
 }
 
-impl LocalsBindGroup {
+impl<L: InstanceLocals> LocalsBindGroup<L> {
     /// Initial instance capacity for mesh entities.
     pub const INITIAL_INSTANCE_CAPACITY: usize = 1024;
 }
@@ -165,8 +204,6 @@ pub trait RenderingPass {
         target: &RenderTarget,
         params: &RenderParams,
         scene: &Scene,
-        device: &wgpu::Device,
-        queue: &wgpu::Queue,
         encoder: &mut wgpu::CommandEncoder,
     );
 }
@@ -177,8 +214,12 @@ pub struct BlinnPhongRenderPass {
     pub depth_att: Option<(wgpu::Texture, wgpu::TextureView)>,
     /// The global uniforms bind group.
     pub globals_bind_group: GlobalsBindGroup,
-    /// The local information (per entity/instance) bind group.
-    pub locals_bind_group: LocalsBindGroup,
+    /// The local information (per entity/instance) bind group for visible
+    /// entities.
+    pub locals_bind_group: LocalsBindGroup<Locals>,
+    /// The local information (per entity/instance) bind group for entities
+    /// casting shadows.
+    pub shadow_pass_locals_bind_group: LocalsBindGroup<ShadowPassLocals>,
     pub materials_bind_group_layout: wgpu::BindGroupLayout,
     pub textures_bind_group_layout: wgpu::BindGroupLayout,
     /// The lights bind group.

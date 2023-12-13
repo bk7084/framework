@@ -50,16 +50,18 @@ pub struct RenderParams {
     /// Shading mode.
     pub mode: ShadingMode,
     /// Whether to enable back face culling.
-    pub back_face_culling: bool,
+    pub enable_back_face_culling: bool,
     /// Whether to enable occlusion culling. TODO: implement occlusion culling.
-    pub occlusion_culling: bool,
+    pub enable_occlusion_culling: bool,
     /// Whether to draw wireframe.
-    pub wireframe: bool,
+    pub enable_wireframe: bool,
+    /// Whether to enable shadow.
+    pub enable_shadows: bool,
 }
 
 pub struct Renderer {
-    device: Arc<wgpu::Device>,
-    queue: Arc<wgpu::Queue>,
+    pub device: Arc<wgpu::Device>,
+    pub queue: Arc<wgpu::Queue>,
     features: wgpu::Features,
     limits: wgpu::Limits,
     meshes: GpuMeshAssets,
@@ -143,9 +145,10 @@ impl Renderer {
             samplers,
             params: RenderParams {
                 mode: ShadingMode::BlinnPhong,
-                back_face_culling: true,
-                occlusion_culling: false,
-                wireframe: false,
+                enable_back_face_culling: true,
+                enable_occlusion_culling: false,
+                enable_wireframe: false,
+                enable_shadows: false,
             },
             cmd_receiver: receiver,
             texture_bundles,
@@ -336,10 +339,10 @@ impl Renderer {
         while let Ok(cmd) = self.cmd_receiver.try_recv() {
             match cmd {
                 Command::EnableBackfaceCulling(enable) => {
-                    self.params.back_face_culling = enable;
+                    self.params.enable_back_face_culling = enable;
                 }
                 Command::EnableWireframe(enable) => {
-                    self.params.wireframe = enable;
+                    self.params.enable_wireframe = enable;
                 }
                 _ => {}
             }
@@ -426,15 +429,7 @@ impl Renderer {
                 label: Some("Render"),
             });
 
-        rpass.record(
-            self,
-            target,
-            &self.params,
-            scene,
-            &self.device,
-            &self.queue,
-            &mut encoder,
-        );
+        rpass.record(self, target, &self.params, scene, &mut encoder);
 
         self.queue.submit(std::iter::once(encoder.finish()));
         Ok(())

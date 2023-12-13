@@ -6,8 +6,8 @@ use crate::{
     },
     render::{
         rpass::{
-            BlinnPhongRenderPass, Globals, GlobalsBindGroup, GpuLight, LightArray, LightsBindGroup,
-            Locals, LocalsBindGroup, PConsts, RenderingPass, DEPTH_FORMAT,
+            BlinnPhongRenderPass, Globals, GlobalsBindGroup, GpuLight, InstanceLocals, LightArray,
+            LightsBindGroup, Locals, LocalsBindGroup, PConsts, RenderingPass, DEPTH_FORMAT,
         },
         PipelineId, PipelineKind, Pipelines, RenderParams, RenderTarget, Renderer,
     },
@@ -56,7 +56,7 @@ impl GlobalsBindGroup {
     }
 }
 
-impl LocalsBindGroup {
+impl<L: InstanceLocals> LocalsBindGroup<L> {
     /// Creates a new locals bind group.
     pub fn new(device: &wgpu::Device) -> Self {
         let layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
@@ -74,7 +74,7 @@ impl LocalsBindGroup {
         });
         let buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("blph_locals_buffer"),
-            size: Locals::SIZE as u64 * Self::INITIAL_INSTANCE_CAPACITY as u64,
+            size: L::SIZE as u64 * Self::INITIAL_INSTANCE_CAPACITY as u64,
             usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
@@ -92,6 +92,7 @@ impl LocalsBindGroup {
             layout,
             buffer,
             capacity: Self::INITIAL_INSTANCE_CAPACITY as u32,
+            _marker: Default::default(),
         }
     }
 
@@ -104,7 +105,7 @@ impl LocalsBindGroup {
         }
         // Calculate the new capacity with an increment of 256 instances.
         let new_capacity = (n_instances / 256 + 1) * 256;
-        let size = new_capacity as u64 * Locals::SIZE as u64;
+        let size = new_capacity as u64 * L::SIZE as u64;
         log::debug!("Resize instance locals buffer to {}", size);
         self.buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("blph_locals_buffer"),
@@ -218,6 +219,7 @@ impl BlinnPhongRenderPass {
 
         let globals_bind_group = GlobalsBindGroup::new(device);
         let locals_bind_group = LocalsBindGroup::new(device);
+        let shadow_pass_locals_bind_group = LocalsBindGroup::new(device);
 
         let materials_bind_group_layout =
             device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
@@ -273,10 +275,356 @@ impl BlinnPhongRenderPass {
             depth_att: None,
             globals_bind_group,
             locals_bind_group,
+            shadow_pass_locals_bind_group,
             materials_bind_group_layout,
             textures_bind_group_layout,
             lights_bind_group,
             pipelines,
+        }
+    }
+
+    /// Evaluates shadow maps.
+    fn eval_shadow_maps_pass<'a, M>(&mut self, meshes: M)
+    where
+        M: Iterator<Item = (&'a MeshBundle, &'a NodeIdx)>,
+    {
+        profiling::scope!("BlinnPhongShading::eval_shadow_maps_pass");
+    }
+
+    /// Evaluates the main render pass.
+    fn eval_main_render_pass<'a>(
+        &mut self,
+        encoder: &mut wgpu::CommandEncoder,
+        meshes: &[(&'a MeshBundle, &'a NodeIdx)],
+        scene: &Scene,
+        renderer: &Renderer,
+        params: &RenderParams,
+        target: &RenderTarget,
+    ) {
+        profiling::scope!("BlinnPhongShading::eval_main_render_pass");
+        // Update globals.
+        let (view_mat, clear_color) = {
+            // Update camera globals.
+            let mut camera_query = <(&Camera, &NodeIdx)>::query();
+            let num_cameras = camera_query.iter(&scene.world).count();
+            if num_cameras == 0 {
+                log::error!("No camera found in the scene! Skip rendering!");
+                return;
+            }
+
+            let main_camera = camera_query
+                .iter(&scene.world)
+                .find(|(camera, _)| camera.is_main);
+
+            let (camera, node_idx) = match main_camera {
+                None => {
+                    // If there is no main camera, use the first camera.
+                    let camera = camera_query.iter(&scene.world).next().unwrap();
+                    log::warn!("No main camera found, use the first camera #{:?}", camera.1);
+                    camera
+                }
+                Some(camera) => {
+                    // If there is a main camera, use it.
+                    log::debug!("Use main camera {:?}", camera.1);
+                    camera
+                }
+            };
+
+            let view_mat = scene.nodes.inverse_world(*node_idx).to_mat4();
+            let proj = camera.proj_matrix(target.aspect_ratio());
+            let globals = Globals {
+                view: view_mat.to_cols_array(),
+                proj: proj.to_cols_array(),
+            };
+            renderer.queue.write_buffer(
+                &self.globals_bind_group.buffer,
+                0,
+                bytemuck::bytes_of(&globals),
+            );
+            (view_mat, camera.background)
+        };
+
+        // (Re)create depth texture if necessary.
+        {
+            let need_recreate = match &self.depth_att {
+                None => true,
+                Some(depth) => target.size != depth.0.size(),
+            };
+
+            if need_recreate {
+                let texture = renderer.device.create_texture(&wgpu::TextureDescriptor {
+                    label: Some("wireframe_depth_texture"),
+                    size: target.size,
+                    mip_level_count: 1,
+                    sample_count: 1,
+                    dimension: wgpu::TextureDimension::D2,
+                    format: DEPTH_FORMAT,
+                    usage: wgpu::TextureUsages::RENDER_ATTACHMENT
+                        | wgpu::TextureUsages::TEXTURE_BINDING,
+                    view_formats: &[],
+                });
+                let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
+                self.depth_att = Some((texture, view));
+            }
+        }
+
+        // Create render pass.
+        let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+            label: Some("blinn_phong_render_pass"),
+            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                view: &target.view,
+                resolve_target: None,
+                ops: wgpu::Operations {
+                    load: wgpu::LoadOp::Clear(*clear_color),
+                    store: wgpu::StoreOp::Store,
+                },
+            })],
+            depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+                view: &self.depth_att.as_ref().unwrap().1,
+                depth_ops: Some(wgpu::Operations {
+                    load: wgpu::LoadOp::Clear(1.0),
+                    store: wgpu::StoreOp::Store,
+                }),
+                stencil_ops: None,
+            }),
+            timestamp_writes: None,
+            occlusion_query_set: None,
+        });
+
+        // Choose the pipeline.
+        let pipeline = self.pipelines.get_all_filtered("entity", |id| {
+            let cull_mode = if params.enable_back_face_culling {
+                Some(wgpu::Face::Back)
+            } else {
+                None
+            };
+            let polygon_mode = if params.enable_wireframe {
+                wgpu::PolygonMode::Line
+            } else {
+                wgpu::PolygonMode::Fill
+            };
+            id.cull_mode() == cull_mode && id.polygon_mode() == polygon_mode
+        });
+
+        match pipeline {
+            None => {
+                log::error!("Missing pipeline for entity shading!");
+                return;
+            }
+            Some(pipelines) => {
+                render_pass.set_pipeline(&pipelines[0]);
+            }
+        }
+
+        // Bind globals.
+        render_pass.set_bind_group(0, &self.globals_bind_group, &[]);
+
+        {
+            let mut unique_meshes = FxHashSet::default();
+            let mut n_inst = 0;
+            for (mesh, _) in meshes {
+                unique_meshes.insert(mesh);
+                n_inst += 1;
+            }
+
+            log::debug!(
+                "Processed {} instances of {} meshes",
+                n_inst,
+                unique_meshes.len()
+            );
+
+            if n_inst == 0 {
+                return;
+            }
+
+            self.locals_bind_group.resize(&renderer.device, n_inst);
+            // Bind instance locals.
+            render_pass.set_bind_group(1, &self.locals_bind_group, &[]);
+            // Bind lights storage buffer.
+            render_pass.set_bind_group(4, &self.lights_bind_group, &[]);
+
+            // Preparing locals for each mesh.
+            let mut locals = vec![Locals::identity(); n_inst as usize];
+            let mut locals_offset = 0u32;
+            // Get the mesh buffer, which contains all vertex attributes.
+            let mesh_buffer = renderer.meshes.buffer();
+            for bundle in unique_meshes {
+                let instances = renderer
+                    .instancing
+                    .get(&bundle)
+                    .expect("Unreachable! Instancing should be created for all meshes!");
+                let mut inst_count = 0;
+                for (i, node_idx) in instances.iter().enumerate() {
+                    let node = &scene.nodes[*node_idx];
+                    if !node.is_visible() {
+                        continue;
+                    }
+                    inst_count += 1;
+                    let model_mat = scene.nodes.world(*node_idx).to_mat4();
+                    locals[locals_offset as usize + i] = Locals {
+                        model: model_mat.to_cols_array(),
+                        model_view_it: (view_mat * model_mat).inverse().transpose().to_cols_array(),
+                        material_index: [
+                            node.material_override.unwrap_or(u32::MAX),
+                            u32::MAX,
+                            u32::MAX,
+                            u32::MAX,
+                        ],
+                    }
+                }
+                debug_assert!(
+                    inst_count > 0,
+                    "Unreachable! Only visible nodes will be rendered!"
+                );
+                // Update push constants: isntance base index.
+                render_pass.set_push_constants(
+                    wgpu::ShaderStages::VERTEX_FRAGMENT,
+                    0,
+                    bytemuck::bytes_of(&(locals_offset as u32)),
+                );
+                locals_offset += inst_count;
+                let inst_range = 0..inst_count;
+
+                let mtls = renderer
+                    .material_bundles
+                    .get(bundle.aesthetic.materials)
+                    .unwrap();
+                let texs = renderer
+                    .texture_bundles
+                    .get(bundle.aesthetic.textures)
+                    .unwrap();
+
+                match renderer.meshes.get(bundle.mesh) {
+                    None => {
+                        log::error!("Missing mesh {:?}", bundle.mesh);
+                        continue;
+                    }
+                    Some(mesh) => {
+                        if let Some(pos_range) =
+                            mesh.get_vertex_attribute_range(VertexAttribute::POSITION)
+                        {
+                            // Bind vertex buffer - position.
+                            render_pass.set_vertex_buffer(0, mesh_buffer.slice(pos_range.clone()));
+
+                            // Bind vertex buffer - normal.
+                            if let Some(normals_range) =
+                                mesh.get_vertex_attribute_range(VertexAttribute::NORMAL)
+                            {
+                                render_pass
+                                    .set_vertex_buffer(1, mesh_buffer.slice(normals_range.clone()));
+                            }
+                            // Bind vertex buffer - uv.
+                            if let Some(uv_range) =
+                                mesh.get_vertex_attribute_range(VertexAttribute::UV)
+                            {
+                                render_pass
+                                    .set_vertex_buffer(2, mesh_buffer.slice(uv_range.clone()));
+                            }
+                            // Bind vertex buffer - tangent.
+                            if let Some(tangent_range) =
+                                mesh.get_vertex_attribute_range(VertexAttribute::TANGENT)
+                            {
+                                render_pass.set_vertex_buffer(
+                                    VertexAttribute::TANGENT.shader_location,
+                                    mesh_buffer.slice(tangent_range.clone()),
+                                );
+                            }
+
+                            // Bind material.
+                            render_pass.set_bind_group(2, &mtls.bind_group, &[]);
+                            // Bind textures.
+                            render_pass.set_bind_group(3, texs.bind_group.as_ref().unwrap(), &[]);
+
+                            match mesh.index_format {
+                                None => {
+                                    // No index buffer, draw directly.
+                                    match mesh.sub_meshes.as_ref() {
+                                        None => {
+                                            // No sub-meshes, use the default material.
+                                            // Update material index.
+                                            render_pass.set_push_constants(
+                                                wgpu::ShaderStages::VERTEX_FRAGMENT,
+                                                64,
+                                                bytemuck::bytes_of(&0u32),
+                                            );
+                                            render_pass.draw(0..mesh.vertex_count, inst_range);
+                                        }
+                                        Some(sub_meshes) => {
+                                            // Draw each sub-mesh.
+                                            for sm in sub_meshes {
+                                                let material_id =
+                                                    sm.material.unwrap_or(mtls.n_materials - 1);
+                                                // Update material index.
+                                                render_pass.set_push_constants(
+                                                    wgpu::ShaderStages::VERTEX_FRAGMENT,
+                                                    64,
+                                                    bytemuck::bytes_of(&material_id),
+                                                );
+                                                render_pass.draw(
+                                                    sm.range.start..sm.range.end,
+                                                    inst_range.clone(),
+                                                )
+                                            }
+                                        }
+                                    }
+                                }
+                                Some(index_format) => {
+                                    render_pass.set_index_buffer(
+                                        mesh_buffer.slice(mesh.index_range.clone()),
+                                        index_format,
+                                    );
+                                    match mesh.sub_meshes.as_ref() {
+                                        None => {
+                                            log::trace!("Draw mesh with index, no sub-meshes");
+                                            // No sub-meshes, use the default material.
+                                            // Update material index.
+                                            render_pass.set_push_constants(
+                                                wgpu::ShaderStages::VERTEX_FRAGMENT,
+                                                4,
+                                                bytemuck::bytes_of(&0u32),
+                                            );
+                                            render_pass.draw_indexed(
+                                                0..mesh.index_count,
+                                                0,
+                                                inst_range,
+                                            );
+                                        }
+                                        Some(sub_meshes) => {
+                                            log::trace!("Draw mesh with index, with sub-meshes");
+                                            for sm in sub_meshes {
+                                                log::trace!(
+                                                    "Draw sub-mesh {}-{}",
+                                                    sm.range.start,
+                                                    sm.range.end
+                                                );
+                                                let material_id =
+                                                    sm.material.unwrap_or(mtls.n_materials - 1);
+                                                // Update material index.
+                                                render_pass.set_push_constants(
+                                                    wgpu::ShaderStages::VERTEX_FRAGMENT,
+                                                    4,
+                                                    bytemuck::bytes_of(&material_id),
+                                                );
+                                                // Draw the sub-mesh.
+                                                render_pass.draw_indexed(
+                                                    sm.range.start..sm.range.end,
+                                                    0,
+                                                    inst_range.clone(),
+                                                );
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            renderer.queue.write_buffer(
+                &self.locals_bind_group.buffer,
+                0,
+                bytemuck::cast_slice(&locals),
+            );
         }
     }
 
@@ -395,6 +743,7 @@ impl BlinnPhongRenderPass {
         (id, pipeline)
     }
 }
+
 pub fn texture_bundle_bind_group_layout(device: &wgpu::Device) -> wgpu::BindGroupLayout {
     device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
         label: Some("blinn_phong_textures_bind_group_layout"),
@@ -439,344 +788,38 @@ impl RenderingPass for BlinnPhongRenderPass {
         target: &RenderTarget,
         params: &RenderParams,
         scene: &Scene,
-        device: &wgpu::Device,
-        queue: &wgpu::Queue,
         encoder: &mut wgpu::CommandEncoder,
     ) {
         profiling::scope!("BlinnPhongShading::record");
-        let (view_mat, clear_color) = {
-            // Update camera globals.
-            let mut camera_query = <(&Camera, &NodeIdx)>::query();
-            let num_cameras = camera_query.iter(&scene.world).count();
-            if num_cameras == 0 {
-                log::error!("No camera found in the scene! Skip rendering!");
-                return;
-            }
 
-            let main_camera = camera_query
-                .iter(&scene.world)
-                .find(|(camera, _)| camera.is_main);
+        let mut mesh_bundle_query = <(&MeshBundle, &NodeIdx)>::query();
+        let mut visible_meshes = mesh_bundle_query
+            .iter(&scene.world)
+            .filter(|(_, node_idx)| scene.nodes[**node_idx].is_visible())
+            .collect::<Vec<_>>();
 
-            let (camera, node_idx) = match main_camera {
-                None => {
-                    // If there is no main camera, use the first camera.
-                    let camera = camera_query.iter(&scene.world).next().unwrap();
-                    log::warn!("No main camera found, use the first camera #{:?}", camera.1);
-                    camera
-                }
-                Some(camera) => {
-                    // If there is a main camera, use it.
-                    log::debug!("Use main camera {:?}", camera.1);
-                    camera
-                }
-            };
-
-            let view_mat = scene.nodes.inverse_world(*node_idx).to_mat4();
-            let proj = camera.proj_matrix(target.aspect_ratio());
-            let globals = Globals {
-                view: view_mat.to_cols_array(),
-                proj: proj.to_cols_array(),
-            };
-            queue.write_buffer(
-                &self.globals_bind_group.buffer,
-                0,
-                bytemuck::bytes_of(&globals),
-            );
-            (view_mat, camera.background)
-        };
-
-        {
-            // (Re-)create depth texture if necessary.
-            let need_recreate = match &self.depth_att {
-                None => true,
-                Some(depth) => target.size != depth.0.size(),
-            };
-
-            if need_recreate {
-                let texture = device.create_texture(&wgpu::TextureDescriptor {
-                    label: Some("wireframe_depth_texture"),
-                    size: target.size,
-                    mip_level_count: 1,
-                    sample_count: 1,
-                    dimension: wgpu::TextureDimension::D2,
-                    format: DEPTH_FORMAT,
-                    usage: wgpu::TextureUsages::RENDER_ATTACHMENT
-                        | wgpu::TextureUsages::TEXTURE_BINDING,
-                    view_formats: &[],
-                });
-                let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
-                self.depth_att = Some((texture, view));
-            }
+        if visible_meshes.len() == 0 {
+            // No visible meshes, skip rendering.
+            return;
         }
 
-        // Create render pass.
-        let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-            label: Some("blinn_phong_render_pass"),
-            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                view: &target.view,
-                resolve_target: None,
-                ops: wgpu::Operations {
-                    load: wgpu::LoadOp::Clear(*clear_color),
-                    store: wgpu::StoreOp::Store,
-                },
-            })],
-            depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
-                view: &self.depth_att.as_ref().unwrap().1,
-                depth_ops: Some(wgpu::Operations {
-                    load: wgpu::LoadOp::Clear(1.0),
-                    store: wgpu::StoreOp::Store,
-                }),
-                stencil_ops: None,
-            }),
-            timestamp_writes: None,
-            occlusion_query_set: None,
-        });
-
-        let pipeline = self.pipelines.get_all_filtered("entity", |id| {
-            let cull_mode = if params.back_face_culling {
-                Some(wgpu::Face::Back)
-            } else {
-                None
-            };
-            let polygon_mode = if params.wireframe {
-                wgpu::PolygonMode::Line
-            } else {
-                wgpu::PolygonMode::Fill
-            };
-            id.cull_mode() == cull_mode && id.polygon_mode() == polygon_mode
-        });
-
-        match pipeline {
-            None => {
-                log::error!("Missing pipeline for entity shading!");
-                return;
-            }
-            Some(pipelines) => {
-                render_pass.set_pipeline(&pipelines[0]);
-            }
-        }
-
-        render_pass.set_bind_group(0, &self.globals_bind_group, &[]);
-
-        // Update lights; bind lights.
+        // Update lights storage buffer.
         {
             let mut light_query = <(&Light, &NodeIdx)>::query();
             let active_lights = light_query
                 .iter(&scene.world)
                 .filter(|(_, node_idx)| scene.nodes[**node_idx].is_active());
             self.lights_bind_group
-                .update_lights(active_lights, &scene.nodes, queue);
-            render_pass.set_bind_group(4, &self.lights_bind_group, &[]);
+                .update_lights(active_lights, &scene.nodes, &renderer.queue);
         }
 
-        let mut mesh_bundle_query = <(&NodeIdx, &MeshBundle)>::query();
-
-        let mut mesh_bundles = FxHashSet::default();
-        let mut total_inst_count = 0;
-        for (_, mesh) in mesh_bundle_query
-            .iter(&scene.world)
-            .filter(|(node_idx, _)| scene.nodes[**node_idx].is_visible())
-        {
-            mesh_bundles.insert(mesh);
-            total_inst_count += 1;
-        }
-        log::debug!(
-            "Draw {} meshes of {} instances",
-            mesh_bundles.len(),
-            total_inst_count
-        );
-
-        if total_inst_count == 0 {
-            return;
+        if params.enable_shadows {
+            let meshes_casting_shadow = mesh_bundle_query
+                .iter(&scene.world)
+                .filter(|(_, node_idx)| scene.nodes[**node_idx].cast_shadows());
+            self.eval_shadow_maps_pass(meshes_casting_shadow);
         }
 
-        self.locals_bind_group.resize(device, total_inst_count);
-
-        // Bind locals.
-        render_pass.set_bind_group(1, &self.locals_bind_group, &[]);
-        // Preparing locals for each mesh.
-        let mut locals = vec![Locals::identity(); total_inst_count as usize];
-
-        // Get the mesh buffer, which contains all vertex attributes.
-        let buffer = renderer.meshes.buffer();
-        let mut locals_offset = 0u32;
-        for bundle in mesh_bundles {
-            // Update locals.
-            let instances = renderer
-                .instancing
-                .get(&bundle)
-                .expect("Unreachable! Instancing should be created for all meshes!");
-            let mut inst_count = 0;
-            for (i, node_idx) in instances.iter().enumerate() {
-                let node = &scene.nodes[*node_idx];
-                if !node.is_visible() {
-                    continue;
-                }
-                inst_count += 1;
-                let model_mat = scene.nodes.world(*node_idx).to_mat4();
-                locals[locals_offset as usize + i] = Locals {
-                    model: model_mat.to_cols_array(),
-                    model_view_it: (view_mat * model_mat).inverse().transpose().to_cols_array(),
-                    material_index: [
-                        node.material_override.unwrap_or(u32::MAX),
-                        u32::MAX,
-                        u32::MAX,
-                        u32::MAX,
-                    ],
-                };
-            }
-            debug_assert!(
-                inst_count > 0,
-                "Unreachable! Only visible nodes should be rendered!"
-            );
-
-            // Update push constants: instance base index.
-            render_pass.set_push_constants(
-                wgpu::ShaderStages::VERTEX_FRAGMENT,
-                0,
-                bytemuck::bytes_of(&(locals_offset as u32)),
-            );
-            locals_offset += inst_count;
-            let inst_range = 0..inst_count;
-
-            let mtls = renderer
-                .material_bundles
-                .get(bundle.aesthetic.materials)
-                .unwrap();
-            let texs = renderer
-                .texture_bundles
-                .get(bundle.aesthetic.textures)
-                .unwrap();
-
-            match renderer.meshes.get(bundle.mesh) {
-                None => {
-                    log::error!("Missing mesh {:?}", bundle.mesh);
-                    continue;
-                }
-                Some(mesh) => {
-                    if let Some(pos_range) =
-                        mesh.get_vertex_attribute_range(VertexAttribute::POSITION)
-                    {
-                        // Bind vertex buffer - position.
-                        render_pass.set_vertex_buffer(0, buffer.slice(pos_range.clone()));
-
-                        // Bind vertex buffer - normal.
-                        if let Some(normals_range) =
-                            mesh.get_vertex_attribute_range(VertexAttribute::NORMAL)
-                        {
-                            render_pass.set_vertex_buffer(1, buffer.slice(normals_range.clone()));
-                        }
-                        // Bind vertex buffer - uv.
-                        if let Some(uv_range) = mesh.get_vertex_attribute_range(VertexAttribute::UV)
-                        {
-                            render_pass.set_vertex_buffer(2, buffer.slice(uv_range.clone()));
-                        }
-                        // Bind vertex buffer - tangent.
-                        if let Some(tangent_range) =
-                            mesh.get_vertex_attribute_range(VertexAttribute::TANGENT)
-                        {
-                            render_pass.set_vertex_buffer(
-                                VertexAttribute::TANGENT.shader_location,
-                                buffer.slice(tangent_range.clone()),
-                            );
-                        }
-
-                        // Bind material.
-                        render_pass.set_bind_group(2, &mtls.bind_group, &[]);
-                        // Bind textures.
-                        render_pass.set_bind_group(3, texs.bind_group.as_ref().unwrap(), &[]);
-
-                        match mesh.index_format {
-                            None => {
-                                // No index buffer, draw directly.
-                                match mesh.sub_meshes.as_ref() {
-                                    None => {
-                                        // No sub-meshes, use the default material.
-                                        // Update material index.
-                                        render_pass.set_push_constants(
-                                            wgpu::ShaderStages::VERTEX_FRAGMENT,
-                                            64,
-                                            bytemuck::bytes_of(&0u32),
-                                        );
-                                        render_pass.draw(0..mesh.vertex_count, inst_range);
-                                    }
-                                    Some(sub_meshes) => {
-                                        // Draw each sub-mesh.
-                                        for sm in sub_meshes {
-                                            let material_id =
-                                                sm.material.unwrap_or(mtls.n_materials - 1);
-                                            // Update material index.
-                                            render_pass.set_push_constants(
-                                                wgpu::ShaderStages::VERTEX_FRAGMENT,
-                                                64,
-                                                bytemuck::bytes_of(&material_id),
-                                            );
-                                            render_pass.draw(
-                                                sm.range.start..sm.range.end,
-                                                inst_range.clone(),
-                                            )
-                                        }
-                                    }
-                                }
-                            }
-                            Some(index_format) => {
-                                render_pass.set_index_buffer(
-                                    buffer.slice(mesh.index_range.clone()),
-                                    index_format,
-                                );
-                                match mesh.sub_meshes.as_ref() {
-                                    None => {
-                                        log::trace!("Draw mesh with index, no sub-meshes");
-                                        // No sub-meshes, use the default material.
-                                        // Update material index.
-                                        render_pass.set_push_constants(
-                                            wgpu::ShaderStages::VERTEX_FRAGMENT,
-                                            4,
-                                            bytemuck::bytes_of(&0u32),
-                                        );
-                                        render_pass.draw_indexed(
-                                            0..mesh.index_count,
-                                            0,
-                                            inst_range,
-                                        );
-                                    }
-                                    Some(sub_meshes) => {
-                                        log::trace!("Draw mesh with index, with sub-meshes");
-                                        for sm in sub_meshes {
-                                            log::trace!(
-                                                "Draw sub-mesh {}-{}",
-                                                sm.range.start,
-                                                sm.range.end
-                                            );
-                                            let material_id =
-                                                sm.material.unwrap_or(mtls.n_materials - 1);
-                                            // Update material index.
-                                            render_pass.set_push_constants(
-                                                wgpu::ShaderStages::VERTEX_FRAGMENT,
-                                                4,
-                                                bytemuck::bytes_of(&material_id),
-                                            );
-                                            // Draw the sub-mesh.
-                                            render_pass.draw_indexed(
-                                                sm.range.start..sm.range.end,
-                                                0,
-                                                inst_range.clone(),
-                                            );
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
-        // Update locals before submitting the render pass.
-        queue.write_buffer(
-            &self.locals_bind_group.buffer,
-            0,
-            bytemuck::cast_slice(&locals),
-        );
+        self.eval_main_render_pass(encoder, &visible_meshes, scene, renderer, params, target);
     }
 }

@@ -1,19 +1,22 @@
-    // illum 0: Color on, ambient off
-    // illum 1: Color on, ambient on
-    // illum 2: Highlight on
-    // illum 3: Reflection on and ray trace on
-    // illum 4: Transparency: Glass on, Reflection: Ray trace on
-    // illum 5: Reflection: Fresnel on and Ray trace on
-    // illum 6: Transparency: Refraction on, Reflection: Fresnel off and Ray trace on
-    // illum 7: Transparency: Refraction on, Reflection: Fresnel on and Ray trace on
-    // illum 8: Reflection on and Ray trace off
-    // illum 9: Transparency: Glass on, Reflection: Ray trace off
-    // illum 10: Casts shadows onto invisible surfaces
-    // Self defined:
-    // - 11: kd as color, no lighting
-    // - 12: ks as color, no lighting
-    // - 13: uv as color, no lighting
-    // - 14: normal in view space as color, no lighting
+// illum 0: Color on, ambient off
+// illum 1: Color on, ambient on
+// illum 2: Highlight on
+// illum 3: Reflection on and ray trace on
+// illum 4: Transparency: Glass on, Reflection: Ray trace on
+// illum 5: Reflection: Fresnel on and Ray trace on
+// illum 6: Transparency: Refraction on, Reflection: Fresnel off and Ray trace
+// on illum 7: Transparency: Refraction on, Reflection: Fresnel on and Ray trace
+// on illum 8: Reflection on and Ray trace off illum 9: Transparency: Glass on,
+// Reflection: Ray trace off illum 10: Casts shadows onto invisible surfaces
+// Self defined:
+// - 11: kd as color, no lighting
+// - 12: ks as color, no lighting
+// - 13: uv as color, no lighting
+// - 14: normal in view space as color, no lighting
+
+const PNT_LIGHT: f32 = 1.0;
+const DIR_LIGHT: f32 = 0.0;
+const INVALID_INDEX: u32 = 0xffffffffu;
 
 /// Camera data.
 struct Globals {
@@ -31,9 +34,6 @@ struct PConsts {
     instance_base_index: u32,
     material_index: u32,
 }
-
-const PNT_LIGHT: f32 = 1.0;
-const DIR_LIGHT: f32 = 0.0;
 
 struct Light {
    /// Direction or position of light. The last component is 0 for directional light and 1 for point light.
@@ -92,13 +92,13 @@ struct VSOutput {
     @location(8) view_mat_w: vec4<f32>,
 }
 
-@group(0) @binding(0) var<uniform> globals : Globals;
-@group(1) @binding(0) var<storage, read> instances : array<Locals>;
+@group(0) @binding(0) var<uniform> globals: Globals;
+@group(1) @binding(0) var<storage, read> instances: array<Locals>;
 
-@group(2) @binding(0) var<storage, read> materials : array<Material>;
-@group(3) @binding(0) var textures : binding_array<texture_2d<f32>>;
-@group(3) @binding(1) var<storage, read> texture_sampler_ids : array<u32>;
-@group(3) @binding(2) var samplers : binding_array<sampler>;
+@group(2) @binding(0) var<storage, read> materials: array<Material>;
+@group(3) @binding(0) var textures: binding_array<texture_2d<f32>>;
+@group(3) @binding(1) var<storage, read> texture_sampler_ids: array<u32>;
+@group(3) @binding(2) var samplers: binding_array<sampler>;
 
 @group(4) @binding(0) var<storage, read> lights: LightArray;
 
@@ -106,13 +106,6 @@ struct VSOutput {
 @group(5) @binding(1) var smap_sampler: sampler_comparison;
 
 var<push_constant> pconsts : PConsts;
-
-@vertex
-fn vs_bake_shadow(@builtin(instance_index) instance_index: u32, 
-                  @location(0) position: vec3<f32>) -> @builtin(position) vec4<f32> {
-    let locals = instances[instance_index + pconsts.instance_base_index];
-    return globals.proj * globals.view * locals.model * vec4<f32>(position, 1.0);
-}
 
 @vertex
 fn vs_main(vin : VSInput)->VSOutput {
@@ -140,8 +133,6 @@ fn vs_main(vin : VSInput)->VSOutput {
     out.view_mat_w = globals.view.w;
     return out;
 }
-
-const INVALID_INDEX: u32 = 0xffffffffu;
 
 /// Blinn-Phong BRDF in camera space.
 fn blinn_phong_brdf(wi: vec3<f32>, wo: vec3<f32>, n: vec3<f32>, kd: vec3<f32>, ks: vec3<f32>, ns: f32, illum: u32) -> vec3<f32> {
