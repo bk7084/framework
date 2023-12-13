@@ -13,6 +13,8 @@ pub struct Node {
     active: bool,
     /// Visible state of this node.
     visible: bool,
+    /// Cast shadows flag.
+    cast_shadows: bool,
     /// Material override. If set, this material will be used instead of the
     /// material set by the submesh.
     pub(crate) material_override: Option<u32>,
@@ -26,6 +28,7 @@ impl Node {
             active: true,
             visible: false,
             material_override: None,
+            cast_shadows: false,
         }
     }
 
@@ -37,6 +40,7 @@ impl Node {
             active: true,
             visible: false,
             material_override: None,
+            cast_shadows: false,
         }
     }
 
@@ -58,6 +62,14 @@ impl Node {
 
     pub fn set_parent(&mut self, parent: Option<NodeIdx>) {
         self.parent = parent;
+    }
+
+    pub fn cast_shadows(&self) -> bool {
+        self.cast_shadows
+    }
+
+    pub fn set_cast_shadows(&mut self, cast_shadows: bool) {
+        self.cast_shadows = cast_shadows;
     }
 
     /// Returns the local transform of this node.

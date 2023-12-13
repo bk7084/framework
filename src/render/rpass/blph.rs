@@ -13,6 +13,7 @@ use crate::{
     },
     scene::{NodeIdx, Nodes, Scene},
 };
+use glam::{Mat4, Vec3};
 use legion::IntoQuery;
 use std::num::{NonZeroU32, NonZeroU64};
 
@@ -173,16 +174,19 @@ impl LightsBindGroup {
         L: Iterator<Item = (&'a Light, &'a NodeIdx)>,
     {
         self.lights.clear();
-
         for (light, node_idx) in lights {
             let len = self.lights.len[0] as usize;
             self.lights.lights[len] = match light {
                 Light::Directional { direction, color } => {
-                    let normalized = direction.normalize();
+                    // In shader, the light direction is the opposite of the
+                    // actual direction.
+                    let rev_dir = -direction.normalize();
                     GpuLight {
-                        dir_or_pos: [-normalized.x, -normalized.y, -normalized.z, 0.0],
+                        dir_or_pos: [rev_dir.x, rev_dir.y, rev_dir.z, 0.0],
                         color: [color.r as f32, color.g as f32, color.b as f32, 1.0],
-                        w2l: [0.0; 16],
+                        w2l: (Mat4::orthographic_rh(-10.0, 10.0, -10.0, 10.0, 0.1, 100.0)
+                            * Mat4::look_at_rh(rev_dir, Vec3::ZERO, Vec3::Y))
+                        .to_cols_array(),
                     }
                 }
                 Light::Point { color } => {
@@ -191,7 +195,9 @@ impl LightsBindGroup {
                     GpuLight {
                         dir_or_pos: [position.x, position.y, position.z, 1.0],
                         color: [color.r as f32, color.g as f32, color.b as f32, 1.0],
-                        w2l: [0.0; 16],
+                        w2l: (Mat4::orthographic_rh(-10.0, 10.0, -10.0, 10.0, 0.1, 100.0)
+                            * Mat4::look_at_rh(position, Vec3::ZERO, Vec3::Y))
+                        .to_cols_array(),
                     }
                 }
             };
@@ -552,22 +558,22 @@ impl RenderingPass for BlinnPhongRenderPass {
 
         render_pass.set_bind_group(0, &self.globals_bind_group, &[]);
 
+        // Update lights; bind lights.
         {
-            // Update light data.
             let mut light_query = <(&Light, &NodeIdx)>::query();
             let active_lights = light_query
                 .iter(&scene.world)
                 .filter(|(_, node_idx)| scene.nodes[**node_idx].is_active());
             self.lights_bind_group
                 .update_lights(active_lights, &scene.nodes, queue);
-            // Bind lights.
             render_pass.set_bind_group(4, &self.lights_bind_group, &[]);
         }
 
-        let mut mesh_query = <(&NodeIdx, &MeshBundle)>::query();
+        let mut mesh_bundle_query = <(&NodeIdx, &MeshBundle)>::query();
+
         let mut mesh_bundles = FxHashSet::default();
         let mut total_inst_count = 0;
-        for (_, mesh) in mesh_query
+        for (_, mesh) in mesh_bundle_query
             .iter(&scene.world)
             .filter(|(node_idx, _)| scene.nodes[**node_idx].is_visible())
         {

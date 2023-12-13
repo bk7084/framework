@@ -50,6 +50,15 @@ impl PyEntity {
             .unwrap();
     }
 
+    pub fn set_cast_shadows(&self, cast_shadows: bool) {
+        self.cmd_sender
+            .send(Command::SetCastShadows {
+                entity: self.entity,
+                cast_shadows,
+            })
+            .unwrap();
+    }
+
     pub fn set_transform(&self, mat4: &np::PyArray2<f32>) {
         Python::with_gil(|_py| {
             log::debug!("Setting transform for entity {:?}", self.entity.raw);
@@ -284,6 +293,12 @@ impl Scene {
                 }
                 Command::SetVisible { entity, visible } => {
                     self.nodes[entity.node].set_visible(visible);
+                }
+                Command::SetCastShadows {
+                    entity,
+                    cast_shadows,
+                } => {
+                    self.nodes[entity.node].set_cast_shadows(cast_shadows);
                 }
                 Command::CameraOrbit {
                     entity,
