@@ -67,7 +67,13 @@ impl PyAppState {
     pub fn new() -> PyResult<Self> {
         env_logger::init();
         let now = std::time::Instant::now();
-        let context = Arc::new(GpuContext::new(None));
+        let context = Arc::new(GpuContext::new(Some(
+            wgpu::Features::POLYGON_MODE_LINE
+                | wgpu::Features::PUSH_CONSTANTS
+                | wgpu::Features::TEXTURE_BINDING_ARRAY
+                | wgpu::Features::STORAGE_RESOURCE_BINDING_ARRAY
+                | wgpu::Features::BUFFER_BINDING_ARRAY,
+        )));
         let (scene_cmd_sender, scene_cmd_receiver) = crossbeam_channel::unbounded::<Command>();
         let scene = Scene::new(scene_cmd_sender.clone(), scene_cmd_receiver);
         let (renderer_cmd_sender, renderer_cmd_receiver) =
@@ -94,7 +100,7 @@ impl PyAppState {
     pub fn register_event_type(&mut self, event_type: String) {
         self.event_listeners
             .entry(SmlString::from(event_type))
-            .or_insert_with(Vec::new);
+            .or_default();
     }
 
     /// Register multiple event types.
@@ -109,7 +115,7 @@ impl PyAppState {
     pub fn attach_event_handler(&mut self, event_type: String, listener: PyObject) {
         self.event_listeners
             .entry(SmlString::from(event_type))
-            .or_insert(Vec::new())
+            .or_default()
             .push(listener);
     }
 
@@ -258,7 +264,7 @@ impl PyAppState {
             .with_transparent(builder.transparent)
             .with_decorations(builder.decorations)
             .with_visible(false)
-            .build(&event_loop)
+            .build(event_loop)
             .unwrap();
         self.event_loop = Some(event_loop.create_proxy());
         window
@@ -364,17 +370,19 @@ impl PyAppState {
                 self.input.update_modifier_states(*state);
                 true
             }
-            WindowEvent::KeyboardInput { input, .. } => match input {
-                KeyboardInput {
-                    virtual_keycode: Some(keycode),
-                    state,
-                    ..
-                } => {
-                    self.input.update_key_states(*keycode, *state);
-                    true
-                }
-                _ => false,
-            },
+            WindowEvent::KeyboardInput {
+                input:
+                    KeyboardInput {
+                        virtual_keycode: Some(keycode),
+                        state,
+                        ..
+                    },
+                ..
+            } => {
+                self.input.update_key_states(*keycode, *state);
+                true
+            }
+
             WindowEvent::CursorMoved { position, .. } => {
                 self.input.update_cursor_delta(*position);
                 true
@@ -517,7 +525,8 @@ pub fn run_main_loop(mut app: PyAppState, builder: PyWindowBuilder) {
 
     // Create the surface to render to.
     let mut surface = Surface::new(&context, &window);
-    let mut blph_render_pass = BlinnPhongRenderPass::new(&context.device, surface.format());
+    let mut blph_render_pass =
+        BlinnPhongRenderPass::new(&context.device, &context.limits, surface.format());
     // Ready to present the window.
     window.set_visible(true);
 

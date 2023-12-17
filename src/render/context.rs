@@ -70,12 +70,25 @@ impl GpuContext {
 
         let adapter = adapters.remove(0);
 
-        let mut features = adapter
-            .features
-            .union(desired_features.unwrap_or_else(wgpu::Features::empty));
-        if features.contains(wgpu::Features::MAPPABLE_PRIMARY_BUFFERS) {
-            features.remove(wgpu::Features::MAPPABLE_PRIMARY_BUFFERS);
+        let features = adapter.features;
+
+        let mut desired_features = desired_features.unwrap_or_else(wgpu::Features::empty);
+        log::debug!("Desired features: {:#?}", desired_features);
+
+        // Only enable mappable primary buffers on macOS with unified memory
+        // architecture.
+        #[cfg(not(all(target_os = "macos", target_arch = "aarch64")))]
+        if desired_features.contains(wgpu::Features::MAPPABLE_PRIMARY_BUFFERS) {
+            desired_features.remove(wgpu::Features::MAPPABLE_PRIMARY_BUFFERS);
         }
+
+        if !features.contains(desired_features) {
+            panic!(
+                "Desired features {:?} not supported by the adapter",
+                desired_features
+            );
+        }
+
         let limits = adapter.limits;
 
         // Create the GPU device and queue.
