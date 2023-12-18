@@ -354,7 +354,7 @@ impl MaterialBundle {
             }],
         });
         let mut hasher = FxHasher::default();
-        hasher.write(&material.name.as_bytes());
+        hasher.write(material.name.as_bytes());
         Self {
             materials: vec![hasher.finish()],
             buffer: material_buffer,
@@ -374,7 +374,7 @@ impl MaterialBundle {
         );
         let buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: None,
-            contents: bytemuck::cast_slice(&mtls),
+            contents: bytemuck::cast_slice(mtls),
             usage: wgpu::BufferUsages::UNIFORM
                 | wgpu::BufferUsages::COPY_DST
                 | wgpu::BufferUsages::STORAGE,
@@ -391,7 +391,7 @@ impl MaterialBundle {
         let materials = materials
             .map(|m| {
                 let mut hasher = FxHasher::default();
-                hasher.write(&m.name.as_bytes());
+                hasher.write(m.name.as_bytes());
                 hasher.finish()
             })
             .collect();

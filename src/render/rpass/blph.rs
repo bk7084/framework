@@ -7,7 +7,8 @@ use crate::{
     render::{
         rpass::{
             BlinnPhongRenderPass, Globals, GlobalsBindGroup, GpuLight, InstanceLocals, LightArray,
-            LightsBindGroup, Locals, LocalsBindGroup, PConsts, RenderingPass, DEPTH_FORMAT,
+            LightsBindGroup, Locals, LocalsBindGroup, PConsts, RenderingPass, ShadowMaps,
+            ShadowPassLocals, DEPTH_FORMAT,
         },
         PipelineId, PipelineKind, Pipelines, RenderParams, RenderTarget, Renderer,
     },
@@ -133,7 +134,7 @@ impl LightsBindGroup {
             label: Some("blph_lights_bg_layout"),
             entries: &[wgpu::BindGroupLayoutEntry {
                 binding: 0,
-                visibility: wgpu::ShaderStages::FRAGMENT,
+                visibility: wgpu::ShaderStages::VERTEX_FRAGMENT,
                 ty: wgpu::BindingType::Buffer {
                     ty: wgpu::BufferBindingType::Storage { read_only: true },
                     has_dynamic_offset: false,
@@ -170,10 +171,12 @@ impl LightsBindGroup {
 
     /// Updates the cached light data in the bind group,
     /// and updates the light buffers.
-    pub fn update_lights<'a, L>(&mut self, lights: L, nodes: &Nodes, queue: &wgpu::Queue)
-    where
-        L: Iterator<Item = (&'a Light, &'a NodeIdx)>,
-    {
+    pub fn update_lights(
+        &mut self,
+        lights: &[(&Light, &NodeIdx)],
+        nodes: &Nodes,
+        queue: &wgpu::Queue,
+    ) {
         self.lights.clear();
         for (light, node_idx) in lights {
             let len = self.lights.len[0] as usize;
@@ -191,7 +194,7 @@ impl LightsBindGroup {
                     }
                 }
                 Light::Point { color } => {
-                    let transform = nodes.world(*node_idx);
+                    let transform = nodes.world(**node_idx);
                     let position = transform.translation;
                     GpuLight {
                         dir_or_pos: [position.x, position.y, position.z, 1.0],
@@ -211,7 +214,7 @@ impl LightsBindGroup {
 
 impl BlinnPhongRenderPass {
     /// Creates a new blinn-phong shading render pass.
-    pub fn new(device: &wgpu::Device, format: wgpu::TextureFormat) -> Self {
+    pub fn new(device: &wgpu::Device, limits: &wgpu::Limits, format: wgpu::TextureFormat) -> Self {
         let shader_module = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("shading_shader_module"),
             source: wgpu::ShaderSource::Wgsl(include_str!("blph.wgsl").into()),
@@ -240,36 +243,64 @@ impl BlinnPhongRenderPass {
 
         let lights_bind_group = LightsBindGroup::new(device);
 
-        let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-            label: Some("blinn_phong_shading_pipeline_layout"),
-            bind_group_layouts: &[
-                &globals_bind_group.layout,
-                &locals_bind_group.layout,
-                &materials_bind_group_layout,
-                &textures_bind_group_layout,
-                &lights_bind_group.layout,
-            ],
-            push_constant_ranges: &[wgpu::PushConstantRange {
-                stages: wgpu::ShaderStages::VERTEX_FRAGMENT,
-                range: 0..PConsts::SIZE as u32,
-            }],
-        });
-
         let mut pipelines = Pipelines::new();
 
-        for cull_mode in [Some(wgpu::Face::Back), None] {
-            for polygon_mode in [wgpu::PolygonMode::Fill, wgpu::PolygonMode::Line] {
-                let (id, pipeline) = Self::create_pipeline(
-                    device,
-                    &pipeline_layout,
-                    format,
-                    &shader_module,
-                    polygon_mode,
-                    cull_mode,
-                );
-                pipelines.insert("entity", id, pipeline);
+        // Create main render pass pipeline.
+        {
+            let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                label: Some("blinn_phong_shading_pipeline_layout"),
+                bind_group_layouts: &[
+                    &globals_bind_group.layout,
+                    &locals_bind_group.layout,
+                    &materials_bind_group_layout,
+                    &textures_bind_group_layout,
+                    &lights_bind_group.layout,
+                ],
+                push_constant_ranges: &[wgpu::PushConstantRange {
+                    stages: wgpu::ShaderStages::VERTEX_FRAGMENT,
+                    range: 0..PConsts::SIZE as u32,
+                }],
+            });
+
+            for cull_mode in [Some(wgpu::Face::Back), None] {
+                for polygon_mode in [wgpu::PolygonMode::Fill, wgpu::PolygonMode::Line] {
+                    let (id, pipeline) = Self::create_main_render_pass_pipeline(
+                        device,
+                        &layout,
+                        format,
+                        &shader_module,
+                        polygon_mode,
+                        cull_mode,
+                    );
+                    pipelines.insert("entity", id, pipeline);
+                }
             }
         }
+
+        // Create shadow maps pass pipeline. This pipeline is used to evaluate
+        // shadow maps for all meshes that cast shadows.
+        {
+            let shader_module = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+                label: Some("shadow_maps_shader_module"),
+                source: wgpu::ShaderSource::Wgsl(include_str!("shadow.wgsl").into()),
+            });
+            let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                label: Some("blinn_phong_shadow_maps_pipeline_layout"),
+                bind_group_layouts: &[&locals_bind_group.layout, &lights_bind_group.layout],
+                push_constant_ranges: &[wgpu::PushConstantRange {
+                    stages: wgpu::ShaderStages::VERTEX,
+                    // NOTE: The size of the push constant is the same as in the main render pass.
+                    // But the second u32 is used to store the index of the light in the light
+                    // array.
+                    range: 0..PConsts::SIZE as u32,
+                }],
+            });
+            let (id, pipeline) =
+                Self::create_shadow_maps_pass_pipeline(device, &layout, &shader_module);
+            pipelines.insert("shadow", id, pipeline);
+        }
+
+        let shadow_maps = ShadowMaps::new(device, limits, 1024, 1024, 1);
 
         Self {
             depth_att: None,
@@ -280,15 +311,163 @@ impl BlinnPhongRenderPass {
             textures_bind_group_layout,
             lights_bind_group,
             pipelines,
+            shadow_maps,
         }
     }
 
     /// Evaluates shadow maps.
-    fn eval_shadow_maps_pass<'a, M>(&mut self, meshes: M)
-    where
+    fn eval_shadow_maps_pass<'a, M>(
+        &mut self,
+        encoder: &mut wgpu::CommandEncoder,
+        mesh_bundles: M,
+        scene: &Scene,
+        renderer: &Renderer,
+    ) where
         M: Iterator<Item = (&'a MeshBundle, &'a NodeIdx)>,
     {
         profiling::scope!("BlinnPhongShading::eval_shadow_maps_pass");
+        let (_, pipeline) = &self.pipelines.get_all("shadow").unwrap()[0];
+
+        // Process meshes;
+        let mut unique_bundles = FxHashSet::default();
+        let mut n_inst = 0;
+        for (bundle, _) in mesh_bundles {
+            unique_bundles.insert(bundle);
+            n_inst += 1;
+        }
+
+        log::debug!(
+            "{} instances of {} meshes cast shadows",
+            n_inst,
+            unique_bundles.len()
+        );
+
+        if n_inst == 0 {
+            return;
+        }
+
+        // Update locals buffer content.
+        self.shadow_pass_locals_bind_group
+            .resize(&renderer.device, n_inst);
+        let mut locals = vec![ShadowPassLocals::identity(); n_inst as usize];
+        let mut offsets_and_inst_count = vec![(0, 0); n_inst as usize];
+        let mut offset = 0u32;
+        for (i, bundle) in unique_bundles.iter().enumerate() {
+            let instances = renderer
+                .instancing
+                .get(bundle)
+                .expect("Unreachable! Instancing should be created for all meshes!");
+            offsets_and_inst_count[i].0 = offset;
+            for (j, node_idx) in instances.iter().enumerate() {
+                let node = &scene.nodes[*node_idx];
+                if !node.is_visible() {
+                    continue;
+                }
+                offsets_and_inst_count[i].1 += 1;
+                locals[offset as usize + j] = ShadowPassLocals {
+                    model: scene.nodes.world(*node_idx).to_mat4().to_cols_array(),
+                }
+            }
+            offset += offsets_and_inst_count[i].1;
+        }
+        renderer.queue.write_buffer(
+            &self.shadow_pass_locals_bind_group.buffer,
+            0,
+            bytemuck::cast_slice(&locals),
+        );
+
+        let mesh_buffer = renderer.meshes.buffer();
+
+        for (light_idx, shadow_map) in self.shadow_maps.shadow_map_views.iter().enumerate() {
+            let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("blinn_phong_shadow_maps_pass"),
+                color_attachments: &[],
+                depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+                    view: shadow_map,
+                    depth_ops: Some(wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(1.0),
+                        store: wgpu::StoreOp::Store,
+                    }),
+                    stencil_ops: None,
+                }),
+                timestamp_writes: None,
+                occlusion_query_set: None,
+            });
+            render_pass.set_pipeline(pipeline);
+            // Bind locals.
+            render_pass.set_bind_group(0, &self.shadow_pass_locals_bind_group, &[]);
+            // Bind lights storage buffer.
+            render_pass.set_bind_group(1, &self.lights_bind_group, &[]);
+            // Set push constants - light index.
+            render_pass.set_push_constants(
+                wgpu::ShaderStages::VERTEX,
+                64,
+                bytemuck::bytes_of(&light_idx),
+            );
+
+            for (bundle, (offset, inst_count)) in
+                unique_bundles.iter().zip(offsets_and_inst_count.iter())
+            {
+                match renderer.meshes.get(bundle.mesh) {
+                    Some(mesh) => {
+                        // Bind vertex buffer - position.
+                        if let Some(pos_range) =
+                            mesh.get_vertex_attribute_range(VertexAttribute::POSITION)
+                        {
+                            render_pass.set_vertex_buffer(0, mesh_buffer.slice(pos_range.clone()));
+                        }
+                        // Set push constants - instance base index.
+                        render_pass.set_push_constants(
+                            wgpu::ShaderStages::VERTEX,
+                            0,
+                            bytemuck::bytes_of(offset),
+                        );
+
+                        match mesh.index_format {
+                            Some(index_format) => {
+                                render_pass.set_index_buffer(
+                                    mesh_buffer.slice(mesh.index_range.clone()),
+                                    index_format,
+                                );
+                                match mesh.sub_meshes.as_ref() {
+                                    Some(sub_meshes) => {
+                                        for sm in sub_meshes {
+                                            render_pass.draw_indexed(
+                                                sm.range.start..sm.range.end,
+                                                0,
+                                                0..*inst_count,
+                                            );
+                                        }
+                                    }
+                                    None => {
+                                        render_pass.draw_indexed(
+                                            0..mesh.index_count,
+                                            0,
+                                            0..*inst_count,
+                                        );
+                                    }
+                                }
+                            }
+                            None => match mesh.sub_meshes.as_ref() {
+                                Some(sub_meshes) => {
+                                    for sm in sub_meshes {
+                                        render_pass
+                                            .draw(sm.range.start..sm.range.end, 0..*inst_count)
+                                    }
+                                }
+                                None => {
+                                    render_pass.draw(0..mesh.vertex_count, 0..*inst_count);
+                                }
+                            },
+                        }
+                    }
+                    None => {
+                        log::error!("Missing mesh {:?}", bundle.mesh);
+                        continue;
+                    }
+                }
+            }
+        }
     }
 
     /// Evaluates the main render pass.
@@ -344,30 +523,6 @@ impl BlinnPhongRenderPass {
             (view_mat, camera.background)
         };
 
-        // (Re)create depth texture if necessary.
-        {
-            let need_recreate = match &self.depth_att {
-                None => true,
-                Some(depth) => target.size != depth.0.size(),
-            };
-
-            if need_recreate {
-                let texture = renderer.device.create_texture(&wgpu::TextureDescriptor {
-                    label: Some("wireframe_depth_texture"),
-                    size: target.size,
-                    mip_level_count: 1,
-                    sample_count: 1,
-                    dimension: wgpu::TextureDimension::D2,
-                    format: DEPTH_FORMAT,
-                    usage: wgpu::TextureUsages::RENDER_ATTACHMENT
-                        | wgpu::TextureUsages::TEXTURE_BINDING,
-                    view_formats: &[],
-                });
-                let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
-                self.depth_att = Some((texture, view));
-            }
-        }
-
         // Create render pass.
         let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("blinn_phong_render_pass"),
@@ -412,7 +567,7 @@ impl BlinnPhongRenderPass {
                 return;
             }
             Some(pipelines) => {
-                render_pass.set_pipeline(&pipelines[0]);
+                render_pass.set_pipeline(pipelines[0]);
             }
         }
 
@@ -437,6 +592,8 @@ impl BlinnPhongRenderPass {
                 return;
             }
 
+            // Resize locals buffer in case the number of instances is larger than
+            // the current capacity.
             self.locals_bind_group.resize(&renderer.device, n_inst);
             // Bind instance locals.
             render_pass.set_bind_group(1, &self.locals_bind_group, &[]);
@@ -451,7 +608,7 @@ impl BlinnPhongRenderPass {
             for bundle in unique_meshes {
                 let instances = renderer
                     .instancing
-                    .get(&bundle)
+                    .get(bundle)
                     .expect("Unreachable! Instancing should be created for all meshes!");
                 let mut inst_count = 0;
                 for (i, node_idx) in instances.iter().enumerate() {
@@ -480,7 +637,7 @@ impl BlinnPhongRenderPass {
                 render_pass.set_push_constants(
                     wgpu::ShaderStages::VERTEX_FRAGMENT,
                     0,
-                    bytemuck::bytes_of(&(locals_offset as u32)),
+                    bytemuck::bytes_of(&locals_offset),
                 );
                 locals_offset += inst_count;
                 let inst_range = 0..inst_count;
@@ -628,7 +785,62 @@ impl BlinnPhongRenderPass {
         }
     }
 
-    fn create_pipeline(
+    fn create_shadow_maps_pass_pipeline(
+        device: &wgpu::Device,
+        layout: &wgpu::PipelineLayout,
+        shader_module: &wgpu::ShaderModule,
+    ) -> (PipelineId, wgpu::RenderPipeline) {
+        let id = PipelineId::from_states(
+            PipelineKind::Render,
+            wgpu::PrimitiveTopology::TriangleList,
+            wgpu::PolygonMode::Fill,
+            Some(wgpu::Face::Back),
+        );
+        let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some("blinn_phong_shadow_maps_pipeline"),
+            layout: Some(layout),
+            vertex: wgpu::VertexState {
+                module: shader_module,
+                entry_point: "vs_main",
+                buffers: &[wgpu::VertexBufferLayout {
+                    array_stride: std::mem::size_of::<[f32; 3]>() as wgpu::BufferAddress,
+                    step_mode: wgpu::VertexStepMode::Vertex,
+                    attributes: &[
+                        // Position.
+                        wgpu::VertexAttribute {
+                            offset: 0,
+                            shader_location: 0,
+                            format: wgpu::VertexFormat::Float32x3,
+                        },
+                    ],
+                }],
+            },
+            primitive: wgpu::PrimitiveState {
+                topology: wgpu::PrimitiveTopology::TriangleList,
+                front_face: wgpu::FrontFace::Ccw,
+                cull_mode: Some(wgpu::Face::Back),
+                polygon_mode: wgpu::PolygonMode::Fill,
+                ..Default::default()
+            },
+            depth_stencil: Some(wgpu::DepthStencilState {
+                format: DEPTH_FORMAT,
+                depth_write_enabled: true,
+                depth_compare: wgpu::CompareFunction::LessEqual,
+                stencil: Default::default(),
+                bias: Default::default(),
+            }),
+            multisample: wgpu::MultisampleState {
+                count: 1,
+                mask: !0,
+                alpha_to_coverage_enabled: false,
+            },
+            fragment: None,
+            multiview: None,
+        });
+        (id, pipeline)
+    }
+
+    fn create_main_render_pass_pipeline(
         device: &wgpu::Device,
         layout: &wgpu::PipelineLayout,
         output_format: wgpu::TextureFormat,
@@ -700,7 +912,7 @@ impl BlinnPhongRenderPass {
                 ],
             },
             fragment: Some(wgpu::FragmentState {
-                module: &shader_module,
+                module: shader_module,
                 entry_point: "fs_main",
                 targets: &[Some(wgpu::ColorTargetState {
                     format: output_format,
@@ -793,33 +1005,68 @@ impl RenderingPass for BlinnPhongRenderPass {
         profiling::scope!("BlinnPhongShading::record");
 
         let mut mesh_bundle_query = <(&MeshBundle, &NodeIdx)>::query();
-        let mut visible_meshes = mesh_bundle_query
+        let visible_meshes = mesh_bundle_query
             .iter(&scene.world)
             .filter(|(_, node_idx)| scene.nodes[**node_idx].is_visible())
             .collect::<Vec<_>>();
 
-        if visible_meshes.len() == 0 {
+        if visible_meshes.is_empty() {
             // No visible meshes, skip rendering.
             return;
         }
 
-        // Update lights storage buffer.
+        // Update lights information.
         {
             let mut light_query = <(&Light, &NodeIdx)>::query();
             let active_lights = light_query
                 .iter(&scene.world)
-                .filter(|(_, node_idx)| scene.nodes[**node_idx].is_active());
+                .filter(|(_, node_idx)| scene.nodes[**node_idx].is_active())
+                .collect::<Vec<_>>();
             self.lights_bind_group
-                .update_lights(active_lights, &scene.nodes, &renderer.queue);
+                .update_lights(&active_lights, &scene.nodes, &renderer.queue);
+            self.shadow_maps.update(
+                &renderer.device,
+                &renderer.limits,
+                1024,
+                1024,
+                active_lights.len() as u32,
+            );
         }
 
-        if params.enable_shadows {
+        // Resize depth buffer if necessary.
+        // The depth buffer is shared by all render passes.
+        {
+            let need_recreate = match &self.depth_att {
+                None => true,
+                Some(depth) => target.size != depth.0.size(),
+            };
+
+            if need_recreate {
+                let texture = renderer.device.create_texture(&wgpu::TextureDescriptor {
+                    label: Some("wireframe_depth_texture"),
+                    size: target.size,
+                    mip_level_count: 1,
+                    sample_count: 1,
+                    dimension: wgpu::TextureDimension::D2,
+                    format: DEPTH_FORMAT,
+                    usage: wgpu::TextureUsages::RENDER_ATTACHMENT
+                        | wgpu::TextureUsages::TEXTURE_BINDING,
+                    view_formats: &[],
+                });
+                let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
+                self.depth_att = Some((texture, view));
+            }
+        }
+
+        // Evaluate shadow maps only if shadows are enabled and wireframe is disabled.
+        if params.enable_shadows && !params.enable_wireframe {
             let meshes_casting_shadow = mesh_bundle_query
                 .iter(&scene.world)
                 .filter(|(_, node_idx)| scene.nodes[**node_idx].cast_shadows());
-            self.eval_shadow_maps_pass(meshes_casting_shadow);
+            self.eval_shadow_maps_pass(encoder, meshes_casting_shadow, scene, renderer);
         }
 
+        // Evaluate the main render pass.
         self.eval_main_render_pass(encoder, &visible_meshes, scene, renderer, params, target);
     }
 }

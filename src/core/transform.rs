@@ -118,8 +118,8 @@ impl Transform {
     /// applied onto the object.
     pub fn post_concat(&mut self, transform: &Transform) {
         self.translation = self.scale * (self.rotation * transform.translation) + self.translation;
-        self.rotation = self.rotation * transform.rotation;
-        self.scale = self.scale * transform.scale;
+        self.rotation *= transform.rotation;
+        self.scale = transform.scale;
     }
 
     /// Combines two transforms. The result is equivalent to applying `self` and

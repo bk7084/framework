@@ -52,11 +52,7 @@ impl<T: Asset> Hash for Handle<T> {
 
 impl<T: Asset> Clone for Handle<T> {
     fn clone(&self) -> Self {
-        Self {
-            generation: self.generation,
-            index: self.index,
-            marker: Default::default(),
-        }
+        *self
     }
 }
 

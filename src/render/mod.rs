@@ -161,7 +161,7 @@ impl Renderer {
         log::debug!("Uploading mesh#{}", mesh.name);
         log::debug!("Mesh materials: {:?}", mesh.materials);
 
-        let (mesh_hdl, exists) = self.meshes.add(&self.device, &self.queue, mesh);
+        let mesh_hdl = self.meshes.add(&self.device, &self.queue, mesh);
         // Upload materials and create a material bundle.
         match &mesh.materials {
             None => {
@@ -187,7 +187,7 @@ impl Renderer {
 
     /// Creates a bundle of materials and a bundle of textures from a list of
     /// materials.
-    fn upload_materials(&mut self, materials: &Vec<Material>) -> AestheticBundle {
+    fn upload_materials(&mut self, materials: &[Material]) -> AestheticBundle {
         let materials_name_hashes = materials
             .iter()
             .map(|mtl| {
@@ -226,7 +226,7 @@ impl Renderer {
                 let mtls = materials.iter().chain(std::iter::once(&default_material));
                 let mut gpu_mtls = mtls
                     .clone()
-                    .map(|mtl| GpuMaterial::from_material(mtl))
+                    .map(GpuMaterial::from_material)
                     .collect::<Vec<_>>();
 
                 // Load textures and create a bundle of textures.
@@ -237,7 +237,7 @@ impl Renderer {
                             TextureType::MapNorm => Some(wgpu::TextureFormat::Rgba8Unorm),
                             _ => None,
                         };
-                        let texture_hdl = self.add_texture(&tex_path, format);
+                        let texture_hdl = self.add_texture(tex_path, format);
                         let texture_idx = textures.len();
                         textures.push(texture_hdl);
                         match tex_ty {

@@ -118,7 +118,7 @@ impl Material {
                     log::warn!("Unknown texture type: {}", key);
                     continue;
                 }
-                texture_type @ _ => {
+                texture_type => {
                     self.textures
                         .insert(texture_type, PathBuf::from(value.as_str()));
                 }

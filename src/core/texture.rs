@@ -41,6 +41,7 @@ impl Deref for Texture {
 }
 
 /// A collection of textures and samplers.
+#[derive(Default)]
 pub struct TextureBundle {
     pub textures: Vec<Handle<Texture>>,
     pub samplers: Vec<SmlString>,
@@ -49,14 +50,3 @@ pub struct TextureBundle {
 }
 
 impl Asset for TextureBundle {}
-
-impl Default for TextureBundle {
-    fn default() -> Self {
-        Self {
-            textures: Vec::new(),
-            samplers: Vec::new(),
-            bind_group: None,
-            sampler_index_buffer: None,
-        }
-    }
-}

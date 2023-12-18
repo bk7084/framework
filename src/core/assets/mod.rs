@@ -143,13 +143,11 @@ impl Assets<GpuMesh, GpuMeshStorage> {
         device: &wgpu::Device,
         queue: &wgpu::Queue,
         mesh: &Mesh,
-    ) -> (Handle<GpuMesh>, bool) {
-        for gpu_mesh in self.storage.data.iter() {
-            if let Some((hdl, gpu_mesh)) = gpu_mesh {
-                if same_mesh(mesh, gpu_mesh) {
-                    log::info!("Found existing mesh: {:?}", gpu_mesh.name);
-                    return (*hdl, true);
-                }
+    ) -> Handle<GpuMesh> {
+        for (handle, gpu_mesh) in self.storage.data.iter().flatten() {
+            if same_mesh(mesh, gpu_mesh) {
+                log::info!("Found existing mesh: {:?}", gpu_mesh.name);
+                return *handle;
             }
         }
 
@@ -165,7 +163,7 @@ impl Assets<GpuMesh, GpuMeshStorage> {
 
         queue.submit(std::iter::once(encoder.finish()));
 
-        (handle, false)
+        handle
     }
 
     pub fn get(&self, handle: Handle<GpuMesh>) -> Option<&GpuMesh> {
@@ -318,10 +316,8 @@ impl Assets<Texture, Vec<Option<Texture>>> {
         format: Option<wgpu::TextureFormat>,
     ) -> Handle<Texture> {
         log::debug!("---- Loaded image from: {:?}", filepath);
-        let bytes = std::fs::read(filepath).expect(&format!(
-            "Failed to read texture file: {}",
-            filepath.display()
-        ));
+        let bytes = std::fs::read(filepath)
+            .unwrap_or_else(|_| panic!("Failed to read texture file: {}", filepath.display()));
         self.load_from_bytes(device, queue, &bytes, Some(filepath), format)
     }
 }

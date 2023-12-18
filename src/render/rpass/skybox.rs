@@ -1,5 +1,3 @@
-use crate::render::rpass::{Globals, DEPTH_FORMAT};
-
 /// A skybox environment map.
 ///
 /// This is a cube map texture that is used to render the skybox. It is either

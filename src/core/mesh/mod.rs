@@ -60,6 +60,10 @@ impl Indices {
         }
     }
 
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+
     /// Returns the number of bytes required to store the index buffer.
     pub fn n_bytes(&self) -> usize {
         match self {
@@ -501,7 +505,7 @@ impl Mesh {
 
         let materials = materials
             .iter()
-            .map(|m| Material::from_tobj_material(m.clone(), &path.as_ref()))
+            .map(|m| Material::from_tobj_material(m.clone(), path.as_ref()))
             .collect();
 
         log::debug!("- Processed materials: {:?}", materials);
@@ -544,10 +548,10 @@ impl Mesh {
             }
             Some(indices) => match indices {
                 Indices::U32(indices) => {
-                    compute_normals(&vertices, &indices, &mut normals);
+                    compute_normals(vertices, indices, &mut normals);
                 }
                 Indices::U16(indices) => {
-                    compute_normals(&vertices, &indices, &mut normals);
+                    compute_normals(vertices, indices, &mut normals);
                 }
             },
         }
@@ -590,10 +594,10 @@ impl Mesh {
             }
             Some(indices) => match indices {
                 Indices::U32(indices) => {
-                    compute_tangents(&vertices, indices, &uvs, normals, &mut tangents);
+                    compute_tangents(vertices, indices, uvs, normals, &mut tangents);
                 }
                 Indices::U16(indices) => {
-                    compute_tangents(&vertices, indices, &uvs, normals, &mut tangents)
+                    compute_tangents(vertices, indices, uvs, normals, &mut tangents)
                 }
             },
         }

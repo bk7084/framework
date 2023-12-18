@@ -10,7 +10,7 @@ pub struct AttribContainer {
 impl AttribContainer {
     /// Creates a new attribute container by copying the given data.
     pub fn new<T: 'static + Pod>(data: &[T]) -> Self {
-        let n_bytes = data.len() * std::mem::size_of::<T>();
+        let n_bytes = std::mem::size_of_val(data);
         Self {
             data: bytemuck::cast_slice(data).to_vec(),
             n_bytes,

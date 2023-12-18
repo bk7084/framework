@@ -8,7 +8,7 @@ use crate::{
 pub use blph::*;
 use bytemuck::{Pod, Zeroable};
 use glam::Mat4;
-use std::ops::Deref;
+use std::{num::NonZeroU32, ops::Deref};
 
 crate::impl_size_constant!(
     Globals,
@@ -32,7 +32,7 @@ pub struct Globals {
 /// The local information (per entity/instance) for the rendering passes.
 #[repr(C)]
 #[derive(Debug, Clone, Copy, Pod, Zeroable)]
-struct Locals {
+pub struct Locals {
     /// The model matrix.
     model: [f32; 16],
     /// The transpose of the inverse of the model-view matrix.
@@ -53,7 +53,7 @@ impl Locals {
 
 #[repr(C)]
 #[derive(Debug, Clone, Copy, Pod, Zeroable)]
-struct ShadowPassLocals {
+pub struct ShadowPassLocals {
     /// The model matrix.
     model: [f32; 16],
 }
@@ -87,7 +87,7 @@ struct PConsts {
 }
 
 /// Depth format for the rendering passes.
-pub const DEPTH_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth24Plus;
+pub const DEPTH_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth32Float;
 
 /// The binding group for the global uniforms.
 ///
@@ -174,6 +174,14 @@ impl LightArray {
     pub fn clear(&mut self) {
         self.len = [0; 4];
     }
+
+    pub fn is_empty(&self) -> bool {
+        self.len[0] == 0
+    }
+
+    pub fn len(&self) -> usize {
+        self.len[0] as usize
+    }
 }
 
 /// The binding group for the lights.
@@ -208,6 +216,190 @@ pub trait RenderingPass {
     );
 }
 
+/// Helper struct managing the shadow maps of the same size to minimize the
+/// number of textures and memory usage.
+///
+/// Shadow maps are 2D texture arrays, each of which contains multiple layers
+/// of depth textures. The number of layers in each texture is limited by the
+/// device. Therefore, if the number of shadow maps is large, we need to create
+/// multiple textures to store all the shadow maps.
+///
+/// Bind group layout:
+///
+/// ```wgsl
+/// var shadow_maps: binding_array<texture_depth_2d_array>;
+/// ```
+///
+/// ```glsl
+/// uniform texture2D textures[10] (GLSL)
+/// ```
+pub struct ShadowMaps {
+    /// The size of the shadow map in pixels.
+    pub shadow_map_size: (u32, u32),
+    /// The number of shadow maps, which is the number of lights casting
+    /// shadows.
+    pub shadow_map_count: u32,
+    /// The textures storing the shadow maps. Each texture is a 2D texture
+    /// array with `layers_per_texture` layers, and the last texture may have
+    /// less layers.
+    pub depth_textures: Vec<(wgpu::Texture, wgpu::TextureView)>,
+    /// The texture views for the shadow maps to be used as the depth
+    /// attachment.
+    shadow_map_views: Vec<wgpu::TextureView>,
+    /// The bind group for the shadow maps. In case the number or the size of
+    /// the shadow maps changes, the bind group and the bind group layout need
+    /// to be recreated. See [`update`] for more.
+    pub bind_group: wgpu::BindGroup,
+    /// The bind group layout for the shadow maps.
+    pub bind_group_layout: wgpu::BindGroupLayout,
+}
+
+impl ShadowMaps {
+    /// Create a set of shadow maps.
+    ///
+    /// # Arguments
+    ///
+    /// * `renderer` - The renderer.
+    /// * `width` - The width of the shadow maps.
+    /// * `height` - The height of the shadow maps.
+    /// * `count` - The number of shadow maps.
+    pub fn new(
+        device: &wgpu::Device,
+        limits: &wgpu::Limits,
+        width: u32,
+        height: u32,
+        count: u32,
+    ) -> Self {
+        debug_assert!(
+            width <= limits.max_texture_dimension_1d,
+            "Shadow map width exceeds the limit."
+        );
+        debug_assert!(
+            height <= limits.max_texture_dimension_1d,
+            "Shadow map height exceeds the limit."
+        );
+
+        let layers_per_texture = limits.max_texture_array_layers;
+        let n_textures = (count + layers_per_texture - 1) / layers_per_texture;
+        let last_texture_layers = count % layers_per_texture;
+
+        // Create the depth textures, each of which is a 2D texture array with
+        // `layers_per_texture` layers, and the last texture may have less layers.
+        let depth_textures = (0..n_textures)
+            .map(|n| {
+                let layer_count = if n == n_textures - 1 {
+                    last_texture_layers
+                } else {
+                    layers_per_texture
+                };
+                let texture = device.create_texture(&wgpu::TextureDescriptor {
+                    label: Some("shadow_maps_depth_texture"),
+                    size: wgpu::Extent3d {
+                        width,
+                        height,
+                        depth_or_array_layers: layer_count,
+                    },
+                    mip_level_count: 1,
+                    sample_count: 1,
+                    dimension: wgpu::TextureDimension::D2,
+                    format: DEPTH_FORMAT,
+                    usage: wgpu::TextureUsages::RENDER_ATTACHMENT
+                        | wgpu::TextureUsages::TEXTURE_BINDING,
+                    view_formats: &[],
+                });
+                let view = texture.create_view(&wgpu::TextureViewDescriptor {
+                    label: Some("shadow_maps_depth_texture_view"),
+                    format: Some(DEPTH_FORMAT),
+                    dimension: Some(wgpu::TextureViewDimension::D2Array),
+                    aspect: wgpu::TextureAspect::DepthOnly,
+                    base_array_layer: 0,
+                    array_layer_count: Some(layer_count),
+                    ..Default::default()
+                });
+                (texture, view)
+            })
+            .collect::<Vec<_>>();
+
+        let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("shadow_maps_bind_group_layout"),
+            entries: &[wgpu::BindGroupLayoutEntry {
+                binding: 0,
+                visibility: wgpu::ShaderStages::FRAGMENT,
+                ty: wgpu::BindingType::Texture {
+                    multisampled: false,
+                    view_dimension: wgpu::TextureViewDimension::D2Array,
+                    sample_type: wgpu::TextureSampleType::Depth,
+                },
+                count: NonZeroU32::new(n_textures),
+            }],
+        });
+
+        // Create the bind group for using the shadow maps in the main pass.
+        let views = depth_textures
+            .iter()
+            .map(|(_, view)| view)
+            .collect::<Vec<_>>();
+
+        let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("shadow_maps_bind_group"),
+            layout: &bind_group_layout,
+            entries: &[wgpu::BindGroupEntry {
+                binding: 0,
+                resource: wgpu::BindingResource::TextureViewArray(&views),
+            }],
+        });
+
+        let shadow_map_views = (0..count)
+            .map(|i| {
+                let texture_index = i / layers_per_texture;
+                let layer_index = i % layers_per_texture;
+                depth_textures[texture_index as usize]
+                    .0
+                    .create_view(&wgpu::TextureViewDescriptor {
+                        label: Some(&format!("shadow_map_view_{}", i)),
+                        format: Some(DEPTH_FORMAT),
+                        dimension: Some(wgpu::TextureViewDimension::D2),
+                        aspect: wgpu::TextureAspect::DepthOnly,
+                        base_array_layer: layer_index,
+                        array_layer_count: Some(1),
+                        ..Default::default()
+                    })
+            })
+            .collect::<Vec<_>>();
+
+        Self {
+            depth_textures,
+            bind_group,
+            bind_group_layout,
+            shadow_map_size: (width, height),
+            shadow_map_count: count,
+            shadow_map_views,
+        }
+    }
+
+    pub fn shadow_maps(&self) -> &[wgpu::TextureView] {
+        &self.shadow_map_views
+    }
+
+    /// Recreate the shadow maps in case the size or the number of shadow maps
+    /// changes.
+    pub fn update(
+        &mut self,
+        device: &wgpu::Device,
+        limits: &wgpu::Limits,
+        width: u32,
+        height: u32,
+        count: u32,
+    ) {
+        if self.shadow_map_size.0 != width
+            || self.shadow_map_size.1 != height
+            || self.shadow_map_count != count
+        {
+            *self = Self::new(device, limits, width, height, count);
+        }
+    }
+}
+
 /// The render pass for the blinn-phong shading.
 pub struct BlinnPhongRenderPass {
     /// The depth attachment.
@@ -224,6 +416,8 @@ pub struct BlinnPhongRenderPass {
     pub textures_bind_group_layout: wgpu::BindGroupLayout,
     /// The lights bind group.
     pub lights_bind_group: LightsBindGroup,
+    /// The shadow maps.
+    pub shadow_maps: ShadowMaps,
     /// The pipelines.
     pub pipelines: Pipelines,
 }

@@ -102,13 +102,13 @@ struct VSOutput {
 
 @group(4) @binding(0) var<storage, read> lights: LightArray;
 
-@group(5) @binding(0) var smap: texture_depth_2d_array;
+@group(5) @binding(0) var smap: binding_array<texture_depth_2d_array>;
 @group(5) @binding(1) var smap_sampler: sampler_comparison;
 
 var<push_constant> pconsts : PConsts;
 
 @vertex
-fn vs_main(vin : VSInput)->VSOutput {
+fn vs_main(vin: VSInput) -> VSOutput {
     let locals = instances[vin.instance_index + pconsts.instance_base_index];
 
     var out: VSOutput;
@@ -207,7 +207,8 @@ fn fetch_shadow(light_idx: u32, pos_light_space: vec4<f32>) -> f32 {
     // Compute texture coordinates for shadow map lookup. Transform from [-1, 1] to [0, 1]. * 0.5 + 0.5
     let light_local = pos_light_space.xy * flip_correction * proj_correction + vec2<f32>(0.5, 0.5);
     // Fetch shadow map, use HW PCF and comparison                                    current depth
-    return textureSampleCompareLevel(smap, smap_sampler, light_local, i32(light_idx), pos_light_space.z * proj_correction);
+//    return textureSampleCompareLevel(smap, smap_sampler, light_local, i32(light_idx), pos_light_space.z * proj_correction);
+    return 1.0;
 }
 
 @fragment

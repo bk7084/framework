@@ -23,6 +23,12 @@ pub enum PipelineKind {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct PipelineId(u64);
 
+impl Default for PipelineId {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl PipelineId {
     /// Creates a new pipeline key with invalid configuration.
     pub fn new() -> Self {
@@ -193,7 +199,7 @@ impl Pipelines {
     }
 
     pub fn insert(&mut self, label: &str, key: PipelineId, pipeline: wgpu::RenderPipeline) {
-        let pipelines = self.0.entry(label.into()).or_insert_with(Vec::new);
+        let pipelines = self.0.entry(label.into()).or_default();
         let index = pipelines.binary_search_by_key(&key, |(k, _)| *k);
         match index {
             Ok(index) => pipelines[index] = (key, pipeline),

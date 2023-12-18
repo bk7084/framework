@@ -116,7 +116,7 @@ impl Index<NodeIdx> for &[Node] {
     type Output = Node;
 
     fn index(&self, index: NodeIdx) -> &Self::Output {
-        &(*self).index(index.0)
+        (*self).index(index.0)
     }
 }
 
@@ -125,7 +125,7 @@ impl Index<NodeIdx> for &mut [Node] {
 
     fn index(&self, index: NodeIdx) -> &Self::Output {
         let self_: &[Node] = self;
-        &self_.index(index.0)
+        self_.index(index.0)
     }
 }
 

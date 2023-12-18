@@ -21,18 +21,12 @@ impl Light {
     /// Returns true if the light is a directional source.
     #[inline]
     pub const fn is_directional(&self) -> bool {
-        match self {
-            Light::Directional { .. } => true,
-            _ => false,
-        }
+        matches!(self, Self::Directional { .. })
     }
 
     /// Returns true if the light is a point source.
     #[inline]
     pub const fn is_point(&self) -> bool {
-        match self {
-            Light::Point { .. } => true,
-            _ => false,
-        }
+        matches!(self, Self::Point { .. })
     }
 }
