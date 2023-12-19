@@ -1,6 +1,6 @@
 [project]
 name = "bk7084"
-version = '0.3.13'
+version = '0.3.14'
 description = "Python framework for BK7084 Computational Simulations"
 license = { file = "LICENSE" }
 keywords = ["bk7084", "computational", "simulations", "python", "graphics"]
