@@ -1061,13 +1061,13 @@ impl RenderingPass for BlinnPhongRenderPass {
             }
         }
 
-        // Evaluate shadow maps only if shadows are enabled and wireframe is disabled.
-        if params.casting_shadows() {
-            let meshes_casting_shadow = mesh_bundle_query
-                .iter(&scene.world)
-                .filter(|(_, node_idx)| scene.nodes[**node_idx].cast_shadows());
-            self.eval_shadow_maps_pass(encoder, meshes_casting_shadow, scene, renderer);
-        }
+        // // Evaluate shadow maps only if shadows are enabled and wireframe is
+        // disabled. if params.casting_shadows() {
+        //     let meshes_casting_shadow = mesh_bundle_query
+        //         .iter(&scene.world)
+        //         .filter(|(_, node_idx)| scene.nodes[**node_idx].cast_shadows());
+        //     self.eval_shadow_maps_pass(encoder, meshes_casting_shadow, scene,
+        // renderer); }
 
         // Evaluate the main render pass.
         self.eval_main_render_pass(encoder, &visible_meshes, scene, renderer, params, target);

@@ -165,7 +165,7 @@ fn blinn_phong_shading_eye_space(view_mat: mat4x4<f32>, pos_eye_space: vec3<f32>
         let light = lights.data[i];
         if (light.dir_or_pos.w == DIR_LIGHT) {
             // Light direction in view space.
-            let wi = (view_mat * light.dir_or_pos).xyz;
+            let wi = (view_mat * normalize(light.dir_or_pos)).xyz;
             let coeff = blinn_phong_brdf(wi, wo, n, kd, ks, ns, illum);
             color += coeff * light.color;
         } else if (light.dir_or_pos.w == PNT_LIGHT) {
@@ -277,7 +277,7 @@ fn fs_main(vout : VSOutput) -> @location(0) vec4<f32> {
         color += ka * ia * kd;
     }
 
-    // return vec4<f32>(color, 1.0);
+    return vec4<f32>(color, 1.0);
 
-    return vec4<f32>(textureSample(smap[0], smap_sampler, texcoord, 0).xxx, 1.0);
+    // return vec4<f32>(textureSample(smap[0], smap_sampler, texcoord, 0).xxx, 1.0);
 }
