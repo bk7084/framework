@@ -61,6 +61,8 @@ pub enum Command {
     EnableBackfaceCulling(bool),
     /// Enables or disables wireframe rendering.
     EnableWireframe(bool),
+    /// Enables or disables shadwos.
+    EnableShadows(bool),
 }
 
 /// Receiver of commands.

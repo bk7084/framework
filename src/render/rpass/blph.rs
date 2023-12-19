@@ -186,9 +186,9 @@ impl LightsBindGroup {
                     // actual direction.
                     let rev_dir = -direction.normalize();
                     GpuLight {
-                        dir_or_pos: [rev_dir.x, rev_dir.y, rev_dir.z, 0.0],
+                        dir_or_pos: [10.0 * rev_dir.x, 10.0 * rev_dir.y, 10.0 * rev_dir.z, 0.0],
                         color: [color.r as f32, color.g as f32, color.b as f32, 1.0],
-                        w2l: (Mat4::orthographic_rh(-10.0, 10.0, -10.0, 10.0, 0.1, 100.0)
+                        w2l: (Mat4::orthographic_rh(-20.0, 20.0, -20.0, 20.0, 0.1, 500.0)
                             * Mat4::look_at_rh(rev_dir, Vec3::ZERO, Vec3::Y))
                         .to_cols_array(),
                     }
@@ -245,38 +245,6 @@ impl BlinnPhongRenderPass {
 
         let mut pipelines = Pipelines::new();
 
-        // Create main render pass pipeline.
-        {
-            let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-                label: Some("blinn_phong_shading_pipeline_layout"),
-                bind_group_layouts: &[
-                    &globals_bind_group.layout,
-                    &locals_bind_group.layout,
-                    &materials_bind_group_layout,
-                    &textures_bind_group_layout,
-                    &lights_bind_group.layout,
-                ],
-                push_constant_ranges: &[wgpu::PushConstantRange {
-                    stages: wgpu::ShaderStages::VERTEX_FRAGMENT,
-                    range: 0..PConsts::SIZE as u32,
-                }],
-            });
-
-            for cull_mode in [Some(wgpu::Face::Back), None] {
-                for polygon_mode in [wgpu::PolygonMode::Fill, wgpu::PolygonMode::Line] {
-                    let (id, pipeline) = Self::create_main_render_pass_pipeline(
-                        device,
-                        &layout,
-                        format,
-                        &shader_module,
-                        polygon_mode,
-                        cull_mode,
-                    );
-                    pipelines.insert("entity", id, pipeline);
-                }
-            }
-        }
-
         // Create shadow maps pass pipeline. This pipeline is used to evaluate
         // shadow maps for all meshes that cast shadows.
         {
@@ -301,6 +269,39 @@ impl BlinnPhongRenderPass {
         }
 
         let shadow_maps = ShadowMaps::new(device, limits, 1024, 1024, 1);
+
+        // Create main render pass pipeline.
+        {
+            let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                label: Some("blinn_phong_shading_pipeline_layout"),
+                bind_group_layouts: &[
+                    &globals_bind_group.layout,
+                    &locals_bind_group.layout,
+                    &materials_bind_group_layout,
+                    &textures_bind_group_layout,
+                    &lights_bind_group.layout,
+                    &shadow_maps.bind_group_layout,
+                ],
+                push_constant_ranges: &[wgpu::PushConstantRange {
+                    stages: wgpu::ShaderStages::VERTEX_FRAGMENT,
+                    range: 0..PConsts::SIZE as u32,
+                }],
+            });
+
+            for cull_mode in [Some(wgpu::Face::Back), None] {
+                for polygon_mode in [wgpu::PolygonMode::Fill, wgpu::PolygonMode::Line] {
+                    let (id, pipeline) = Self::create_main_render_pass_pipeline(
+                        device,
+                        &layout,
+                        format,
+                        &shader_module,
+                        polygon_mode,
+                        cull_mode,
+                    );
+                    pipelines.insert("entity", id, pipeline);
+                }
+            }
+        }
 
         Self {
             depth_att: None,
@@ -401,8 +402,8 @@ impl BlinnPhongRenderPass {
             // Set push constants - light index.
             render_pass.set_push_constants(
                 wgpu::ShaderStages::VERTEX,
-                64,
-                bytemuck::bytes_of(&light_idx),
+                4,
+                bytemuck::bytes_of(&(light_idx as u32)),
             );
 
             for (bundle, (offset, inst_count)) in
@@ -573,6 +574,8 @@ impl BlinnPhongRenderPass {
 
         // Bind globals.
         render_pass.set_bind_group(0, &self.globals_bind_group, &[]);
+        // Bind shadow maps and sampler.
+        render_pass.set_bind_group(5, &self.shadow_maps.bind_group, &[]);
 
         {
             let mut unique_meshes = FxHashSet::default();
@@ -701,7 +704,7 @@ impl BlinnPhongRenderPass {
                                             // Update material index.
                                             render_pass.set_push_constants(
                                                 wgpu::ShaderStages::VERTEX_FRAGMENT,
-                                                64,
+                                                4,
                                                 bytemuck::bytes_of(&0u32),
                                             );
                                             render_pass.draw(0..mesh.vertex_count, inst_range);
@@ -714,7 +717,7 @@ impl BlinnPhongRenderPass {
                                                 // Update material index.
                                                 render_pass.set_push_constants(
                                                     wgpu::ShaderStages::VERTEX_FRAGMENT,
-                                                    64,
+                                                    4,
                                                     bytemuck::bytes_of(&material_id),
                                                 );
                                                 render_pass.draw(
@@ -1059,7 +1062,7 @@ impl RenderingPass for BlinnPhongRenderPass {
         }
 
         // Evaluate shadow maps only if shadows are enabled and wireframe is disabled.
-        if params.enable_shadows && !params.enable_wireframe {
+        if params.casting_shadows() {
             let meshes_casting_shadow = mesh_bundle_query
                 .iter(&scene.world)
                 .filter(|(_, node_idx)| scene.nodes[**node_idx].cast_shadows());

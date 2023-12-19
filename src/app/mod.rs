@@ -151,6 +151,13 @@ impl PyAppState {
             .unwrap();
     }
 
+    /// Set the shadows rendering state.
+    pub fn enable_shadows(&mut self, enabled: bool) {
+        self.renderer_cmd_sender
+            .send(Command::EnableShadows(enabled))
+            .unwrap();
+    }
+
     /// Set the wireframe rendering state.
     pub fn enable_wireframe(&mut self, enabled: bool) {
         self.renderer_cmd_sender

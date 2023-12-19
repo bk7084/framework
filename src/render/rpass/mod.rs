@@ -243,6 +243,8 @@ pub struct ShadowMaps {
     /// array with `layers_per_texture` layers, and the last texture may have
     /// less layers.
     pub depth_textures: Vec<(wgpu::Texture, wgpu::TextureView)>,
+    /// The sampler for the shadow maps.
+    pub depth_sampler: wgpu::Sampler,
     /// The texture views for the shadow maps to be used as the depth
     /// attachment.
     shadow_map_views: Vec<wgpu::TextureView>,
@@ -252,6 +254,11 @@ pub struct ShadowMaps {
     pub bind_group: wgpu::BindGroup,
     /// The bind group layout for the shadow maps.
     pub bind_group_layout: wgpu::BindGroupLayout,
+
+    #[cfg(debug_assertions)]
+    /// The storage buffers for the shadow maps. Each buffer stores the
+    /// shadow map for a light. Used for debugging only.
+    pub storage_buffers: Vec<wgpu::Buffer>,
 }
 
 impl ShadowMaps {
@@ -311,7 +318,7 @@ impl ShadowMaps {
                     label: Some("shadow_maps_depth_texture_view"),
                     format: Some(DEPTH_FORMAT),
                     dimension: Some(wgpu::TextureViewDimension::D2Array),
-                    aspect: wgpu::TextureAspect::DepthOnly,
+                    aspect: wgpu::TextureAspect::All,
                     base_array_layer: 0,
                     array_layer_count: Some(layer_count),
                     ..Default::default()
@@ -320,18 +327,64 @@ impl ShadowMaps {
             })
             .collect::<Vec<_>>();
 
+        #[cfg(debug_assertions)]
+        let storage_buffers = (0..count)
+            .map(|_| {
+                device.create_buffer(&wgpu::BufferDescriptor {
+                    label: Some("shadow_maps_storage_buffer"),
+                    size: (width * height * std::mem::size_of::<f32>() as u32) as wgpu::BufferSize,
+                    usage: wgpu::BufferUsages::STORAGE
+                        | wgpu::BufferUsages::COPY_DST
+                        | wgpu::BufferUsages::COPY_SRC,
+                    mapped_at_creation: false,
+                })
+            })
+            .collect::<Vec<_>>();
+
+        // let depth_sampler = device.create_sampler(&wgpu::SamplerDescriptor {
+        //     label: Some("shadow_maps_depth_sampler"),
+        //     address_mode_u: wgpu::AddressMode::ClampToEdge,
+        //     address_mode_v: wgpu::AddressMode::ClampToEdge,
+        //     address_mode_w: wgpu::AddressMode::ClampToEdge,
+        //     mag_filter: wgpu::FilterMode::Nearest,
+        //     min_filter: wgpu::FilterMode::Nearest,
+        //     mipmap_filter: wgpu::FilterMode::Nearest,
+        //     compare: Some(wgpu::CompareFunction::LessEqual),
+        //     ..Default::default()
+        // });
+
+        let depth_sampler = device.create_sampler(&wgpu::SamplerDescriptor {
+            label: Some("shadow_maps_depth_sampler"),
+            address_mode_u: wgpu::AddressMode::ClampToEdge,
+            address_mode_v: wgpu::AddressMode::ClampToEdge,
+            address_mode_w: wgpu::AddressMode::ClampToEdge,
+            mag_filter: wgpu::FilterMode::Nearest,
+            min_filter: wgpu::FilterMode::Nearest,
+            mipmap_filter: wgpu::FilterMode::Nearest,
+            compare: None,
+            ..Default::default()
+        });
+
         let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("shadow_maps_bind_group_layout"),
-            entries: &[wgpu::BindGroupLayoutEntry {
-                binding: 0,
-                visibility: wgpu::ShaderStages::FRAGMENT,
-                ty: wgpu::BindingType::Texture {
-                    multisampled: false,
-                    view_dimension: wgpu::TextureViewDimension::D2Array,
-                    sample_type: wgpu::TextureSampleType::Depth,
+            entries: &[
+                wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Texture {
+                        multisampled: false,
+                        view_dimension: wgpu::TextureViewDimension::D2Array,
+                        sample_type: wgpu::TextureSampleType::Float { filterable: false },
+                    },
+                    count: NonZeroU32::new(n_textures),
                 },
-                count: NonZeroU32::new(n_textures),
-            }],
+                wgpu::BindGroupLayoutEntry {
+                    binding: 1,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::NonFiltering),
+                    count: None,
+                },
+            ],
         });
 
         // Create the bind group for using the shadow maps in the main pass.
@@ -343,10 +396,16 @@ impl ShadowMaps {
         let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("shadow_maps_bind_group"),
             layout: &bind_group_layout,
-            entries: &[wgpu::BindGroupEntry {
-                binding: 0,
-                resource: wgpu::BindingResource::TextureViewArray(&views),
-            }],
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: wgpu::BindingResource::TextureViewArray(&views),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::Sampler(&depth_sampler),
+                },
+            ],
         });
 
         let shadow_map_views = (0..count)
@@ -374,6 +433,9 @@ impl ShadowMaps {
             shadow_map_size: (width, height),
             shadow_map_count: count,
             shadow_map_views,
+            depth_sampler,
+            #[cfg(debug_assertions)]
+            storage_buffers,
         }
     }
 
@@ -396,6 +458,26 @@ impl ShadowMaps {
             || self.shadow_map_count != count
         {
             *self = Self::new(device, limits, width, height, count);
+        }
+    }
+
+    /// Write the shadow maps to files for debugging.
+    #[cfg(debug_assertions)]
+    pub fn write_to_file(&self, device: &wgpu::Device, queue: &wgpu::Queue) {
+        for (i, buffer) in self.storage_buffers.iter().enumerate() {
+            let size = (self.shadow_map_size.0 * self.shadow_map_size.1 * 4) as wgpu::BufferSize;
+            let buffer_slice = buffer.slice(..);
+            let buffer_future = buffer_slice.map_async(wgpu::MapMode::Read);
+            device.poll(wgpu::Maintain::Wait);
+            queue.submit(Some(buffer_future));
+            let data = buffer_slice.get_mapped_range();
+            let img = image::ImageBuffer::<image::Rgba<u8>, _>::from_raw(
+                self.shadow_map_size.0,
+                self.shadow_map_size.1,
+                data,
+            )
+            .unwrap();
+            img.save(format!("shadow_map_{}.png", i)).unwrap();
         }
     }
 }

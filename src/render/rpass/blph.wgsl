@@ -102,8 +102,13 @@ struct VSOutput {
 
 @group(4) @binding(0) var<storage, read> lights: LightArray;
 
-@group(5) @binding(0) var smap: binding_array<texture_depth_2d_array>;
-@group(5) @binding(1) var smap_sampler: sampler_comparison;
+/* Sampling shadow map use depth comparision.  */
+// @group(5) @binding(0) var smap: binding_array<texture_depth_2d_array>;
+// @group(5) @binding(1) var smap_sampler: sampler_comparison;
+
+/* Sampling shadow map as normal texture. */
+@group(5) @binding(0) var smap: binding_array<texture_2d_array<f32>>;
+@group(5) @binding(1) var smap_sampler: sampler;
 
 var<push_constant> pconsts : PConsts;
 
@@ -272,5 +277,7 @@ fn fs_main(vout : VSOutput) -> @location(0) vec4<f32> {
         color += ka * ia * kd;
     }
 
-    return vec4<f32>(color, 1.0);
+    // return vec4<f32>(color, 1.0);
+
+    return vec4<f32>(textureSample(smap[0], smap_sampler, texcoord, 0).xxx, 1.0);
 }

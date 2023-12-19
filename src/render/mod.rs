@@ -59,6 +59,24 @@ pub struct RenderParams {
     pub enable_shadows: bool,
 }
 
+impl RenderParams {
+    pub fn new() -> Self {
+        Self {
+            mode: ShadingMode::BlinnPhong,
+            enable_back_face_culling: true,
+            enable_occlusion_culling: false,
+            enable_wireframe: false,
+            enable_shadows: false,
+        }
+    }
+
+    /// Whether to cast shadows.
+    #[inline]
+    pub const fn casting_shadows(&self) -> bool {
+        self.enable_shadows && !self.enable_wireframe
+    }
+}
+
 pub struct Renderer {
     pub device: Arc<wgpu::Device>,
     pub queue: Arc<wgpu::Queue>,
@@ -343,6 +361,9 @@ impl Renderer {
                 }
                 Command::EnableWireframe(enable) => {
                     self.params.enable_wireframe = enable;
+                }
+                Command::EnableShadows(enable) => {
+                    self.params.enable_shadows = enable;
                 }
                 _ => {}
             }

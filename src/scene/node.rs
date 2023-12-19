@@ -13,7 +13,7 @@ pub struct Node {
     active: bool,
     /// Visible state of this node.
     visible: bool,
-    /// Cast shadows flag.
+    /// Cast shadows flag. Defaults to `true`.
     cast_shadows: bool,
     /// Material override. If set, this material will be used instead of the
     /// material set by the submesh.
@@ -28,7 +28,7 @@ impl Node {
             active: true,
             visible: false,
             material_override: None,
-            cast_shadows: false,
+            cast_shadows: true,
         }
     }
 
