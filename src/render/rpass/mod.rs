@@ -15,6 +15,7 @@ crate::impl_size_constant!(
     Locals,
     ShadowPassLocals,
     PConsts,
+    PConstsShadowPass,
     GpuLight,
     LightArray
 );
@@ -84,6 +85,15 @@ struct PConsts {
     instance_base_index: u32,
     /// Material index.
     material_index: u32,
+    /// Whether the shadow mapping is enabled.
+    enable_shadows: u32,
+}
+
+#[repr(C)]
+#[derive(Debug, Clone, Copy, Pod, Zeroable)]
+struct PConstsShadowPass {
+    instance_base_index: u32,
+    light_index: u32,
 }
 
 /// Depth format for the rendering passes.

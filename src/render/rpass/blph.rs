@@ -1,3 +1,4 @@
+use crate::render::rpass::PConstsShadowPass;
 use crate::{
     core::{
         camera::Camera,
@@ -264,10 +265,7 @@ impl BlinnPhongRenderPass {
                 bind_group_layouts: &[&locals_bind_group.layout, &lights_bind_group.layout],
                 push_constant_ranges: &[wgpu::PushConstantRange {
                     stages: wgpu::ShaderStages::VERTEX,
-                    // NOTE: The size of the push constant is the same as in the main render pass.
-                    // But the second u32 is used to store the index of the light in the light
-                    // array.
-                    range: 0..PConsts::SIZE as u32,
+                    range: 0..PConstsShadowPass::SIZE as u32,
                 }],
             });
             let (id, pipeline) =
@@ -583,6 +581,14 @@ impl BlinnPhongRenderPass {
         render_pass.set_bind_group(0, &self.globals_bind_group, &[]);
         // Bind shadow maps and sampler.
         render_pass.set_bind_group(5, &self.shadow_maps.bind_group, &[]);
+
+        let enable_shadows = if params.casting_shadows() { 1u32 } else { 0u32 };
+
+        render_pass.set_push_constants(
+            wgpu::ShaderStages::VERTEX_FRAGMENT,
+            8,
+            bytemuck::bytes_of(&enable_shadows),
+        );
 
         {
             let mut unique_meshes = FxHashSet::default();

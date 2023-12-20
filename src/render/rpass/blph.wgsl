@@ -33,6 +33,7 @@ struct Locals {
 struct PConsts {
     instance_base_index: u32,
     material_index: u32,
+    enable_shadows: u32,
 }
 
 struct Light {
@@ -111,7 +112,7 @@ struct VSOutput {
 // @group(5) @binding(0) var smap: binding_array<texture_2d_array<f32>>;
 // @group(5) @binding(1) var smap_sampler: sampler;
 
-var<push_constant> pconsts : PConsts;
+var<push_constant> pconsts: PConsts;
 
 @vertex
 fn vs_main(vin: VSInput) -> VSOutput {
@@ -171,8 +172,11 @@ fn blinn_phong_shading_eye_space(view_mat: mat4x4<f32>, pos_world: vec3<f32>, po
             let wi = (view_mat * normalize(light.dir_or_pos)).xyz;
             let coeff = blinn_phong_brdf(wi, wo, n, kd, ks, ns, illum);
             let pos_light_space = light.world_to_light * vec4<f32>(pos_world, 1.0);
-            let shadow = fetch_shadow(dir_light_index, pos_light_space);
-            color +=  shadow * coeff * light.color;
+            var shadow = 1.0;
+            if (pconsts.enable_shadows != 0u) {
+                shadow = fetch_shadow(dir_light_index, pos_light_space);
+            }
+            color += shadow * coeff * light.color;
             dir_light_index += 1u;
         } else if (light.dir_or_pos.w == PNT_LIGHT) {
             // Light position in view space.
