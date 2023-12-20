@@ -57,6 +57,9 @@ pub struct RenderParams {
     pub enable_wireframe: bool,
     /// Whether to enable shadow.
     pub enable_shadows: bool,
+    /// Whether to write shadow maps once.
+    #[cfg(debug_assertions)]
+    pub write_shadow_maps: bool,
 }
 
 impl RenderParams {
@@ -67,6 +70,8 @@ impl RenderParams {
             enable_occlusion_culling: false,
             enable_wireframe: false,
             enable_shadows: false,
+            #[cfg(debug_assertions)]
+            write_shadow_maps: false,
         }
     }
 
@@ -167,6 +172,8 @@ impl Renderer {
                 enable_occlusion_culling: false,
                 enable_wireframe: false,
                 enable_shadows: false,
+                #[cfg(debug_assertions)]
+                write_shadow_maps: true,
             },
             cmd_receiver: receiver,
             texture_bundles,

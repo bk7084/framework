@@ -16,7 +16,10 @@ use crate::{
 };
 use glam::{Mat4, Vec3};
 use legion::IntoQuery;
-use std::num::{NonZeroU32, NonZeroU64};
+use std::{
+    num::{NonZeroU32, NonZeroU64},
+    sync::atomic::{AtomicBool, Ordering},
+};
 
 impl GlobalsBindGroup {
     /// Creates a new globals bind group.
@@ -177,6 +180,10 @@ impl LightsBindGroup {
         nodes: &Nodes,
         queue: &wgpu::Queue,
     ) {
+        const ORTHO_NEAR: f32 = -50.0;
+        const ORTHO_FAR: f32 = 50.0;
+        const ORTHO_H: f32 = 20.0;
+        const ORTHO_W: f32 = 34.0;
         self.lights.clear();
         for (light, node_idx) in lights {
             let len = self.lights.len[0] as usize;
@@ -186,22 +193,22 @@ impl LightsBindGroup {
                     // actual direction.
                     let rev_dir = -direction.normalize();
                     GpuLight {
-                        dir_or_pos: [10.0 * rev_dir.x, 10.0 * rev_dir.y, 10.0 * rev_dir.z, 0.0],
+                        dir_or_pos: [rev_dir.x, rev_dir.y, rev_dir.z, 0.0],
                         color: [color.r as f32, color.g as f32, color.b as f32, 1.0],
-                        w2l: (Mat4::orthographic_rh(-20.0, 20.0, -20.0, 20.0, 0.1, 500.0)
-                            * Mat4::look_at_rh(rev_dir, Vec3::ZERO, Vec3::Y))
+                        w2l: (Mat4::orthographic_rh(
+                            -ORTHO_W, ORTHO_W, -ORTHO_H, ORTHO_H, ORTHO_NEAR, ORTHO_FAR,
+                        ) * Mat4::look_at_rh(rev_dir, Vec3::ZERO, Vec3::Y))
                         .to_cols_array(),
                     }
                 }
                 Light::Point { color } => {
                     let transform = nodes.world(**node_idx);
                     let position = transform.translation;
+                    // TODO: Matrix from world to light space.
                     GpuLight {
                         dir_or_pos: [position.x, position.y, position.z, 1.0],
                         color: [color.r as f32, color.g as f32, color.b as f32, 1.0],
-                        w2l: (Mat4::orthographic_rh(-10.0, 10.0, -10.0, 10.0, 0.1, 100.0)
-                            * Mat4::look_at_rh(position, Vec3::ZERO, Vec3::Y))
-                        .to_cols_array(),
+                        w2l: Mat4::IDENTITY.to_cols_array(),
                     }
                 }
             };
@@ -1006,7 +1013,6 @@ impl RenderingPass for BlinnPhongRenderPass {
         encoder: &mut wgpu::CommandEncoder,
     ) {
         profiling::scope!("BlinnPhongShading::record");
-
         let mut mesh_bundle_query = <(&MeshBundle, &NodeIdx)>::query();
         let visible_meshes = mesh_bundle_query
             .iter(&scene.world)
@@ -1061,13 +1067,21 @@ impl RenderingPass for BlinnPhongRenderPass {
             }
         }
 
-        // // Evaluate shadow maps only if shadows are enabled and wireframe is
-        // disabled. if params.casting_shadows() {
-        //     let meshes_casting_shadow = mesh_bundle_query
-        //         .iter(&scene.world)
-        //         .filter(|(_, node_idx)| scene.nodes[**node_idx].cast_shadows());
-        //     self.eval_shadow_maps_pass(encoder, meshes_casting_shadow, scene,
-        // renderer); }
+        // Evaluate shadow maps only if shadows are enabled and wireframe is
+        // disabled.
+        if params.casting_shadows() {
+            let meshes_casting_shadow = mesh_bundle_query
+                .iter(&scene.world)
+                .filter(|(_, node_idx)| scene.nodes[**node_idx].cast_shadows());
+            self.eval_shadow_maps_pass(encoder, meshes_casting_shadow, scene, renderer);
+            #[cfg(all(debug_assertions, feature = "write_shadow_map"))]
+            {
+                self.shadow_maps.update_storage_buffers(encoder);
+                if params.write_shadow_maps {
+                    self.shadow_maps.write_shadow_maps(&renderer.device);
+                }
+            }
+        }
 
         // Evaluate the main render pass.
         self.eval_main_render_pass(encoder, &visible_meshes, scene, renderer, params, target);

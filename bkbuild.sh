@@ -96,6 +96,10 @@ case $command in
         echo "Building for development..."
         maturin develop
         ;;
+      "dev-write-shadow-map")
+        echo "Building for development with write shadow map..."
+        maturin develop --features write_shadow_map
+        ;;
       "rel")
         echo "Building for release..."
         maturin develop --release
