@@ -1058,7 +1058,7 @@ impl RenderingPass for BlinnPhongRenderPass {
 
             if need_recreate {
                 let texture = renderer.device.create_texture(&wgpu::TextureDescriptor {
-                    label: Some("wireframe_depth_texture"),
+                    label: Some("rpass_depth_texture"),
                     size: target.size,
                     mip_level_count: 1,
                     sample_count: 1,
@@ -1080,7 +1080,7 @@ impl RenderingPass for BlinnPhongRenderPass {
                 .iter(&scene.world)
                 .filter(|(_, node_idx)| scene.nodes[**node_idx].cast_shadows());
             self.eval_shadow_maps_pass(encoder, meshes_casting_shadow, scene, renderer);
-            #[cfg(all(debug_assertions, feature = "write_shadow_map"))]
+            #[cfg(all(debug_assertions, feature = "debug-shadow-map"))]
             {
                 self.shadow_maps.update_storage_buffers(encoder);
                 if params.write_shadow_maps {

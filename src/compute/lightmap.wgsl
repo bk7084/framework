@@ -31,10 +31,21 @@ fn vs_main(vin: VSInput) -> @builtin(position) vec4<f32> {
 }
 
 @fragment
-fn fs_main(@builtin(position) position: vec4<f32>) -> @location(0) vec4<f32> {
-    let texcoord = vec2<u32>(vec2<f32>(position.xy) / position.w * 0.5 + 0.5);
-    var val = textureLoad(lmaps, texcoord, pconsts.light_index);
-    val += 1u;
-    textureStore(lmaps, texcoord, pconsts.light_index, val);
-    return vec4<f32>(0.0, 0.0, 0.0, 1.0);
+fn fs_main(@builtin(position) pixel_pos: vec4<f32>) -> @location(0) vec4<f32> {
+    // var texcoord = position.xy / position.w * 0.5 + 0.5;
+
+    // var val = textureLoad(lmaps, texcoord, pconsts.light_index);
+    // val += 1u;
+    // textureStore(lmaps, texcoord, pconsts.light_index, val);
+
+    // let texture_size = textureDimensions(lmaps);
+    // let coord = vec2<u32>(u32(texcoord.x * f32(texture_size.x)),
+    //                       u32(texcoord.y * f32(texture_size.y)));
+    // textureStore(lmaps, coord, pconsts.light_index, vec4<u32>(255u));
+
+    // texcoord = texcoord * vec2<f32>(1024.0);
+
+    textureStore(lmaps, vec2<u32>(pixel_pos.xy), pconsts.light_index, vec4<u32>(255u));
+
+    return vec4<f32>(1.0, 0.0, 0.0, 1.0);
 }

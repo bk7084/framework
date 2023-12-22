@@ -55,6 +55,8 @@ pub enum Command {
     UseMaterial { entity: Entity, material: u32 },
     /// Sets the entity as the main camera.
     SetAsMainCamera { entity: Entity },
+    /// Sets the direction of the directional light.
+    SetDirectionalLight { entity: Entity, direction: Vec3 },
     /// Clears the material override.
     ClearMaterialOverride { entity: Entity },
     /// Enables or disables backface culling.

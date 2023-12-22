@@ -1,11 +1,14 @@
 use std::num::NonZeroU64;
 
+use glam::{Mat3, Mat4, Vec3};
+use wgpu::util::DeviceExt;
 use wgpu::BindGroupLayoutEntry;
 
+use crate::render::rpass::PConstsShadowPass;
 use crate::{
     core::{
         mesh::{MeshBundle, VertexAttribute},
-        FxHashMap, FxHashSet,
+        FxHashSet,
     },
     render::{
         rpass::{LocalsBindGroup, ShadowPassLocals},
@@ -19,6 +22,8 @@ pub const MAX_SUN_POSITIONS_NUM: usize = 16;
 pub struct SunlightScore {
     /// The occlusion map for each of the 11 sun positions.
     light_maps: wgpu::Texture,
+    /// Occlusion map pipeline output (only for satisfying the pipeline layout)
+    rpass_output: wgpu::Texture,
     /// Pipeline generating the occlusion map.
     rpass_pipeline: wgpu::RenderPipeline,
     /// The bind group containing the occlusion map used for rendering.
@@ -37,6 +42,10 @@ pub struct SunlightScore {
     // cpass_pipeline: wgpu::ComputePipeline,
     // /// The bind group containing the occlusion map used for computing.
     // cpass_light_maps_bind_group: wgpu::BindGroup,
+    #[cfg(all(debug_assertions, feature = "debug-sunlight-map"))]
+    pub storage_buffer: wgpu::Buffer,
+    #[cfg(all(debug_assertions, feature = "debug-sunlight-map"))]
+    pub output_storage_buffer: wgpu::Buffer,
 }
 
 impl SunlightScore {
@@ -69,11 +78,26 @@ impl SunlightScore {
             }],
         });
 
-        let rpass_light_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+        const ORTHO_NEAR: f32 = -80.0;
+        const ORTHO_FAR: f32 = 80.0;
+        const ORTHO_H: f32 = 40.0;
+        const ORTHO_W: f32 = 40.0;
+        // Sun's light space matrices at each of the 11 positions.
+        let mut light_matrices = [[0f32; 16]; 16];
+        let inclination = std::f32::consts::FRAC_PI_8;
+        let center_pos = Vec3::new(0.0, inclination.cos(), inclination.sin());
+        for i in 0..11 {
+            let angle = (i as f32 - 5.0) * std::f32::consts::FRAC_PI_6 * 0.5;
+            let pos = Mat3::from_rotation_z(angle) * center_pos;
+            light_matrices[i] = (Mat4::orthographic_rh(
+                -ORTHO_W, ORTHO_W, -ORTHO_H, ORTHO_H, ORTHO_NEAR, ORTHO_FAR,
+            ) * Mat4::look_at_rh(pos, Vec3::ZERO, Vec3::Y))
+            .to_cols_array();
+        }
+        let rpass_light_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("light_matrices_buffer"),
-            size: (MAX_SUN_POSITIONS_NUM * 4 * 16) as u64,
+            contents: bytemuck::cast_slice(&light_matrices),
             usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
-            mapped_at_creation: false,
         });
         let rpass_light_bind_group_layout =
             device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
@@ -99,6 +123,40 @@ impl SunlightScore {
         });
 
         let rpass_locals_bind_group = LocalsBindGroup::new(device);
+
+        let rpass_output = device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("rpass_output"),
+            size: wgpu::Extent3d {
+                width: 256,
+                height: 256,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: wgpu::TextureFormat::Rgba8Unorm,
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC,
+            view_formats: &[],
+        });
+
+        #[cfg(all(debug_assertions, feature = "debug-sunlight-map"))]
+        let output_storage_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("output_storage_buffer"),
+            size: 256 * 256 * 4,
+            usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
+            mapped_at_creation: false,
+        });
+
+        #[cfg(all(debug_assertions, feature = "debug-sunlight-map"))]
+        let storage_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("storage_buffer_sunlight_map"),
+            size: (1024 * 1024 * 4) as u64 * MAX_SUN_POSITIONS_NUM as u64,
+            usage: wgpu::BufferUsages::STORAGE
+                | wgpu::BufferUsages::COPY_SRC
+                | wgpu::BufferUsages::COPY_DST
+                | wgpu::BufferUsages::MAP_READ,
+            mapped_at_creation: false,
+        });
 
         let light_maps = device.create_texture(&wgpu::TextureDescriptor {
             label: Some("light_maps"),
@@ -195,7 +253,7 @@ impl SunlightScore {
                 ],
                 push_constant_ranges: &[wgpu::PushConstantRange {
                     stages: wgpu::ShaderStages::VERTEX_FRAGMENT,
-                    range: 0..8,
+                    range: 0..PConstsShadowPass::SIZE as u32,
                 }],
             });
 
@@ -218,7 +276,11 @@ impl SunlightScore {
             fragment: Some(wgpu::FragmentState {
                 module: &rpass_shader,
                 entry_point: "fs_main",
-                targets: &[],
+                targets: &[Some(wgpu::ColorTargetState {
+                    format: wgpu::TextureFormat::Rgba8Unorm,
+                    blend: None,
+                    write_mask: wgpu::ColorWrites::ALL,
+                })],
             }),
             primitive: wgpu::PrimitiveState {
                 topology: wgpu::PrimitiveTopology::TriangleList,
@@ -245,8 +307,67 @@ impl SunlightScore {
             rpass_light_buffer,
             rpass_light_bind_group,
             rpass_locals_bind_group,
+            #[cfg(all(debug_assertions, feature = "debug-sunlight-map"))]
+            storage_buffer,
+            #[cfg(all(debug_assertions, feature = "debug-sunlight-map"))]
+            output_storage_buffer,
+            rpass_output,
             // cpass_light_maps_bind_group,
             // cpass_pipeline: compute_pipeline,
+        }
+    }
+
+    #[cfg(all(debug_assertions, feature = "debug-sunlight-map"))]
+    pub fn write_sunlight_maps(&mut self, device: &wgpu::Device) {
+        {
+            let buffer_slice = self.storage_buffer.slice(..);
+            let (sender, receiver) = flume::bounded(1);
+            buffer_slice.map_async(wgpu::MapMode::Read, move |r| sender.send(r).unwrap());
+            device.poll(wgpu::Maintain::Wait);
+            pollster::block_on(async {
+                receiver.recv_async().await.unwrap().unwrap();
+            });
+            {
+                let buffer_view = buffer_slice.get_mapped_range();
+                let (_, data, _) = unsafe { buffer_view.align_to::<u32>() };
+                let (width, height) = (1024, 1024);
+                let mut imgbuf = image::ImageBuffer::new(width, height);
+                for i in 0..MAX_SUN_POSITIONS_NUM {
+                    for (x, y, pixel) in imgbuf.enumerate_pixels_mut() {
+                        let idx = (y * width + x) as usize;
+                        let val = data[idx + i * width as usize * height as usize];
+                        *pixel = image::Luma([val as u8]);
+                    }
+                    imgbuf.save(format!("sunlight_map_{}.png", i)).unwrap();
+                }
+            }
+            self.storage_buffer.unmap();
+        }
+
+        {
+            let buffer_slice = self.output_storage_buffer.slice(..);
+            let (sender, receiver) = flume::bounded(1);
+            buffer_slice.map_async(wgpu::MapMode::Read, move |r| sender.send(r).unwrap());
+            device.poll(wgpu::Maintain::Wait);
+            pollster::block_on(async {
+                receiver.recv_async().await.unwrap().unwrap();
+            });
+            {
+                let buffer_view = buffer_slice.get_mapped_range();
+                let (_, data, _) = unsafe { buffer_view.align_to::<u8>() };
+                let (width, height) = (256, 256);
+                let mut imgbuf = image::ImageBuffer::new(width, height);
+                for (x, y, pixel) in imgbuf.enumerate_pixels_mut() {
+                    let idx = (y * width + x) as usize;
+                    let mut val = [0u8; 4];
+                    for i in 0..4 {
+                        val[i] = data[idx + i];
+                    }
+                    *pixel = image::Rgba(val);
+                }
+                imgbuf.save(format!("sunlight_output.png")).unwrap();
+            }
+            self.output_storage_buffer.unmap();
         }
     }
 
@@ -263,6 +384,7 @@ impl SunlightScore {
         M: Iterator<Item = (&'a MeshBundle, &'a NodeIdx)>,
     {
         profiling::scope!("render_occlusion_maps");
+        log::debug!("Render sunlight occlusion maps");
         let mut unique_bundles = FxHashSet::default();
         let mut n_inst = 0;
         for (bundle, _) in mesh_bundles {
@@ -311,94 +433,185 @@ impl SunlightScore {
         );
 
         let mesh_buffer = renderer.meshes.buffer();
-        let mut rpass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-            label: Some("render_occlusion_map_rpass"),
-            color_attachments: &[],
-            depth_stencil_attachment: None,
-            timestamp_writes: None,
-            occlusion_query_set: None,
-        });
-        rpass.set_pipeline(&self.rpass_pipeline);
-        rpass.set_bind_group(0, &self.rpass_light_maps_bind_group, &[]);
-        rpass.set_bind_group(1, &self.rpass_light_bind_group, &[]);
-        rpass.set_bind_group(2, &self.rpass_locals_bind_group, &[]);
+        let output_view = self
+            .rpass_output
+            .create_view(&wgpu::TextureViewDescriptor::default());
+        {
+            let mut rpass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("render_occlusion_map_rpass"),
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    view: &output_view,
+                    resolve_target: None,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
+                        store: wgpu::StoreOp::Store,
+                    },
+                })],
+                depth_stencil_attachment: None,
+                timestamp_writes: None,
+                occlusion_query_set: None,
+            });
+            rpass.set_pipeline(&self.rpass_pipeline);
+            rpass.set_bind_group(0, &self.rpass_light_maps_bind_group, &[]);
+            rpass.set_bind_group(1, &self.rpass_light_bind_group, &[]);
+            rpass.set_bind_group(2, &self.rpass_locals_bind_group, &[]);
 
-        // Rendering the occlusion maps for each sun position.
-        (0..11).into_iter().for_each(|i| {
-            profiling::scope!("render_occlusion_map_rpass");
-            rpass.set_push_constants(
-                wgpu::ShaderStages::VERTEX_FRAGMENT,
-                4,
-                bytemuck::cast_slice(&[i as u32]),
-            );
+            // Rendering the occlusion maps for each sun position.
+            (0..11).into_iter().for_each(|i| {
+                profiling::scope!("render_occlusion_map_rpass");
+                rpass.set_push_constants(
+                    wgpu::ShaderStages::VERTEX_FRAGMENT,
+                    4,
+                    bytemuck::bytes_of(&(i as u32)),
+                );
 
-            for (bundle, (offset, inst_count)) in
-                unique_bundles.iter().zip(offsets_and_inst_counts.iter())
-            {
-                match renderer.meshes.get(bundle.mesh) {
-                    Some(mesh) => {
-                        // Bind vertex buffer - position.
-                        if let Some(pos_range) =
-                            mesh.get_vertex_attribute_range(VertexAttribute::POSITION)
-                        {
-                            rpass.set_vertex_buffer(0, mesh_buffer.slice(pos_range.clone()));
-                        }
-                        // Set push constants - instance base index.
-                        rpass.set_push_constants(
-                            wgpu::ShaderStages::VERTEX_FRAGMENT,
-                            0,
-                            bytemuck::bytes_of(offset),
-                        );
+                for (bundle, (offset, inst_count)) in
+                    unique_bundles.iter().zip(offsets_and_inst_counts.iter())
+                {
+                    match renderer.meshes.get(bundle.mesh) {
+                        Some(mesh) => {
+                            // Bind vertex buffer - position.
+                            if let Some(pos_range) =
+                                mesh.get_vertex_attribute_range(VertexAttribute::POSITION)
+                            {
+                                rpass.set_vertex_buffer(0, mesh_buffer.slice(pos_range.clone()));
+                            }
+                            // Set push constants - instance base index.
+                            rpass.set_push_constants(
+                                wgpu::ShaderStages::VERTEX_FRAGMENT,
+                                0,
+                                bytemuck::bytes_of(offset),
+                            );
 
-                        match mesh.index_format {
-                            Some(index_format) => {
-                                rpass.set_index_buffer(
-                                    mesh_buffer.slice(mesh.index_range.clone()),
-                                    index_format,
-                                );
-                                match mesh.sub_meshes.as_ref() {
-                                    Some(sub_meshes) => {
-                                        for sm in sub_meshes {
+                            match mesh.index_format {
+                                Some(index_format) => {
+                                    rpass.set_index_buffer(
+                                        mesh_buffer.slice(mesh.index_range.clone()),
+                                        index_format,
+                                    );
+                                    match mesh.sub_meshes.as_ref() {
+                                        Some(sub_meshes) => {
+                                            for sm in sub_meshes {
+                                                rpass.draw_indexed(
+                                                    sm.range.start..sm.range.end,
+                                                    0,
+                                                    0..*inst_count,
+                                                );
+                                            }
+                                        }
+                                        None => {
                                             rpass.draw_indexed(
-                                                sm.range.start..sm.range.end,
+                                                0..mesh.index_count,
                                                 0,
                                                 0..*inst_count,
                                             );
                                         }
                                     }
+                                }
+                                None => match mesh.sub_meshes.as_ref() {
+                                    Some(sub_meshes) => {
+                                        for sm in sub_meshes {
+                                            rpass.draw(sm.range.start..sm.range.end, 0..*inst_count)
+                                        }
+                                    }
                                     None => {
-                                        rpass.draw_indexed(0..mesh.index_count, 0, 0..*inst_count);
+                                        rpass.draw(0..mesh.vertex_count, 0..*inst_count);
                                     }
-                                }
+                                },
                             }
-                            None => match mesh.sub_meshes.as_ref() {
-                                Some(sub_meshes) => {
-                                    for sm in sub_meshes {
-                                        rpass.draw(sm.range.start..sm.range.end, 0..*inst_count)
-                                    }
-                                }
-                                None => {
-                                    rpass.draw(0..mesh.vertex_count, 0..*inst_count);
-                                }
-                            },
+                        }
+                        None => {
+                            log::error!("Missing mesh {:?}", bundle.mesh);
+                            continue;
                         }
                     }
-                    None => {
-                        log::error!("Missing mesh {:?}", bundle.mesh);
-                        continue;
-                    }
                 }
+            });
+        }
+
+        {
+            // #[cfg(all(debug_assertions, feature = "debug-sunlight-map"))]
+            // encoder.copy_texture_to_buffer(
+            //     wgpu::ImageCopyTexture {
+            //         texture: &self.light_maps,
+            //         mip_level: 0,
+            //         origin: wgpu::Origin3d::ZERO,
+            //         aspect: wgpu::TextureAspect::All,
+            //     },
+            //     wgpu::ImageCopyBuffer {
+            //         buffer: &self.storage_buffer,
+            //         layout: wgpu::ImageDataLayout {
+            //             offset: 0,
+            //             bytes_per_row: Some(4 * 1024),
+            //             rows_per_image: Some(1024),
+            //         },
+            //     },
+            //     wgpu::Extent3d {
+            //         width: 1024,
+            //         height: 1024,
+            //         depth_or_array_layers: MAX_SUN_POSITIONS_NUM as u32,
+            //     },
+            // );
+            #[cfg(all(debug_assertions, feature = "debug-sunlight-map"))]
+            for i in 0..16 {
+                encoder.copy_texture_to_buffer(
+                    wgpu::ImageCopyTexture {
+                        texture: &self.light_maps,
+                        mip_level: 0,
+                        origin: wgpu::Origin3d {
+                            x: 0,
+                            y: 0,
+                            z: i as u32,
+                        },
+                        aspect: wgpu::TextureAspect::All,
+                    },
+                    wgpu::ImageCopyBuffer {
+                        buffer: &self.storage_buffer,
+                        layout: wgpu::ImageDataLayout {
+                            offset: (i * 1024 * 1024 * 4) as u64,
+                            bytes_per_row: Some(4 * 1024),
+                            rows_per_image: Some(1024),
+                        },
+                    }, wgpu::Extent3d {
+                        width: 1024,
+                        height: 1024,
+                        depth_or_array_layers: 1,
+                    });
             }
-        })
+        }
+
+        {
+            #[cfg(all(debug_assertions, feature = "debug-sunlight-map"))]
+            encoder.copy_texture_to_buffer(
+                wgpu::ImageCopyTexture {
+                    texture: &self.rpass_output,
+                    mip_level: 0,
+                    origin: wgpu::Origin3d::ZERO,
+                    aspect: wgpu::TextureAspect::All,
+                },
+                wgpu::ImageCopyBuffer {
+                    buffer: &self.storage_buffer,
+                    layout: wgpu::ImageDataLayout {
+                        offset: 0,
+                        bytes_per_row: Some(4 * 256),
+                        rows_per_image: Some(256),
+                    },
+                },
+                wgpu::Extent3d {
+                    width: 256,
+                    height: 256,
+                    depth_or_array_layers: 1,
+                },
+            );
+        }
     }
 
     fn compute_sunlight_scores(&self, device: &wgpu::Device, queue: &wgpu::Queue) {
-        todo!()
+        println!("Compute sunlight scores!");
     }
 
     pub fn compute<'a, M>(
         &mut self,
-        encoder: &mut wgpu::CommandEncoder,
         device: &wgpu::Device,
         queue: &wgpu::Queue,
         scene: &Scene,
@@ -408,8 +621,17 @@ impl SunlightScore {
     where
         M: Iterator<Item = (&'a MeshBundle, &'a NodeIdx)>,
     {
-        self.render_occlusion_maps(device, queue, encoder, scene, renderer, meshes);
+        let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some("compute_sunlight_score_encoder"),
+        });
+
+        self.render_occlusion_maps(device, queue, &mut encoder, scene, renderer, meshes);
         self.compute_sunlight_scores(device, queue);
+        queue.submit(std::iter::once(encoder.finish()));
+
+        #[cfg(all(debug_assertions, feature = "debug-sunlight-map"))]
+        self.write_sunlight_maps(device);
+
         Vec::new()
     }
 }

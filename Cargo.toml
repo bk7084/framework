@@ -12,7 +12,8 @@ crate-type = ["cdylib", "lib"]
 
 [features]
 default = []
-write_shadow_map = ["flume"]
+debug-shadow-map = ["flume"]
+debug-sunlight-map = ["flume"]
 
 
 [dependencies]

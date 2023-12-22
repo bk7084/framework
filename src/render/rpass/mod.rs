@@ -91,7 +91,7 @@ struct PConsts {
 
 #[repr(C)]
 #[derive(Debug, Clone, Copy, Pod, Zeroable)]
-struct PConstsShadowPass {
+pub struct PConstsShadowPass {
     instance_base_index: u32,
     light_index: u32,
 }
@@ -268,7 +268,7 @@ pub struct ShadowMaps {
     /// The number of layers per texture.
     layers_per_texture: u32,
 
-    #[cfg(all(debug_assertions, feature = "write_shadow_map"))]
+    #[cfg(all(debug_assertions, feature = "debug-shadow-map"))]
     /// The storage buffers for the shadow maps. Each buffer stores the
     /// shadow map for a light. Used for debugging only.
     pub storage_buffers: Vec<wgpu::Buffer>,
@@ -341,7 +341,7 @@ impl ShadowMaps {
             })
             .collect::<Vec<_>>();
 
-        #[cfg(debug_assertions)]
+        #[cfg(all(debug_assertions, feature = "debug-shadow-map"))]
         let storage_buffers = (0..count)
             .map(|_| {
                 device.create_buffer(&wgpu::BufferDescriptor {
@@ -438,7 +438,7 @@ impl ShadowMaps {
             shadow_map_views,
             depth_sampler,
             layers_per_texture,
-            #[cfg(all(debug_assertions, feature = "write_shadow_map"))]
+            #[cfg(all(debug_assertions, feature = "debug-shadow-map"))]
             storage_buffers,
         }
     }
@@ -474,7 +474,7 @@ impl ShadowMaps {
     }
 
     /// Copys the shadow maps to the storage buffers.
-    #[cfg(all(debug_assertions, feature = "write_shadow_map"))]
+    #[cfg(all(debug_assertions, feature = "debug-shadow-map"))]
     pub fn update_storage_buffers(&mut self, encoder: &mut wgpu::CommandEncoder) {
         for (i, buffer) in self.storage_buffers.iter().enumerate() {
             let (texture, layer_idx) = self.texture(i);
@@ -507,7 +507,7 @@ impl ShadowMaps {
     }
 
     /// Write the shadow maps to files for debugging.
-    #[cfg(all(debug_assertions, feature = "write_shadow_map"))]
+    #[cfg(all(debug_assertions, feature = "debug-shadow-map"))]
     pub fn write_shadow_maps(&self, device: &wgpu::Device) {
         for (i, buffer) in self.storage_buffers.iter().enumerate() {
             let buffer_slice = buffer.slice(..);

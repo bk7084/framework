@@ -175,28 +175,19 @@ impl PyAppState {
         self.sunlight_score
             .write()
             .map(|mut score| {
-                let mut encoder =
-                    self.context
-                        .device
-                        .create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                            label: Some("compute_sunlight_score_encoder"),
-                        });
-                {
-                    let scene = self.scene.read().unwrap();
-                    let mut mesh_bundle_query = <(&MeshBundle, &NodeIdx)>::query();
-                    let meshes = mesh_bundle_query
-                        .iter(&scene.world)
-                        .filter(|(_, node)| scene.nodes[**node].is_visible());
-                    let renderer = self.renderer.read().unwrap();
-                    score.compute(
-                        &mut encoder,
-                        &self.context.device,
-                        &self.context.queue,
-                        &scene,
-                        &renderer,
-                        meshes,
-                    )
-                }
+                let scene = self.scene.read().unwrap();
+                let mut mesh_bundle_query = <(&MeshBundle, &NodeIdx)>::query();
+                let meshes = mesh_bundle_query
+                    .iter(&scene.world)
+                    .filter(|(_, node)| scene.nodes[**node].is_visible());
+                let renderer = self.renderer.read().unwrap();
+                score.compute(
+                    &self.context.device,
+                    &self.context.queue,
+                    &scene,
+                    &renderer,
+                    meshes,
+                )
             })
             .unwrap()
     }

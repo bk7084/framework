@@ -9,7 +9,7 @@ use crate::{
     app::command::{Command, CommandReceiver, CommandSender},
     core::{camera::Camera, ConcatOrder, Light},
 };
-use legion::{storage::IntoComponentSource, IntoQuery, World};
+use legion::{storage::IntoComponentSource, EntityStore, IntoQuery, World};
 use numpy as np;
 use pyo3::Python;
 
@@ -144,6 +144,18 @@ impl PyEntity {
                 entity: self.entity,
             })
             .unwrap();
+    }
+
+    pub fn set_directional_light(&self, direction: &np::PyArray2<f32>) {
+        Python::with_gil(|_py| {
+            let direction = Vec3::from_slice(direction.readonly().as_slice().unwrap());
+            self.cmd_sender
+                .send(Command::SetDirectionalLight {
+                    entity: self.entity,
+                    direction,
+                })
+                .unwrap();
+        });
     }
 }
 
@@ -365,6 +377,15 @@ impl Scene {
                     let camera = unsafe { entry.get_component_unchecked::<Camera>() }.unwrap();
                     camera.is_main = true;
                     *main_camera = Some(entity);
+                }
+                Command::SetDirectionalLight { entity, direction } => {
+                    if let Ok(entry) = self.world.entry_mut(entity.raw) {
+                        if let Ok(Light::Directional { direction: dir, .. }) =
+                            unsafe { entry.get_component_unchecked::<Light>() }
+                        {
+                            *dir = direction;
+                        }
+                    }
                 }
                 _ => {}
             }
