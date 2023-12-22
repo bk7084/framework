@@ -56,7 +56,7 @@ impl Locals {
 #[derive(Debug, Clone, Copy, Pod, Zeroable)]
 pub struct ShadowPassLocals {
     /// The model matrix.
-    model: [f32; 16],
+    pub model: [f32; 16],
 }
 
 impl ShadowPassLocals {

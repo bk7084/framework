@@ -1,4 +1,3 @@
-use crate::render::rpass::PConstsShadowPass;
 use crate::{
     core::{
         camera::Camera,
@@ -8,8 +7,8 @@ use crate::{
     render::{
         rpass::{
             BlinnPhongRenderPass, Globals, GlobalsBindGroup, GpuLight, InstanceLocals, LightArray,
-            LightsBindGroup, Locals, LocalsBindGroup, PConsts, RenderingPass, ShadowMaps,
-            ShadowPassLocals, DEPTH_FORMAT,
+            LightsBindGroup, Locals, LocalsBindGroup, PConsts, PConstsShadowPass, RenderingPass,
+            ShadowMaps, ShadowPassLocals, DEPTH_FORMAT,
         },
         PipelineId, PipelineKind, Pipelines, RenderParams, RenderTarget, Renderer,
     },
@@ -17,10 +16,7 @@ use crate::{
 };
 use glam::{Mat4, Vec3};
 use legion::IntoQuery;
-use std::{
-    num::{NonZeroU32, NonZeroU64},
-    sync::atomic::{AtomicBool, Ordering},
-};
+use std::num::{NonZeroU32, NonZeroU64};
 
 impl GlobalsBindGroup {
     /// Creates a new globals bind group.

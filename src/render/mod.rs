@@ -87,7 +87,7 @@ pub struct Renderer {
     pub queue: Arc<wgpu::Queue>,
     features: wgpu::Features,
     limits: wgpu::Limits,
-    meshes: GpuMeshAssets,
+    pub(crate) meshes: GpuMeshAssets,
     textures: TextureAssets,
 
     material_bundles: MaterialBundleAssets,
@@ -98,7 +98,7 @@ pub struct Renderer {
     default_texture_bundle: Handle<TextureBundle>,
     aesthetic_bundles: Vec<AestheticBundle>,
     /// Nodes that use instancing for each mesh bundle.
-    instancing: FxHashMap<MeshBundle, Vec<NodeIdx>>,
+    pub(crate) instancing: FxHashMap<MeshBundle, Vec<NodeIdx>>,
 
     samplers: FxHashMap<SmlString, wgpu::Sampler>,
     params: RenderParams,

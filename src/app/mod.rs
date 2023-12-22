@@ -8,9 +8,10 @@ pub use window::*;
 
 use crate::{
     app::command::Command,
+    compute::SunlightScore,
     core::{
         camera::{Camera, Projection},
-        mesh::Mesh,
+        mesh::{Mesh, MeshBundle},
         Color, ConcatOrder, FxHashMap, Light, SmlString,
     },
     render::{rpass::BlinnPhongRenderPass, surface::Surface, GpuContext, RenderTarget, Renderer},
@@ -18,6 +19,7 @@ use crate::{
 };
 use crossbeam_channel::Sender;
 use glam::{Mat4, Quat, Vec3};
+use legion::IntoQuery;
 use numpy as np;
 use numpy::array;
 use pyo3::{
@@ -57,6 +59,7 @@ pub struct PyAppState {
     renderer: Arc<RwLock<Renderer>>,
     scene_cmd_sender: Sender<Command>,
     renderer_cmd_sender: Sender<Command>,
+    sunlight_score: Arc<RwLock<SunlightScore>>,
     main_camera: Option<Entity>,
 }
 
@@ -79,6 +82,7 @@ impl PyAppState {
         let (renderer_cmd_sender, renderer_cmd_receiver) =
             crossbeam_channel::unbounded::<Command>();
         let renderer = Renderer::new(&context, renderer_cmd_receiver);
+        let sunlight_score = SunlightScore::new(&context.device);
         Ok(Self {
             context,
             input: InputState::default(),
@@ -92,6 +96,7 @@ impl PyAppState {
             scene_cmd_sender,
             renderer_cmd_sender,
             main_camera: None,
+            sunlight_score: Arc::new(RwLock::new(sunlight_score)),
         })
     }
 
@@ -163,6 +168,37 @@ impl PyAppState {
         self.renderer_cmd_sender
             .send(Command::EnableWireframe(enabled))
             .unwrap();
+    }
+
+    pub fn compute_sunlight_score(&mut self) -> Vec<f32> {
+        profiling::scope!("compute_sunlight_score");
+        self.sunlight_score
+            .write()
+            .map(|mut score| {
+                let mut encoder =
+                    self.context
+                        .device
+                        .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                            label: Some("compute_sunlight_score_encoder"),
+                        });
+                {
+                    let scene = self.scene.read().unwrap();
+                    let mut mesh_bundle_query = <(&MeshBundle, &NodeIdx)>::query();
+                    let meshes = mesh_bundle_query
+                        .iter(&scene.world)
+                        .filter(|(_, node)| scene.nodes[**node].is_visible());
+                    let renderer = self.renderer.read().unwrap();
+                    score.compute(
+                        &mut encoder,
+                        &self.context.device,
+                        &self.context.queue,
+                        &scene,
+                        &renderer,
+                        meshes,
+                    )
+                }
+            })
+            .unwrap()
     }
 
     /// Create a camera

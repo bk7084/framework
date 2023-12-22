@@ -14,7 +14,7 @@
 // by the number of pixels that not equal to zero.
 
 @group(0) @binding(0) var<storage, write> scores: array<f32>;
-@group(0) @binding(1) var lmaps: texture_storage_2d_array<r32uint, read>;
+@group(1) @binding(0) var lmaps: texture_storage_2d_array<r32uint, read>;
 
 fn compute_score(lmap: texture_2d<f32>) -> f32 {
   var sum: f32 = 0.0;
