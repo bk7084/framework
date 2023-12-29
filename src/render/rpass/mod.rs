@@ -526,7 +526,7 @@ impl ShadowMaps {
                     let idx = (y * width + x) as usize;
                     *pixel = image::Luma([(data[idx] * 255.0) as u8]);
                 }
-                img.save(format!("shadow_map_{}.png", i)).unwrap();
+                img.save(format!("shadow_map_{}_{:?}.png", i, std::time::Instant::now())).unwrap();
             }
             buffer.unmap();
         }

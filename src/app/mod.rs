@@ -170,7 +170,7 @@ impl PyAppState {
             .unwrap();
     }
 
-    pub fn compute_sunlight_score(&mut self) -> Vec<f32> {
+    pub fn compute_sunlight_scores(&mut self) -> Vec<f32> {
         profiling::scope!("compute_sunlight_score");
         self.sunlight_score
             .write()

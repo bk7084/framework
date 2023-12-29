@@ -49,6 +49,11 @@ pub struct SunlightScore {
 }
 
 impl SunlightScore {
+    pub const LIGHT_MAP_LAYER_COLS: u32 = 1024;
+    pub const LIGHT_MAP_LAYER_ROWS: u32 = 1024;
+    pub const LIGHT_MAP_LAYER_PIXEL_COUNT: u32 = Self::LIGHT_MAP_LAYER_COLS * Self::LIGHT_MAP_LAYER_ROWS;
+    pub const LIGHT_MAP_LAYER_SIZE: u32 = Self::LIGHT_MAP_LAYER_PIXEL_COUNT * 4;
+
     /// Creates a new sunlight score compute.
     pub fn new(device: &wgpu::Device) -> Self {
         let scores_buffer = device.create_buffer(&wgpu::BufferDescriptor {
@@ -127,8 +132,8 @@ impl SunlightScore {
         let rpass_output = device.create_texture(&wgpu::TextureDescriptor {
             label: Some("rpass_output"),
             size: wgpu::Extent3d {
-                width: 256,
-                height: 256,
+                width: Self::LIGHT_MAP_LAYER_COLS,
+                height: Self::LIGHT_MAP_LAYER_ROWS,
                 depth_or_array_layers: 1,
             },
             mip_level_count: 1,
@@ -142,7 +147,7 @@ impl SunlightScore {
         #[cfg(all(debug_assertions, feature = "debug-sunlight-map"))]
         let output_storage_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("output_storage_buffer"),
-            size: 256 * 256 * 4,
+            size: (Self::LIGHT_MAP_LAYER_COLS * Self::LIGHT_MAP_LAYER_ROWS * 4) as u64,
             usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
             mapped_at_creation: false,
         });
@@ -150,7 +155,7 @@ impl SunlightScore {
         #[cfg(all(debug_assertions, feature = "debug-sunlight-map"))]
         let storage_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("storage_buffer_sunlight_map"),
-            size: (1024 * 1024 * 4) as u64 * MAX_SUN_POSITIONS_NUM as u64,
+            size: Self::LIGHT_MAP_LAYER_SIZE as u64 * MAX_SUN_POSITIONS_NUM as u64,
             usage: wgpu::BufferUsages::STORAGE
                 | wgpu::BufferUsages::COPY_SRC
                 | wgpu::BufferUsages::COPY_DST
@@ -161,8 +166,8 @@ impl SunlightScore {
         let light_maps = device.create_texture(&wgpu::TextureDescriptor {
             label: Some("light_maps"),
             size: wgpu::Extent3d {
-                width: 1024,
-                height: 1024,
+                width: Self::LIGHT_MAP_LAYER_COLS,
+                height: Self::LIGHT_MAP_LAYER_ROWS,
                 depth_or_array_layers: MAX_SUN_POSITIONS_NUM as u32,
             },
             mip_level_count: 1,
@@ -330,15 +335,17 @@ impl SunlightScore {
             {
                 let buffer_view = buffer_slice.get_mapped_range();
                 let (_, data, _) = unsafe { buffer_view.align_to::<u32>() };
-                let (width, height) = (1024, 1024);
-                let mut imgbuf = image::ImageBuffer::new(width, height);
+                let mut imgbuf = image::ImageBuffer::new(Self::LIGHT_MAP_LAYER_COLS, Self::LIGHT_MAP_LAYER_ROWS);
                 for i in 0..MAX_SUN_POSITIONS_NUM {
                     for (x, y, pixel) in imgbuf.enumerate_pixels_mut() {
-                        let idx = (y * width + x) as usize;
-                        let val = data[idx + i * width as usize * height as usize];
+                        let idx = (y * Self::LIGHT_MAP_LAYER_COLS + x) as usize;
+                        let val = data[idx + i * Self::LIGHT_MAP_LAYER_PIXEL_COUNT as usize];
                         *pixel = image::Luma([val as u8]);
                     }
-                    imgbuf.save(format!("sunlight_map_{}.png", i)).unwrap();
+                    imgbuf.save(format!("sunlight_map_{:02}.png", i)).unwrap();
+                    imgbuf.enumerate_pixels_mut().for_each(|(_, _, pixel)| {
+                        *pixel = image::Luma([0u8]);
+                    });
                 }
             }
             self.storage_buffer.unmap();
@@ -355,10 +362,9 @@ impl SunlightScore {
             {
                 let buffer_view = buffer_slice.get_mapped_range();
                 let (_, data, _) = unsafe { buffer_view.align_to::<u8>() };
-                let (width, height) = (256, 256);
-                let mut imgbuf = image::ImageBuffer::new(width, height);
+                let mut imgbuf = image::ImageBuffer::new(Self::LIGHT_MAP_LAYER_COLS, Self::LIGHT_MAP_LAYER_ROWS);
                 for (x, y, pixel) in imgbuf.enumerate_pixels_mut() {
-                    let idx = (y * width + x) as usize;
+                    let idx = (y * Self::LIGHT_MAP_LAYER_COLS + x) as usize * 4;
                     let mut val = [0u8; 4];
                     for i in 0..4 {
                         val[i] = data[idx + i];
@@ -443,7 +449,7 @@ impl SunlightScore {
                     view: &output_view,
                     resolve_target: None,
                     ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
+                        load: wgpu::LoadOp::Clear(wgpu::Color::RED),
                         store: wgpu::StoreOp::Store,
                     },
                 })],
@@ -529,62 +535,12 @@ impl SunlightScore {
             });
         }
 
+        // Copying the occlusion maps and the output to the corresponding storage buffer.
+        #[cfg(all(debug_assertions, feature = "debug-sunlight-map"))]
         {
-            // #[cfg(all(debug_assertions, feature = "debug-sunlight-map"))]
-            // encoder.copy_texture_to_buffer(
-            //     wgpu::ImageCopyTexture {
-            //         texture: &self.light_maps,
-            //         mip_level: 0,
-            //         origin: wgpu::Origin3d::ZERO,
-            //         aspect: wgpu::TextureAspect::All,
-            //     },
-            //     wgpu::ImageCopyBuffer {
-            //         buffer: &self.storage_buffer,
-            //         layout: wgpu::ImageDataLayout {
-            //             offset: 0,
-            //             bytes_per_row: Some(4 * 1024),
-            //             rows_per_image: Some(1024),
-            //         },
-            //     },
-            //     wgpu::Extent3d {
-            //         width: 1024,
-            //         height: 1024,
-            //         depth_or_array_layers: MAX_SUN_POSITIONS_NUM as u32,
-            //     },
-            // );
-            #[cfg(all(debug_assertions, feature = "debug-sunlight-map"))]
-            for i in 0..16 {
-                encoder.copy_texture_to_buffer(
-                    wgpu::ImageCopyTexture {
-                        texture: &self.light_maps,
-                        mip_level: 0,
-                        origin: wgpu::Origin3d {
-                            x: 0,
-                            y: 0,
-                            z: i as u32,
-                        },
-                        aspect: wgpu::TextureAspect::All,
-                    },
-                    wgpu::ImageCopyBuffer {
-                        buffer: &self.storage_buffer,
-                        layout: wgpu::ImageDataLayout {
-                            offset: (i * 1024 * 1024 * 4) as u64,
-                            bytes_per_row: Some(4 * 1024),
-                            rows_per_image: Some(1024),
-                        },
-                    }, wgpu::Extent3d {
-                        width: 1024,
-                        height: 1024,
-                        depth_or_array_layers: 1,
-                    });
-            }
-        }
-
-        {
-            #[cfg(all(debug_assertions, feature = "debug-sunlight-map"))]
             encoder.copy_texture_to_buffer(
                 wgpu::ImageCopyTexture {
-                    texture: &self.rpass_output,
+                    texture: &self.light_maps,
                     mip_level: 0,
                     origin: wgpu::Origin3d::ZERO,
                     aspect: wgpu::TextureAspect::All,
@@ -593,13 +549,35 @@ impl SunlightScore {
                     buffer: &self.storage_buffer,
                     layout: wgpu::ImageDataLayout {
                         offset: 0,
-                        bytes_per_row: Some(4 * 256),
-                        rows_per_image: Some(256),
+                        bytes_per_row: Some(4 * Self::LIGHT_MAP_LAYER_COLS),
+                        rows_per_image: Some(Self::LIGHT_MAP_LAYER_ROWS),
                     },
                 },
                 wgpu::Extent3d {
-                    width: 256,
-                    height: 256,
+                    width: Self::LIGHT_MAP_LAYER_COLS,
+                    height: Self::LIGHT_MAP_LAYER_ROWS,
+                    depth_or_array_layers: MAX_SUN_POSITIONS_NUM as u32,
+                },
+            );
+
+            encoder.copy_texture_to_buffer(
+                wgpu::ImageCopyTexture {
+                    texture: &self.rpass_output,
+                    mip_level: 0,
+                    origin: wgpu::Origin3d::ZERO,
+                    aspect: wgpu::TextureAspect::All,
+                },
+                wgpu::ImageCopyBuffer {
+                    buffer: &self.output_storage_buffer,
+                    layout: wgpu::ImageDataLayout {
+                        offset: 0,
+                        bytes_per_row: Some(4 * Self::LIGHT_MAP_LAYER_COLS),
+                        rows_per_image: Some(Self::LIGHT_MAP_LAYER_ROWS),
+                    },
+                },
+                wgpu::Extent3d {
+                    width: Self::LIGHT_MAP_LAYER_COLS,
+                    height: Self::LIGHT_MAP_LAYER_ROWS,
                     depth_or_array_layers: 1,
                 },
             );
