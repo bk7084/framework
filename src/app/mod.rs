@@ -177,9 +177,9 @@ impl PyAppState {
             .map(|mut score| {
                 let scene = self.scene.read().unwrap();
                 let mut mesh_bundle_query = <(&MeshBundle, &NodeIdx)>::query();
-                let meshes = mesh_bundle_query
-                    .iter(&scene.world)
-                    .filter(|(_, node)| scene.nodes[**node].is_visible());
+                let meshes = mesh_bundle_query.iter(&scene.world).filter(|(_, node)| {
+                    scene.nodes[**node].is_visible() && scene.nodes[**node].cast_shadows()
+                });
                 let renderer = self.renderer.read().unwrap();
                 score.compute(
                     &self.context.device,

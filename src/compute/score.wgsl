@@ -12,16 +12,18 @@
 //
 // The score is computed by firstly summing the light map values, then divided
 // by the number of pixels that not equal to zero.
+//
 
-@group(0) @binding(0) var<storage, write> scores: array<f32>;
+@group(0) @binding(0) var<storage, read_write> scores: array<f32>;
 @group(1) @binding(0) var lmaps: texture_storage_2d_array<r32uint, read>;
 
-fn compute_score(lmap: texture_2d<f32>) -> f32 {
+fn compute_score(index: u32) -> f32 {
   var sum: f32 = 0.0;
   var count: f32 = 0.0;
-  for (var y = 0; y < lmap.size.y; y = y + 1) {
-    for (var x = 0; x < lmap.size.x; x = x + 1) {
-      let v = textureLoad(lmap, vec2<i32>(x, y));
+  let size = textureDimensions(lmaps);
+  for (var y = 0u; y < size.y; y += 1u) {
+    for (var x = 0u; x < size.x; x += 1u) {
+      let v = textureLoad(lmaps, vec2<u32>(x, y), index).x;
       sum = sum + f32(v);
       if (v != 0u) {
         count += 1.0;
@@ -31,7 +33,8 @@ fn compute_score(lmap: texture_2d<f32>) -> f32 {
   return sum / count;
 }
 
-@compute @workgroup_size(1)
-fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
-  scores[gid.x] = compute_score(lmaps[gid.x]);
+@compute
+@workgroup_size(1)
+fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
+  scores[global_id.x] = compute_score(global_id.x);
 }

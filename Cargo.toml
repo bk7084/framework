@@ -12,8 +12,8 @@ crate-type = ["cdylib", "lib"]
 
 [features]
 default = []
-debug-shadow-map = ["flume"]
-debug-sunlight-map = ["flume"]
+debug-shadow-map = []
+debug-sunlight-map = []
 
 
 [dependencies]
@@ -23,7 +23,7 @@ cfg-if = "1"
 crossbeam-channel = "0.5"
 env_logger = "0.10"
 image = "0.24"
-flume = { version = "0.11", optional = true }
+flume = "0.11"
 glam = {  version = "0.24", features = ["bytecheck"] }
 legion = { git = "https://github.com/matthiascy/legion.git", branch = "master" }
 log = "0.4"

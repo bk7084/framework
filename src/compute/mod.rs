@@ -35,13 +35,15 @@ pub struct SunlightScore {
     /// The buffer containing the local transform matrices.
     rpass_locals_bind_group: LocalsBindGroup<ShadowPassLocals>,
     /// The buffer containing the final sunlight scores.
-    scores_buffer: wgpu::Buffer,
+    cpass_scores_buffer: wgpu::Buffer,
     /// Scores bind group.
-    scores_bind_group: wgpu::BindGroup,
-    // /// Pipeline computing the sunlight score.
-    // cpass_pipeline: wgpu::ComputePipeline,
-    // /// The bind group containing the occlusion map used for computing.
-    // cpass_light_maps_bind_group: wgpu::BindGroup,
+    cpass_scores_bind_group: wgpu::BindGroup,
+    /// Pipeline computing the sunlight score.
+    cpass_pipeline: wgpu::ComputePipeline,
+    /// The bind group containing the occlusion map used for computing.
+    cpass_light_maps_bind_group: wgpu::BindGroup,
+    /// Scores for each sun position.
+    scores: [f32; MAX_SUN_POSITIONS_NUM],
     #[cfg(all(debug_assertions, feature = "debug-sunlight-map"))]
     pub storage_buffer: wgpu::Buffer,
     #[cfg(all(debug_assertions, feature = "debug-sunlight-map"))]
@@ -56,30 +58,32 @@ impl SunlightScore {
 
     /// Creates a new sunlight score compute.
     pub fn new(device: &wgpu::Device) -> Self {
-        let scores_buffer = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("scores_buffer"),
-            size: (MAX_SUN_POSITIONS_NUM * 4) as u64,
-            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
-            mapped_at_creation: false,
+        let cpass_scores_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("cpass_scores_buffer"),
+            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC | wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,
+            contents: bytemuck::cast_slice(&[2.0f32; MAX_SUN_POSITIONS_NUM]),
         });
-        let scores_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("scores_bind_group"),
-            layout: &device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-                label: Some("scores_bind_group_layout"),
+        let cpass_scores_bg_layout = device.create_bind_group_layout(
+            &wgpu::BindGroupLayoutDescriptor {
+                label: Some("cpass_scores_bind_group_layout"),
                 entries: &[BindGroupLayoutEntry {
                     binding: 0,
                     visibility: wgpu::ShaderStages::COMPUTE,
                     ty: wgpu::BindingType::Buffer {
                         ty: wgpu::BufferBindingType::Storage { read_only: false },
                         has_dynamic_offset: false,
-                        min_binding_size: NonZeroU64::new((MAX_SUN_POSITIONS_NUM * 4) as u64),
+                        min_binding_size: None,
                     },
                     count: None,
                 }],
-            }),
+            }
+            );
+        let cpass_scores_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("cpass_scores_bind_group"),
+            layout: &cpass_scores_bg_layout,
             entries: &[wgpu::BindGroupEntry {
                 binding: 0,
-                resource: scores_buffer.as_entire_binding(),
+                resource: cpass_scores_buffer.as_entire_binding(),
             }],
         });
 
@@ -174,7 +178,7 @@ impl SunlightScore {
             sample_count: 1,
             dimension: wgpu::TextureDimension::D2,
             format: wgpu::TextureFormat::R32Uint,
-            usage: wgpu::TextureUsages::COPY_SRC | wgpu::TextureUsages::STORAGE_BINDING,
+            usage: wgpu::TextureUsages::COPY_SRC | wgpu::TextureUsages::COPY_DST | wgpu::TextureUsages::STORAGE_BINDING,
             view_formats: &[],
         });
         let light_maps_view = light_maps.create_view(&wgpu::TextureViewDescriptor {
@@ -208,40 +212,48 @@ impl SunlightScore {
                 resource: wgpu::BindingResource::TextureView(&light_maps_view),
             }],
         });
-        // let cpass_light_maps_bg_layout =
-        //     device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-        //         label: Some("light_maps_bind_group_layout"),
-        //         entries: &[wgpu::BindGroupLayoutEntry {
-        //             binding: 0,
-        //             visibility: wgpu::ShaderStages::COMPUTE,
-        //             ty: wgpu::BindingType::StorageTexture {
-        //                 access: wgpu::StorageTextureAccess::ReadOnly,
-        //                 format: wgpu::TextureFormat::R32Uint,
-        //                 view_dimension: wgpu::TextureViewDimension::D2Array,
-        //             },
-        //             count: None,
-        //         }],
-        //     });
+        let cpass_light_maps_bg_layout =
+            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                label: Some("cpass_light_maps_bind_group_layout"),
+                entries: &[wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::COMPUTE,
+                    ty: wgpu::BindingType::StorageTexture {
+                        access: wgpu::StorageTextureAccess::ReadOnly,
+                        format: wgpu::TextureFormat::R32Uint,
+                        view_dimension: wgpu::TextureViewDimension::D2Array,
+                    },
+                    count: None,
+                }],
+            });
+        let cpass_light_maps_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("cpass_light_maps_bind_group"),
+            layout: &cpass_light_maps_bg_layout,
+            entries: &[wgpu::BindGroupEntry {
+                binding: 0,
+                resource: wgpu::BindingResource::TextureView(&light_maps_view),
+            }],
+        });
 
-        // let cpass_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-        //     label: Some("compute_shader"),
-        //     source: wgpu::ShaderSource::Wgsl(include_str!("score.wgsl").into()),
-        // });
+        let cpass_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("compute_shader"),
+            source: wgpu::ShaderSource::Wgsl(include_str!("score.wgsl").into()),
+        });
 
-        // let compute_pipeline_layout =
-        //     device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-        //         label: Some("compute_pipeline_layout"),
-        //         bind_group_layouts: &[&cpass_light_maps_bg_layout],
-        //         push_constant_ranges: &[],
-        //     });
+        let compute_pipeline_layout =
+            device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                label: Some("compute_pipeline_layout"),
+                bind_group_layouts: &[&cpass_scores_bg_layout, &cpass_light_maps_bg_layout],
+                push_constant_ranges: &[],
+            });
 
-        // let compute_pipeline =
-        // device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
-        //     label: Some("compute_pipeline"),
-        //     layout: Some(&compute_pipeline_layout),
-        //     module: &cpass_shader,
-        //     entry_point: "main",
-        // });
+        let cpass_pipeline =
+        device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+            label: Some("compute_pipeline"),
+            layout: Some(&compute_pipeline_layout),
+            module: &cpass_shader,
+            entry_point: "main",
+        });
 
         let rpass_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("sunlight_score_rpass_shader"),
@@ -307,8 +319,8 @@ impl SunlightScore {
             light_maps,
             rpass_pipeline,
             rpass_light_maps_bind_group,
-            scores_buffer,
-            scores_bind_group,
+            cpass_scores_buffer,
+            cpass_scores_bind_group,
             rpass_light_buffer,
             rpass_light_bind_group,
             rpass_locals_bind_group,
@@ -317,8 +329,9 @@ impl SunlightScore {
             #[cfg(all(debug_assertions, feature = "debug-sunlight-map"))]
             output_storage_buffer,
             rpass_output,
-            // cpass_light_maps_bind_group,
-            // cpass_pipeline: compute_pipeline,
+            cpass_light_maps_bind_group,
+            cpass_pipeline,
+            scores: [0.0; MAX_SUN_POSITIONS_NUM],
         }
     }
 
@@ -437,6 +450,21 @@ impl SunlightScore {
             0,
             bytemuck::cast_slice(&locals),
         );
+        // Clearing the light maps.
+        queue.write_texture(wgpu::ImageCopyTextureBase {
+            texture: &self.light_maps,
+            mip_level: 0,
+            origin: wgpu::Origin3d::ZERO,
+            aspect: wgpu::TextureAspect::All,
+        }, &[0u8; (Self::LIGHT_MAP_LAYER_SIZE as usize) * MAX_SUN_POSITIONS_NUM], wgpu::ImageDataLayout {
+            offset: 0,
+            bytes_per_row: Some(4 * Self::LIGHT_MAP_LAYER_COLS),
+            rows_per_image: Some(Self::LIGHT_MAP_LAYER_ROWS),
+        }, wgpu::Extent3d {
+            width: Self::LIGHT_MAP_LAYER_COLS,
+            height: Self::LIGHT_MAP_LAYER_ROWS,
+            depth_or_array_layers: MAX_SUN_POSITIONS_NUM as u32,
+        });
 
         let mesh_buffer = renderer.meshes.buffer();
         let output_view = self
@@ -584,8 +612,32 @@ impl SunlightScore {
         }
     }
 
-    fn compute_sunlight_scores(&self, device: &wgpu::Device, queue: &wgpu::Queue) {
-        println!("Compute sunlight scores!");
+    fn compute_sunlight_scores(&self, encoder: &mut wgpu::CommandEncoder) {
+        profiling::scope!("compute_sunlight_scores");
+        log::debug!("Compute sunlight scores");
+        let mut cpass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+            label: Some("compute_sunlight_scores_cpass"),
+            timestamp_writes: None,
+        });
+        cpass.set_pipeline(&self.cpass_pipeline);
+        cpass.set_bind_group(0, &self.cpass_scores_bind_group, &[]);
+        cpass.set_bind_group(1, &self.cpass_light_maps_bind_group, &[]);
+        cpass.dispatch_workgroups(MAX_SUN_POSITIONS_NUM as u32, 1, 1);
+    }
+
+    fn read_scores(&mut self, device: &wgpu::Device) {
+        let buffer_slice = self.cpass_scores_buffer.slice(..);
+        let (sender, receiver) = flume::bounded(1);
+        buffer_slice.map_async(wgpu::MapMode::Read, move |r| sender.send(r).unwrap());
+        device.poll(wgpu::Maintain::Wait);
+        pollster::block_on(async {
+            receiver.recv_async().await.unwrap().unwrap();
+        });
+        {
+            let buffer_view = buffer_slice.get_mapped_range();
+            self.scores.copy_from_slice(bytemuck::cast_slice(&buffer_view));
+        }
+        self.cpass_scores_buffer.unmap();
     }
 
     pub fn compute<'a, M>(
@@ -599,17 +651,20 @@ impl SunlightScore {
     where
         M: Iterator<Item = (&'a MeshBundle, &'a NodeIdx)>,
     {
-        let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
-            label: Some("compute_sunlight_score_encoder"),
-        });
 
-        self.render_occlusion_maps(device, queue, &mut encoder, scene, renderer, meshes);
-        self.compute_sunlight_scores(device, queue);
-        queue.submit(std::iter::once(encoder.finish()));
+        {
+            let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("occlusion_map_encoder"),
+            });
+            self.render_occlusion_maps(device, queue, &mut encoder, scene, renderer, meshes);
+            self.compute_sunlight_scores(&mut encoder);
+            queue.submit(std::iter::once(encoder.finish()));
+        }
 
         #[cfg(all(debug_assertions, feature = "debug-sunlight-map"))]
         self.write_sunlight_maps(device);
+        self.read_scores(device);
 
-        Vec::new()
+        return self.scores.to_vec();
     }
 }
