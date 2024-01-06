@@ -34,6 +34,7 @@ struct PConsts {
     instance_base_index: u32,
     material_index: u32,
     enable_shadows: u32,
+    enable_lighting: u32,
 }
 
 struct Light {
@@ -144,6 +145,10 @@ fn vs_main(vin: VSInput) -> VSOutput {
 
 /// Blinn-Phong BRDF in camera space.
 fn blinn_phong_brdf(wi: vec3<f32>, wo: vec3<f32>, n: vec3<f32>, kd: vec3<f32>, ks: vec3<f32>, ns: f32, illum: u32) -> vec3<f32> {
+    if pconsts.enable_lighting == 0u {
+        return vec3<f32>(0.0);
+    }
+
     var dot_n_wi = max(0.0, dot(n, wi));
     var diffuse = kd * dot_n_wi;
     if (illum != 2u) {

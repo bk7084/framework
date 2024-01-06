@@ -128,6 +128,11 @@ impl<L: InstanceLocals> LocalsBindGroup<L> {
 }
 
 impl LightsBindGroup {
+    pub const ORTHO_NEAR: f32 = -35.0;
+    pub const ORTHO_FAR: f32 = 35.0;
+    pub const ORTHO_H: f32 = 34.0;
+    pub const ORTHO_W: f32 = 34.0;
+
     /// Creates a new lights bind group.
     pub fn new(device: &wgpu::Device) -> Self {
         let layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
@@ -176,12 +181,13 @@ impl LightsBindGroup {
         lights: &[(&Light, &NodeIdx)],
         nodes: &Nodes,
         queue: &wgpu::Queue,
+        scale: f32,
     ) {
-        const ORTHO_NEAR: f32 = -50.0;
-        const ORTHO_FAR: f32 = 50.0;
-        const ORTHO_H: f32 = 20.0;
-        const ORTHO_W: f32 = 34.0;
         self.lights.clear();
+        let ortho_w = Self::ORTHO_W * scale * 1.1;
+        let ortho_h = Self::ORTHO_H * scale;
+        let ortho_near = Self::ORTHO_NEAR * scale;
+        let ortho_far = Self::ORTHO_FAR * scale;
         for (light, node_idx) in lights {
             let len = self.lights.len[0] as usize;
             self.lights.lights[len] = match light {
@@ -193,7 +199,7 @@ impl LightsBindGroup {
                         dir_or_pos: [rev_dir.x, rev_dir.y, rev_dir.z, 0.0],
                         color: [color.r as f32, color.g as f32, color.b as f32, 1.0],
                         w2l: (Mat4::orthographic_rh(
-                            -ORTHO_W, ORTHO_W, -ORTHO_H, ORTHO_H, ORTHO_NEAR, ORTHO_FAR,
+                            -ortho_w, ortho_w, -ortho_h, ortho_h, ortho_near, ortho_far,
                         ) * Mat4::look_at_rh(rev_dir, Vec3::ZERO, Vec3::Y))
                         .to_cols_array(),
                     }
@@ -579,11 +585,17 @@ impl BlinnPhongRenderPass {
         render_pass.set_bind_group(5, &self.shadow_maps.bind_group, &[]);
 
         let enable_shadows = if params.casting_shadows() { 1u32 } else { 0u32 };
+        let enable_lighting = if params.enable_lighting { 1u32 } else { 0u32 };
 
         render_pass.set_push_constants(
             wgpu::ShaderStages::VERTEX_FRAGMENT,
             8,
             bytemuck::bytes_of(&enable_shadows),
+        );
+        render_pass.set_push_constants(
+            wgpu::ShaderStages::VERTEX_FRAGMENT,
+            12,
+            bytemuck::bytes_of(&enable_lighting),
         );
 
         {
@@ -1037,8 +1049,12 @@ impl RenderingPass for BlinnPhongRenderPass {
                 .iter(&scene.world)
                 .filter(|(_, node_idx)| scene.nodes[**node_idx].is_active())
                 .collect::<Vec<_>>();
-            self.lights_bind_group
-                .update_lights(&active_lights, &scene.nodes, &renderer.queue);
+            self.lights_bind_group.update_lights(
+                &active_lights,
+                &scene.nodes,
+                &renderer.queue,
+                renderer.light_proj_scale,
+            );
             self.shadow_maps.update(
                 &renderer.device,
                 &renderer.limits,
@@ -1068,7 +1084,7 @@ impl RenderingPass for BlinnPhongRenderPass {
                         | wgpu::TextureUsages::TEXTURE_BINDING,
                     view_formats: &[],
                 });
-                let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
+                let view = texture.create_view(&Default::default());
                 self.depth_att = Some((texture, view));
             }
         }

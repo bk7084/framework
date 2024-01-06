@@ -87,6 +87,8 @@ struct PConsts {
     material_index: u32,
     /// Whether the shadow mapping is enabled.
     enable_shadows: u32,
+    /// Whether the lighting is enabled.
+    enable_lighting: u32,
 }
 
 #[repr(C)]

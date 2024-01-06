@@ -65,6 +65,10 @@ pub enum Command {
     EnableWireframe(bool),
     /// Enables or disables shadwos.
     EnableShadows(bool),
+    /// Updates manually the shadow map orthographic projection.
+    UpdateShadowMapOrthoProj(f32),
+    /// Enables or disables the lighting.
+    EnableLighting(bool),
 }
 
 /// Receiver of commands.

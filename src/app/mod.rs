@@ -170,6 +170,19 @@ impl PyAppState {
             .unwrap();
     }
 
+    pub fn enable_lighting(&mut self, enabled: bool) {
+        self.renderer_cmd_sender
+            .send(Command::EnableLighting(enabled))
+            .unwrap();
+    }
+
+    #[deprecated(note = "Should be automatically updated by the renderer.")]
+    pub fn update_shadow_map_ortho_proj(&mut self, max_dist: f32) {
+        self.renderer_cmd_sender
+            .send(Command::UpdateShadowMapOrthoProj(max_dist))
+            .unwrap();
+    }
+
     pub fn compute_sunlight_scores(&mut self) -> Vec<f32> {
         profiling::scope!("compute_sunlight_score");
         self.sunlight_score
@@ -610,9 +623,7 @@ pub fn run_main_loop(mut app: PyAppState, builder: PyWindowBuilder) {
                     .expect("Failed to get a frame from the surface");
                 let target = RenderTarget {
                     size: frame.texture.size(),
-                    view: frame
-                        .texture
-                        .create_view(&wgpu::TextureViewDescriptor::default()),
+                    view: frame.texture.create_view(&Default::default()),
                     format: surface.format(),
                 };
 

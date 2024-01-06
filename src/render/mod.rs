@@ -23,7 +23,9 @@ use crate::{
         FxHashMap, GpuMaterial, Material, MaterialBundle, SmlString, Texture, TextureBundle,
         TextureType,
     },
-    render::rpass::{texture_bundle_bind_group_layout, BlinnPhongRenderPass, RenderingPass},
+    render::rpass::{
+        texture_bundle_bind_group_layout, BlinnPhongRenderPass, LightsBindGroup, RenderingPass,
+    },
     scene::{NodeIdx, Scene},
 };
 pub use context::*;
@@ -57,8 +59,10 @@ pub struct RenderParams {
     pub enable_wireframe: bool,
     /// Whether to enable shadow.
     pub enable_shadows: bool,
+    /// Whether to enable lighing.
+    pub enable_lighting: bool,
     /// Whether to write shadow maps once.
-    #[cfg(debug_assertions)]
+    #[cfg(all(debug_assertions, feature = "debug-shadow-map"))]
     pub write_shadow_maps: bool,
 }
 
@@ -70,7 +74,8 @@ impl RenderParams {
             enable_occlusion_culling: false,
             enable_wireframe: false,
             enable_shadows: false,
-            #[cfg(debug_assertions)]
+            enable_lighting: true,
+            #[cfg(all(debug_assertions, feature = "debug-shadow-map"))]
             write_shadow_maps: false,
         }
     }
@@ -78,7 +83,7 @@ impl RenderParams {
     /// Whether to cast shadows.
     #[inline]
     pub const fn casting_shadows(&self) -> bool {
-        self.enable_shadows && !self.enable_wireframe
+        self.enable_shadows && !self.enable_wireframe && self.enable_lighting
     }
 }
 
@@ -103,6 +108,13 @@ pub struct Renderer {
     samplers: FxHashMap<SmlString, wgpu::Sampler>,
     params: RenderParams,
     cmd_receiver: Receiver<Command>,
+
+    // Variable controling the scale of the orthographic projection matrix
+    // of the shadow map.
+    //
+    // TODO: shadow map projection should be automatically calculated according
+    // to the camera's frustum, light's parameters and the scene's bounding box.
+    light_proj_scale: f32,
 }
 
 impl Renderer {
@@ -172,11 +184,13 @@ impl Renderer {
                 enable_occlusion_culling: false,
                 enable_wireframe: false,
                 enable_shadows: false,
-                #[cfg(debug_assertions)]
+                enable_lighting: true,
+                #[cfg(all(debug_assertions, feature = "debug-shadow-map"))]
                 write_shadow_maps: true,
             },
             cmd_receiver: receiver,
             texture_bundles,
+            light_proj_scale: 1.0,
         }
     }
 
@@ -371,6 +385,14 @@ impl Renderer {
                 }
                 Command::EnableShadows(enable) => {
                     self.params.enable_shadows = enable;
+                }
+                Command::EnableLighting(enable) => {
+                    self.params.enable_lighting = enable;
+                }
+                Command::UpdateShadowMapOrthoProj(size) => {
+                    let scale = size * 0.9 / LightsBindGroup::ORTHO_H;
+                    println!("Update shadow map ortho proj scale: {}", scale.max(1.0));
+                    self.light_proj_scale = scale.max(1.0);
                 }
                 _ => {}
             }
