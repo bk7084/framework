@@ -303,11 +303,25 @@ impl BlinnPhongRenderPass {
                         format,
                         &shader_module,
                         polygon_mode,
+                        wgpu::PrimitiveTopology::TriangleList,
                         cull_mode,
                     );
                     pipelines.insert("entity", id, pipeline);
                 }
             }
+
+            // Pipeline for drawing line segments, same as the main render pass pipeline,
+            // except the topology is line list.
+            let (id, pipeline) = Self::create_main_render_pass_pipeline(
+                device,
+                &layout,
+                format,
+                &shader_module,
+                wgpu::PolygonMode::Fill,
+                wgpu::PrimitiveTopology::LineList,
+                None,
+            );
+            pipelines.insert("lines", id, pipeline);
         }
 
         Self {
@@ -569,6 +583,8 @@ impl BlinnPhongRenderPass {
             id.cull_mode() == cull_mode && id.polygon_mode() == polygon_mode
         });
 
+        let mut current_pipeline = None;
+
         match pipeline {
             None => {
                 log::error!("Missing pipeline for entity shading!");
@@ -576,6 +592,7 @@ impl BlinnPhongRenderPass {
             }
             Some(pipelines) => {
                 render_pass.set_pipeline(pipelines[0]);
+                current_pipeline = Some(pipelines[0]);
             }
         }
 
@@ -716,82 +733,102 @@ impl BlinnPhongRenderPass {
                             // Bind textures.
                             render_pass.set_bind_group(3, texs.bind_group.as_ref().unwrap(), &[]);
 
-                            match mesh.index_format {
-                                None => {
-                                    // No index buffer, draw directly.
-                                    match mesh.sub_meshes.as_ref() {
-                                        None => {
-                                            // No sub-meshes, use the default material.
-                                            // Update material index.
-                                            render_pass.set_push_constants(
-                                                wgpu::ShaderStages::VERTEX_FRAGMENT,
-                                                4,
-                                                bytemuck::bytes_of(&0u32),
-                                            );
-                                            render_pass.draw(0..mesh.vertex_count, inst_range);
-                                        }
-                                        Some(sub_meshes) => {
-                                            // Draw each sub-mesh.
-                                            for sm in sub_meshes {
-                                                let material_id =
-                                                    sm.material.unwrap_or(mtls.n_materials - 1);
+                            // TODO: ad-hoc solution for line meshes. Need to refactor.
+                            if mesh.topology == wgpu::PrimitiveTopology::LineList {
+                                render_pass.set_pipeline(
+                                    &self.pipelines.get_by_label("lines").unwrap()[0].1,
+                                );
+                                render_pass.set_index_buffer(
+                                    mesh_buffer.slice(mesh.index_range.clone()),
+                                    mesh.index_format.unwrap(),
+                                );
+                                render_pass.draw_indexed(
+                                    0..mesh.index_count,
+                                    0,
+                                    inst_range.clone(),
+                                );
+                                // Set back to the original pipeline.
+                                render_pass.set_pipeline(current_pipeline.unwrap());
+                            } else {
+                                match mesh.index_format {
+                                    None => {
+                                        // No index buffer, draw directly.
+                                        match mesh.sub_meshes.as_ref() {
+                                            None => {
+                                                // No sub-meshes, use the default material.
                                                 // Update material index.
                                                 render_pass.set_push_constants(
                                                     wgpu::ShaderStages::VERTEX_FRAGMENT,
                                                     4,
-                                                    bytemuck::bytes_of(&material_id),
+                                                    bytemuck::bytes_of(&0u32),
                                                 );
-                                                render_pass.draw(
-                                                    sm.range.start..sm.range.end,
-                                                    inst_range.clone(),
-                                                )
+                                                render_pass.draw(0..mesh.vertex_count, inst_range);
+                                            }
+                                            Some(sub_meshes) => {
+                                                // Draw each sub-mesh.
+                                                for sm in sub_meshes {
+                                                    let material_id =
+                                                        sm.material.unwrap_or(mtls.n_materials - 1);
+                                                    // Update material index.
+                                                    render_pass.set_push_constants(
+                                                        wgpu::ShaderStages::VERTEX_FRAGMENT,
+                                                        4,
+                                                        bytemuck::bytes_of(&material_id),
+                                                    );
+                                                    render_pass.draw(
+                                                        sm.range.start..sm.range.end,
+                                                        inst_range.clone(),
+                                                    )
+                                                }
                                             }
                                         }
                                     }
-                                }
-                                Some(index_format) => {
-                                    render_pass.set_index_buffer(
-                                        mesh_buffer.slice(mesh.index_range.clone()),
-                                        index_format,
-                                    );
-                                    match mesh.sub_meshes.as_ref() {
-                                        None => {
-                                            log::trace!("Draw mesh with index, no sub-meshes");
-                                            // No sub-meshes, use the default material.
-                                            // Update material index.
-                                            render_pass.set_push_constants(
-                                                wgpu::ShaderStages::VERTEX_FRAGMENT,
-                                                4,
-                                                bytemuck::bytes_of(&0u32),
-                                            );
-                                            render_pass.draw_indexed(
-                                                0..mesh.index_count,
-                                                0,
-                                                inst_range,
-                                            );
-                                        }
-                                        Some(sub_meshes) => {
-                                            log::trace!("Draw mesh with index, with sub-meshes");
-                                            for sm in sub_meshes {
-                                                log::trace!(
-                                                    "Draw sub-mesh {}-{}",
-                                                    sm.range.start,
-                                                    sm.range.end
-                                                );
-                                                let material_id =
-                                                    sm.material.unwrap_or(mtls.n_materials - 1);
+                                    Some(index_format) => {
+                                        render_pass.set_index_buffer(
+                                            mesh_buffer.slice(mesh.index_range.clone()),
+                                            index_format,
+                                        );
+                                        match mesh.sub_meshes.as_ref() {
+                                            None => {
+                                                log::trace!("Draw mesh with index, no sub-meshes");
+                                                // No sub-meshes, use the default material.
                                                 // Update material index.
                                                 render_pass.set_push_constants(
                                                     wgpu::ShaderStages::VERTEX_FRAGMENT,
                                                     4,
-                                                    bytemuck::bytes_of(&material_id),
+                                                    bytemuck::bytes_of(&0u32),
                                                 );
-                                                // Draw the sub-mesh.
                                                 render_pass.draw_indexed(
-                                                    sm.range.start..sm.range.end,
+                                                    0..mesh.index_count,
                                                     0,
-                                                    inst_range.clone(),
+                                                    inst_range,
                                                 );
+                                            }
+                                            Some(sub_meshes) => {
+                                                log::trace!(
+                                                    "Draw mesh with index, with sub-meshes"
+                                                );
+                                                for sm in sub_meshes {
+                                                    log::trace!(
+                                                        "Draw sub-mesh {}-{}",
+                                                        sm.range.start,
+                                                        sm.range.end
+                                                    );
+                                                    let material_id =
+                                                        sm.material.unwrap_or(mtls.n_materials - 1);
+                                                    // Update material index.
+                                                    render_pass.set_push_constants(
+                                                        wgpu::ShaderStages::VERTEX_FRAGMENT,
+                                                        4,
+                                                        bytemuck::bytes_of(&material_id),
+                                                    );
+                                                    // Draw the sub-mesh.
+                                                    render_pass.draw_indexed(
+                                                        sm.range.start..sm.range.end,
+                                                        0,
+                                                        inst_range.clone(),
+                                                    );
+                                                }
                                             }
                                         }
                                     }
@@ -874,14 +911,10 @@ impl BlinnPhongRenderPass {
         output_format: wgpu::TextureFormat,
         shader_module: &wgpu::ShaderModule,
         polygon_mode: wgpu::PolygonMode,
+        topology: wgpu::PrimitiveTopology,
         cull_mode: Option<wgpu::Face>,
     ) -> (PipelineId, wgpu::RenderPipeline) {
-        let id = PipelineId::from_states(
-            PipelineKind::Render,
-            wgpu::PrimitiveTopology::TriangleList,
-            polygon_mode,
-            cull_mode,
-        );
+        let id = PipelineId::from_states(PipelineKind::Render, topology, polygon_mode, cull_mode);
         let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: Some("blinn_phong_shading_pipeline"),
             layout: Some(layout),
@@ -960,7 +993,7 @@ impl BlinnPhongRenderPass {
                 })],
             }),
             primitive: wgpu::PrimitiveState {
-                topology: wgpu::PrimitiveTopology::TriangleList,
+                topology,
                 front_face: wgpu::FrontFace::Ccw,
                 cull_mode,
                 polygon_mode,

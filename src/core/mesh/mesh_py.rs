@@ -1,6 +1,6 @@
 use crate::core::{
     mesh::{AttribContainer, Indices, Mesh, SubMesh, VertexAttribute},
-    Alignment, Material,
+    Alignment, Color, Material,
 };
 use glam::Vec3;
 use numpy as np;
@@ -89,6 +89,18 @@ impl Mesh {
     #[pyo3(name = "create_sphere")]
     pub fn new_sphere_py(radius: f32, segments: u32, rings: u32) -> Self {
         Self::sphere(radius, segments, rings)
+    }
+
+    #[staticmethod]
+    #[pyo3(name = "create_grid")]
+    pub fn new_grid_py(
+        width: f32,
+        height: f32,
+        spacing: (f32, f32),
+        align: Alignment,
+        color: Color,
+    ) -> Self {
+        Self::grid(width, height, spacing, align, color)
     }
 
     #[staticmethod]

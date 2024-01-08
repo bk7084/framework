@@ -391,7 +391,7 @@ impl Renderer {
                 }
                 Command::UpdateShadowMapOrthoProj(size) => {
                     let scale = size * 0.9 / LightsBindGroup::ORTHO_H;
-                    println!("Update shadow map ortho proj scale: {}", scale.max(1.0));
+                    log::debug!("Update shadow map ortho proj scale: {}", scale.max(1.0));
                     self.light_proj_scale = scale.max(1.0);
                 }
                 _ => {}

@@ -12,7 +12,7 @@ use crate::{
     core::{
         camera::{Camera, Projection},
         mesh::{Mesh, MeshBundle},
-        Color, ConcatOrder, FxHashMap, Light, SmlString,
+        Alignment, Color, ConcatOrder, FxHashMap, Light, SmlString,
     },
     render::{rpass::BlinnPhongRenderPass, surface::Surface, GpuContext, RenderTarget, Renderer},
     scene::{Entity, NodeIdx, PyEntity, Scene},
