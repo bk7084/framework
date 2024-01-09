@@ -275,7 +275,164 @@ impl BlinnPhongRenderPass {
             pipelines.insert("shadow", id, pipeline);
         }
 
-        let shadow_maps = ShadowMaps::new(device, limits, 1024, 1024, 1);
+        let shadow_maps = {
+            let limits = limits;
+            let width = 1024;
+            let height = 1024;
+            let count = 1;
+            debug_assert!(
+                width <= limits.max_texture_dimension_1d,
+                "Shadow map width exceeds the limit."
+            );
+            debug_assert!(
+                height <= limits.max_texture_dimension_1d,
+                "Shadow map height exceeds the limit."
+            );
+
+            let layers_per_texture = limits.max_texture_array_layers;
+            let n_textures = (count + layers_per_texture - 1) / layers_per_texture;
+            let last_texture_layers = count % layers_per_texture;
+
+            // Create the depth textures, each of which is a 2D texture array with
+            // `layers_per_texture` layers, and the last texture may have less layers.
+            let depth_textures = (0..n_textures)
+                .map(|n| {
+                    let layer_count = if n == n_textures - 1 {
+                        last_texture_layers
+                    } else {
+                        layers_per_texture
+                    };
+                    let texture = device.create_texture(&wgpu::TextureDescriptor {
+                        label: Some("shadow_maps_depth_texture"),
+                        size: wgpu::Extent3d {
+                            width,
+                            height,
+                            depth_or_array_layers: layer_count,
+                        },
+                        mip_level_count: 1,
+                        sample_count: 1,
+                        dimension: wgpu::TextureDimension::D2,
+                        format: DEPTH_FORMAT,
+                        usage: wgpu::TextureUsages::RENDER_ATTACHMENT
+                            | wgpu::TextureUsages::TEXTURE_BINDING
+                            | wgpu::TextureUsages::COPY_SRC,
+                        view_formats: &[],
+                    });
+                    let view = texture.create_view(&wgpu::TextureViewDescriptor {
+                        label: Some("shadow_maps_depth_texture_view"),
+                        format: Some(DEPTH_FORMAT),
+                        dimension: Some(wgpu::TextureViewDimension::D2Array),
+                        aspect: wgpu::TextureAspect::All,
+                        base_array_layer: 0,
+                        array_layer_count: Some(layer_count),
+                        ..Default::default()
+                    });
+                    (texture, view)
+                })
+                .collect::<Vec<_>>();
+
+            #[cfg(all(debug_assertions, feature = "debug-shadow-map"))]
+            let storage_buffers = (0..count)
+                .map(|_| {
+                    device.create_buffer(&wgpu::BufferDescriptor {
+                        label: Some("shadow_maps_storage_buffer"),
+                        size: (width * height * std::mem::size_of::<f32>() as u32) as u64,
+                        usage: wgpu::BufferUsages::STORAGE
+                            | wgpu::BufferUsages::COPY_DST
+                            | wgpu::BufferUsages::COPY_SRC
+                            | wgpu::BufferUsages::MAP_READ,
+                        mapped_at_creation: false,
+                    })
+                })
+                .collect::<Vec<_>>();
+
+            let depth_sampler = device.create_sampler(&wgpu::SamplerDescriptor {
+                label: Some("shadow_maps_depth_sampler"),
+                address_mode_u: wgpu::AddressMode::ClampToEdge,
+                address_mode_v: wgpu::AddressMode::ClampToEdge,
+                address_mode_w: wgpu::AddressMode::ClampToEdge,
+                mag_filter: wgpu::FilterMode::Nearest,
+                min_filter: wgpu::FilterMode::Nearest,
+                mipmap_filter: wgpu::FilterMode::Nearest,
+                compare: Some(wgpu::CompareFunction::LessEqual),
+                ..Default::default()
+            });
+
+            let bind_group_layout =
+                device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                    label: Some("shadow_maps_bind_group_layout"),
+                    entries: &[
+                        wgpu::BindGroupLayoutEntry {
+                            binding: 0,
+                            visibility: wgpu::ShaderStages::FRAGMENT,
+                            ty: wgpu::BindingType::Texture {
+                                multisampled: false,
+                                view_dimension: wgpu::TextureViewDimension::D2Array,
+                                sample_type: wgpu::TextureSampleType::Depth,
+                            },
+                            count: NonZeroU32::new(n_textures),
+                        },
+                        wgpu::BindGroupLayoutEntry {
+                            binding: 1,
+                            visibility: wgpu::ShaderStages::FRAGMENT,
+                            ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Comparison),
+                            count: None,
+                        },
+                    ],
+                });
+
+            // Create the bind group for using the shadow maps in the main pass.
+            let views = depth_textures
+                .iter()
+                .map(|(_, view)| view)
+                .collect::<Vec<_>>();
+
+            let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+                label: Some("shadow_maps_bind_group"),
+                layout: &bind_group_layout,
+                entries: &[
+                    wgpu::BindGroupEntry {
+                        binding: 0,
+                        resource: wgpu::BindingResource::TextureViewArray(&views),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 1,
+                        resource: wgpu::BindingResource::Sampler(&depth_sampler),
+                    },
+                ],
+            });
+
+            let shadow_map_views = (0..count)
+                .map(|i| {
+                    let texture_index = i / layers_per_texture;
+                    let layer_index = i % layers_per_texture;
+                    depth_textures[texture_index as usize].0.create_view(
+                        &wgpu::TextureViewDescriptor {
+                            label: Some(&format!("shadow_map_view_{}", i)),
+                            format: Some(DEPTH_FORMAT),
+                            dimension: Some(wgpu::TextureViewDimension::D2),
+                            aspect: wgpu::TextureAspect::DepthOnly,
+                            base_array_layer: layer_index,
+                            array_layer_count: Some(1),
+                            ..Default::default()
+                        },
+                    )
+                })
+                .collect::<Vec<_>>();
+
+            ShadowMaps {
+                depth_textures,
+                bind_group,
+                bind_group_layout,
+                shadow_map_size: (width, height),
+                shadow_map_count: count,
+                shadow_map_views,
+                depth_sampler,
+                layers_per_texture,
+                #[cfg(all(debug_assertions, feature = "debug-shadow-map"))]
+                storage_buffers,
+            }
+        };
 
         // Create main render pass pipeline.
         {
@@ -1091,8 +1248,8 @@ impl RenderingPass for BlinnPhongRenderPass {
             self.shadow_maps.update(
                 &renderer.device,
                 &renderer.limits,
-                1024,
-                1024,
+                2048,
+                2048,
                 active_lights.len() as u32,
             );
         }
