@@ -7,8 +7,8 @@ use crate::{
     render::{
         rpass::{
             BlinnPhongRenderPass, Globals, GlobalsBindGroup, GpuLight, InstanceLocals, LightArray,
-            LightsBindGroup, Locals, LocalsBindGroup, PConsts, RenderingPass, ShadowMaps,
-            ShadowPassLocals, DEPTH_FORMAT,
+            LightsBindGroup, Locals, LocalsBindGroup, PConsts, PConstsShadowPass, RenderingPass,
+            ShadowMaps, ShadowPassLocals, DEPTH_FORMAT,
         },
         PipelineId, PipelineKind, Pipelines, RenderParams, RenderTarget, Renderer,
     },
@@ -128,6 +128,11 @@ impl<L: InstanceLocals> LocalsBindGroup<L> {
 }
 
 impl LightsBindGroup {
+    pub const ORTHO_NEAR: f32 = -35.0;
+    pub const ORTHO_FAR: f32 = 35.0;
+    pub const ORTHO_H: f32 = 34.0;
+    pub const ORTHO_W: f32 = 34.0;
+
     /// Creates a new lights bind group.
     pub fn new(device: &wgpu::Device) -> Self {
         let layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
@@ -176,8 +181,13 @@ impl LightsBindGroup {
         lights: &[(&Light, &NodeIdx)],
         nodes: &Nodes,
         queue: &wgpu::Queue,
+        scale: f32,
     ) {
         self.lights.clear();
+        let ortho_w = Self::ORTHO_W * scale * 1.1;
+        let ortho_h = Self::ORTHO_H * scale;
+        let ortho_near = Self::ORTHO_NEAR * scale;
+        let ortho_far = Self::ORTHO_FAR * scale;
         for (light, node_idx) in lights {
             let len = self.lights.len[0] as usize;
             self.lights.lights[len] = match light {
@@ -186,22 +196,22 @@ impl LightsBindGroup {
                     // actual direction.
                     let rev_dir = -direction.normalize();
                     GpuLight {
-                        dir_or_pos: [10.0 * rev_dir.x, 10.0 * rev_dir.y, 10.0 * rev_dir.z, 0.0],
+                        dir_or_pos: [rev_dir.x, rev_dir.y, rev_dir.z, 0.0],
                         color: [color.r as f32, color.g as f32, color.b as f32, 1.0],
-                        w2l: (Mat4::orthographic_rh(-20.0, 20.0, -20.0, 20.0, 0.1, 500.0)
-                            * Mat4::look_at_rh(rev_dir, Vec3::ZERO, Vec3::Y))
+                        w2l: (Mat4::orthographic_rh(
+                            -ortho_w, ortho_w, -ortho_h, ortho_h, ortho_near, ortho_far,
+                        ) * Mat4::look_at_rh(rev_dir, Vec3::ZERO, Vec3::Y))
                         .to_cols_array(),
                     }
                 }
                 Light::Point { color } => {
                     let transform = nodes.world(**node_idx);
                     let position = transform.translation;
+                    // TODO: Matrix from world to light space.
                     GpuLight {
                         dir_or_pos: [position.x, position.y, position.z, 1.0],
                         color: [color.r as f32, color.g as f32, color.b as f32, 1.0],
-                        w2l: (Mat4::orthographic_rh(-10.0, 10.0, -10.0, 10.0, 0.1, 100.0)
-                            * Mat4::look_at_rh(position, Vec3::ZERO, Vec3::Y))
-                        .to_cols_array(),
+                        w2l: Mat4::IDENTITY.to_cols_array(),
                     }
                 }
             };
@@ -257,10 +267,7 @@ impl BlinnPhongRenderPass {
                 bind_group_layouts: &[&locals_bind_group.layout, &lights_bind_group.layout],
                 push_constant_ranges: &[wgpu::PushConstantRange {
                     stages: wgpu::ShaderStages::VERTEX,
-                    // NOTE: The size of the push constant is the same as in the main render pass.
-                    // But the second u32 is used to store the index of the light in the light
-                    // array.
-                    range: 0..PConsts::SIZE as u32,
+                    range: 0..PConstsShadowPass::SIZE as u32,
                 }],
             });
             let (id, pipeline) =
@@ -268,7 +275,164 @@ impl BlinnPhongRenderPass {
             pipelines.insert("shadow", id, pipeline);
         }
 
-        let shadow_maps = ShadowMaps::new(device, limits, 1024, 1024, 1);
+        let shadow_maps = {
+            let limits = limits;
+            let width = 1024;
+            let height = 1024;
+            let count = 1;
+            debug_assert!(
+                width <= limits.max_texture_dimension_1d,
+                "Shadow map width exceeds the limit."
+            );
+            debug_assert!(
+                height <= limits.max_texture_dimension_1d,
+                "Shadow map height exceeds the limit."
+            );
+
+            let layers_per_texture = limits.max_texture_array_layers;
+            let n_textures = (count + layers_per_texture - 1) / layers_per_texture;
+            let last_texture_layers = count % layers_per_texture;
+
+            // Create the depth textures, each of which is a 2D texture array with
+            // `layers_per_texture` layers, and the last texture may have less layers.
+            let depth_textures = (0..n_textures)
+                .map(|n| {
+                    let layer_count = if n == n_textures - 1 {
+                        last_texture_layers
+                    } else {
+                        layers_per_texture
+                    };
+                    let texture = device.create_texture(&wgpu::TextureDescriptor {
+                        label: Some("shadow_maps_depth_texture"),
+                        size: wgpu::Extent3d {
+                            width,
+                            height,
+                            depth_or_array_layers: layer_count,
+                        },
+                        mip_level_count: 1,
+                        sample_count: 1,
+                        dimension: wgpu::TextureDimension::D2,
+                        format: DEPTH_FORMAT,
+                        usage: wgpu::TextureUsages::RENDER_ATTACHMENT
+                            | wgpu::TextureUsages::TEXTURE_BINDING
+                            | wgpu::TextureUsages::COPY_SRC,
+                        view_formats: &[],
+                    });
+                    let view = texture.create_view(&wgpu::TextureViewDescriptor {
+                        label: Some("shadow_maps_depth_texture_view"),
+                        format: Some(DEPTH_FORMAT),
+                        dimension: Some(wgpu::TextureViewDimension::D2Array),
+                        aspect: wgpu::TextureAspect::All,
+                        base_array_layer: 0,
+                        array_layer_count: Some(layer_count),
+                        ..Default::default()
+                    });
+                    (texture, view)
+                })
+                .collect::<Vec<_>>();
+
+            #[cfg(all(debug_assertions, feature = "debug-shadow-map"))]
+            let storage_buffers = (0..count)
+                .map(|_| {
+                    device.create_buffer(&wgpu::BufferDescriptor {
+                        label: Some("shadow_maps_storage_buffer"),
+                        size: (width * height * std::mem::size_of::<f32>() as u32) as u64,
+                        usage: wgpu::BufferUsages::STORAGE
+                            | wgpu::BufferUsages::COPY_DST
+                            | wgpu::BufferUsages::COPY_SRC
+                            | wgpu::BufferUsages::MAP_READ,
+                        mapped_at_creation: false,
+                    })
+                })
+                .collect::<Vec<_>>();
+
+            let depth_sampler = device.create_sampler(&wgpu::SamplerDescriptor {
+                label: Some("shadow_maps_depth_sampler"),
+                address_mode_u: wgpu::AddressMode::ClampToEdge,
+                address_mode_v: wgpu::AddressMode::ClampToEdge,
+                address_mode_w: wgpu::AddressMode::ClampToEdge,
+                mag_filter: wgpu::FilterMode::Nearest,
+                min_filter: wgpu::FilterMode::Nearest,
+                mipmap_filter: wgpu::FilterMode::Nearest,
+                compare: Some(wgpu::CompareFunction::LessEqual),
+                ..Default::default()
+            });
+
+            let bind_group_layout =
+                device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                    label: Some("shadow_maps_bind_group_layout"),
+                    entries: &[
+                        wgpu::BindGroupLayoutEntry {
+                            binding: 0,
+                            visibility: wgpu::ShaderStages::FRAGMENT,
+                            ty: wgpu::BindingType::Texture {
+                                multisampled: false,
+                                view_dimension: wgpu::TextureViewDimension::D2Array,
+                                sample_type: wgpu::TextureSampleType::Depth,
+                            },
+                            count: NonZeroU32::new(n_textures),
+                        },
+                        wgpu::BindGroupLayoutEntry {
+                            binding: 1,
+                            visibility: wgpu::ShaderStages::FRAGMENT,
+                            ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Comparison),
+                            count: None,
+                        },
+                    ],
+                });
+
+            // Create the bind group for using the shadow maps in the main pass.
+            let views = depth_textures
+                .iter()
+                .map(|(_, view)| view)
+                .collect::<Vec<_>>();
+
+            let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+                label: Some("shadow_maps_bind_group"),
+                layout: &bind_group_layout,
+                entries: &[
+                    wgpu::BindGroupEntry {
+                        binding: 0,
+                        resource: wgpu::BindingResource::TextureViewArray(&views),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 1,
+                        resource: wgpu::BindingResource::Sampler(&depth_sampler),
+                    },
+                ],
+            });
+
+            let shadow_map_views = (0..count)
+                .map(|i| {
+                    let texture_index = i / layers_per_texture;
+                    let layer_index = i % layers_per_texture;
+                    depth_textures[texture_index as usize].0.create_view(
+                        &wgpu::TextureViewDescriptor {
+                            label: Some(&format!("shadow_map_view_{}", i)),
+                            format: Some(DEPTH_FORMAT),
+                            dimension: Some(wgpu::TextureViewDimension::D2),
+                            aspect: wgpu::TextureAspect::DepthOnly,
+                            base_array_layer: layer_index,
+                            array_layer_count: Some(1),
+                            ..Default::default()
+                        },
+                    )
+                })
+                .collect::<Vec<_>>();
+
+            ShadowMaps {
+                depth_textures,
+                bind_group,
+                bind_group_layout,
+                shadow_map_size: (width, height),
+                shadow_map_count: count,
+                shadow_map_views,
+                depth_sampler,
+                layers_per_texture,
+                #[cfg(all(debug_assertions, feature = "debug-shadow-map"))]
+                storage_buffers,
+            }
+        };
 
         // Create main render pass pipeline.
         {
@@ -296,11 +460,25 @@ impl BlinnPhongRenderPass {
                         format,
                         &shader_module,
                         polygon_mode,
+                        wgpu::PrimitiveTopology::TriangleList,
                         cull_mode,
                     );
                     pipelines.insert("entity", id, pipeline);
                 }
             }
+
+            // Pipeline for drawing line segments, same as the main render pass pipeline,
+            // except the topology is line list.
+            let (id, pipeline) = Self::create_main_render_pass_pipeline(
+                device,
+                &layout,
+                format,
+                &shader_module,
+                wgpu::PolygonMode::Fill,
+                wgpu::PrimitiveTopology::LineList,
+                None,
+            );
+            pipelines.insert("lines", id, pipeline);
         }
 
         Self {
@@ -562,6 +740,8 @@ impl BlinnPhongRenderPass {
             id.cull_mode() == cull_mode && id.polygon_mode() == polygon_mode
         });
 
+        let mut current_pipeline = None;
+
         match pipeline {
             None => {
                 log::error!("Missing pipeline for entity shading!");
@@ -569,6 +749,7 @@ impl BlinnPhongRenderPass {
             }
             Some(pipelines) => {
                 render_pass.set_pipeline(pipelines[0]);
+                current_pipeline = Some(pipelines[0]);
             }
         }
 
@@ -576,6 +757,20 @@ impl BlinnPhongRenderPass {
         render_pass.set_bind_group(0, &self.globals_bind_group, &[]);
         // Bind shadow maps and sampler.
         render_pass.set_bind_group(5, &self.shadow_maps.bind_group, &[]);
+
+        let enable_shadows = if params.casting_shadows() { 1u32 } else { 0u32 };
+        let enable_lighting = if params.enable_lighting { 1u32 } else { 0u32 };
+
+        render_pass.set_push_constants(
+            wgpu::ShaderStages::VERTEX_FRAGMENT,
+            8,
+            bytemuck::bytes_of(&enable_shadows),
+        );
+        render_pass.set_push_constants(
+            wgpu::ShaderStages::VERTEX_FRAGMENT,
+            12,
+            bytemuck::bytes_of(&enable_lighting),
+        );
 
         {
             let mut unique_meshes = FxHashSet::default();
@@ -695,82 +890,102 @@ impl BlinnPhongRenderPass {
                             // Bind textures.
                             render_pass.set_bind_group(3, texs.bind_group.as_ref().unwrap(), &[]);
 
-                            match mesh.index_format {
-                                None => {
-                                    // No index buffer, draw directly.
-                                    match mesh.sub_meshes.as_ref() {
-                                        None => {
-                                            // No sub-meshes, use the default material.
-                                            // Update material index.
-                                            render_pass.set_push_constants(
-                                                wgpu::ShaderStages::VERTEX_FRAGMENT,
-                                                4,
-                                                bytemuck::bytes_of(&0u32),
-                                            );
-                                            render_pass.draw(0..mesh.vertex_count, inst_range);
-                                        }
-                                        Some(sub_meshes) => {
-                                            // Draw each sub-mesh.
-                                            for sm in sub_meshes {
-                                                let material_id =
-                                                    sm.material.unwrap_or(mtls.n_materials - 1);
+                            // TODO: ad-hoc solution for line meshes. Need to refactor.
+                            if mesh.topology == wgpu::PrimitiveTopology::LineList {
+                                render_pass.set_pipeline(
+                                    &self.pipelines.get_by_label("lines").unwrap()[0].1,
+                                );
+                                render_pass.set_index_buffer(
+                                    mesh_buffer.slice(mesh.index_range.clone()),
+                                    mesh.index_format.unwrap(),
+                                );
+                                render_pass.draw_indexed(
+                                    0..mesh.index_count,
+                                    0,
+                                    inst_range.clone(),
+                                );
+                                // Set back to the original pipeline.
+                                render_pass.set_pipeline(current_pipeline.unwrap());
+                            } else {
+                                match mesh.index_format {
+                                    None => {
+                                        // No index buffer, draw directly.
+                                        match mesh.sub_meshes.as_ref() {
+                                            None => {
+                                                // No sub-meshes, use the default material.
                                                 // Update material index.
                                                 render_pass.set_push_constants(
                                                     wgpu::ShaderStages::VERTEX_FRAGMENT,
                                                     4,
-                                                    bytemuck::bytes_of(&material_id),
+                                                    bytemuck::bytes_of(&0u32),
                                                 );
-                                                render_pass.draw(
-                                                    sm.range.start..sm.range.end,
-                                                    inst_range.clone(),
-                                                )
+                                                render_pass.draw(0..mesh.vertex_count, inst_range);
+                                            }
+                                            Some(sub_meshes) => {
+                                                // Draw each sub-mesh.
+                                                for sm in sub_meshes {
+                                                    let material_id =
+                                                        sm.material.unwrap_or(mtls.n_materials - 1);
+                                                    // Update material index.
+                                                    render_pass.set_push_constants(
+                                                        wgpu::ShaderStages::VERTEX_FRAGMENT,
+                                                        4,
+                                                        bytemuck::bytes_of(&material_id),
+                                                    );
+                                                    render_pass.draw(
+                                                        sm.range.start..sm.range.end,
+                                                        inst_range.clone(),
+                                                    )
+                                                }
                                             }
                                         }
                                     }
-                                }
-                                Some(index_format) => {
-                                    render_pass.set_index_buffer(
-                                        mesh_buffer.slice(mesh.index_range.clone()),
-                                        index_format,
-                                    );
-                                    match mesh.sub_meshes.as_ref() {
-                                        None => {
-                                            log::trace!("Draw mesh with index, no sub-meshes");
-                                            // No sub-meshes, use the default material.
-                                            // Update material index.
-                                            render_pass.set_push_constants(
-                                                wgpu::ShaderStages::VERTEX_FRAGMENT,
-                                                4,
-                                                bytemuck::bytes_of(&0u32),
-                                            );
-                                            render_pass.draw_indexed(
-                                                0..mesh.index_count,
-                                                0,
-                                                inst_range,
-                                            );
-                                        }
-                                        Some(sub_meshes) => {
-                                            log::trace!("Draw mesh with index, with sub-meshes");
-                                            for sm in sub_meshes {
-                                                log::trace!(
-                                                    "Draw sub-mesh {}-{}",
-                                                    sm.range.start,
-                                                    sm.range.end
-                                                );
-                                                let material_id =
-                                                    sm.material.unwrap_or(mtls.n_materials - 1);
+                                    Some(index_format) => {
+                                        render_pass.set_index_buffer(
+                                            mesh_buffer.slice(mesh.index_range.clone()),
+                                            index_format,
+                                        );
+                                        match mesh.sub_meshes.as_ref() {
+                                            None => {
+                                                log::trace!("Draw mesh with index, no sub-meshes");
+                                                // No sub-meshes, use the default material.
                                                 // Update material index.
                                                 render_pass.set_push_constants(
                                                     wgpu::ShaderStages::VERTEX_FRAGMENT,
                                                     4,
-                                                    bytemuck::bytes_of(&material_id),
+                                                    bytemuck::bytes_of(&0u32),
                                                 );
-                                                // Draw the sub-mesh.
                                                 render_pass.draw_indexed(
-                                                    sm.range.start..sm.range.end,
+                                                    0..mesh.index_count,
                                                     0,
-                                                    inst_range.clone(),
+                                                    inst_range,
                                                 );
+                                            }
+                                            Some(sub_meshes) => {
+                                                log::trace!(
+                                                    "Draw mesh with index, with sub-meshes"
+                                                );
+                                                for sm in sub_meshes {
+                                                    log::trace!(
+                                                        "Draw sub-mesh {}-{}",
+                                                        sm.range.start,
+                                                        sm.range.end
+                                                    );
+                                                    let material_id =
+                                                        sm.material.unwrap_or(mtls.n_materials - 1);
+                                                    // Update material index.
+                                                    render_pass.set_push_constants(
+                                                        wgpu::ShaderStages::VERTEX_FRAGMENT,
+                                                        4,
+                                                        bytemuck::bytes_of(&material_id),
+                                                    );
+                                                    // Draw the sub-mesh.
+                                                    render_pass.draw_indexed(
+                                                        sm.range.start..sm.range.end,
+                                                        0,
+                                                        inst_range.clone(),
+                                                    );
+                                                }
                                             }
                                         }
                                     }
@@ -830,7 +1045,11 @@ impl BlinnPhongRenderPass {
                 depth_write_enabled: true,
                 depth_compare: wgpu::CompareFunction::LessEqual,
                 stencil: Default::default(),
-                bias: Default::default(),
+                bias: wgpu::DepthBiasState {
+                    constant: 2, // corresponds to bilinear filtering
+                    slope_scale: 2.0,
+                    clamp: 0.0,
+                },
             }),
             multisample: wgpu::MultisampleState {
                 count: 1,
@@ -849,14 +1068,10 @@ impl BlinnPhongRenderPass {
         output_format: wgpu::TextureFormat,
         shader_module: &wgpu::ShaderModule,
         polygon_mode: wgpu::PolygonMode,
+        topology: wgpu::PrimitiveTopology,
         cull_mode: Option<wgpu::Face>,
     ) -> (PipelineId, wgpu::RenderPipeline) {
-        let id = PipelineId::from_states(
-            PipelineKind::Render,
-            wgpu::PrimitiveTopology::TriangleList,
-            polygon_mode,
-            cull_mode,
-        );
+        let id = PipelineId::from_states(PipelineKind::Render, topology, polygon_mode, cull_mode);
         let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: Some("blinn_phong_shading_pipeline"),
             layout: Some(layout),
@@ -935,7 +1150,7 @@ impl BlinnPhongRenderPass {
                 })],
             }),
             primitive: wgpu::PrimitiveState {
-                topology: wgpu::PrimitiveTopology::TriangleList,
+                topology,
                 front_face: wgpu::FrontFace::Ccw,
                 cull_mode,
                 polygon_mode,
@@ -1006,7 +1221,6 @@ impl RenderingPass for BlinnPhongRenderPass {
         encoder: &mut wgpu::CommandEncoder,
     ) {
         profiling::scope!("BlinnPhongShading::record");
-
         let mut mesh_bundle_query = <(&MeshBundle, &NodeIdx)>::query();
         let visible_meshes = mesh_bundle_query
             .iter(&scene.world)
@@ -1025,13 +1239,17 @@ impl RenderingPass for BlinnPhongRenderPass {
                 .iter(&scene.world)
                 .filter(|(_, node_idx)| scene.nodes[**node_idx].is_active())
                 .collect::<Vec<_>>();
-            self.lights_bind_group
-                .update_lights(&active_lights, &scene.nodes, &renderer.queue);
+            self.lights_bind_group.update_lights(
+                &active_lights,
+                &scene.nodes,
+                &renderer.queue,
+                renderer.light_proj_scale,
+            );
             self.shadow_maps.update(
                 &renderer.device,
                 &renderer.limits,
-                1024,
-                1024,
+                2048,
+                2048,
                 active_lights.len() as u32,
             );
         }
@@ -1046,7 +1264,7 @@ impl RenderingPass for BlinnPhongRenderPass {
 
             if need_recreate {
                 let texture = renderer.device.create_texture(&wgpu::TextureDescriptor {
-                    label: Some("wireframe_depth_texture"),
+                    label: Some("rpass_depth_texture"),
                     size: target.size,
                     mip_level_count: 1,
                     sample_count: 1,
@@ -1056,18 +1274,26 @@ impl RenderingPass for BlinnPhongRenderPass {
                         | wgpu::TextureUsages::TEXTURE_BINDING,
                     view_formats: &[],
                 });
-                let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
+                let view = texture.create_view(&Default::default());
                 self.depth_att = Some((texture, view));
             }
         }
 
-        // // Evaluate shadow maps only if shadows are enabled and wireframe is
-        // disabled. if params.casting_shadows() {
-        //     let meshes_casting_shadow = mesh_bundle_query
-        //         .iter(&scene.world)
-        //         .filter(|(_, node_idx)| scene.nodes[**node_idx].cast_shadows());
-        //     self.eval_shadow_maps_pass(encoder, meshes_casting_shadow, scene,
-        // renderer); }
+        // Evaluate shadow maps only if shadows are enabled and wireframe is
+        // disabled.
+        if params.casting_shadows() {
+            let meshes_casting_shadow = mesh_bundle_query
+                .iter(&scene.world)
+                .filter(|(_, node_idx)| scene.nodes[**node_idx].cast_shadows());
+            self.eval_shadow_maps_pass(encoder, meshes_casting_shadow, scene, renderer);
+            #[cfg(all(debug_assertions, feature = "debug-shadow-map"))]
+            {
+                self.shadow_maps.update_storage_buffers(encoder);
+                if params.write_shadow_maps {
+                    self.shadow_maps.write_shadow_maps(&renderer.device);
+                }
+            }
+        }
 
         // Evaluate the main render pass.
         self.eval_main_render_pass(encoder, &visible_meshes, scene, renderer, params, target);

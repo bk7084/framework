@@ -15,6 +15,7 @@ crate::impl_size_constant!(
     Locals,
     ShadowPassLocals,
     PConsts,
+    PConstsShadowPass,
     GpuLight,
     LightArray
 );
@@ -55,7 +56,7 @@ impl Locals {
 #[derive(Debug, Clone, Copy, Pod, Zeroable)]
 pub struct ShadowPassLocals {
     /// The model matrix.
-    model: [f32; 16],
+    pub model: [f32; 16],
 }
 
 impl ShadowPassLocals {
@@ -84,6 +85,17 @@ struct PConsts {
     instance_base_index: u32,
     /// Material index.
     material_index: u32,
+    /// Whether the shadow mapping is enabled.
+    enable_shadows: u32,
+    /// Whether the lighting is enabled.
+    enable_lighting: u32,
+}
+
+#[repr(C)]
+#[derive(Debug, Clone, Copy, Pod, Zeroable)]
+pub struct PConstsShadowPass {
+    instance_base_index: u32,
+    light_index: u32,
 }
 
 /// Depth format for the rendering passes.
@@ -255,7 +267,10 @@ pub struct ShadowMaps {
     /// The bind group layout for the shadow maps.
     pub bind_group_layout: wgpu::BindGroupLayout,
 
-    #[cfg(debug_assertions)]
+    /// The number of layers per texture.
+    layers_per_texture: u32,
+
+    #[cfg(all(debug_assertions, feature = "debug-shadow-map"))]
     /// The storage buffers for the shadow maps. Each buffer stores the
     /// shadow map for a light. Used for debugging only.
     pub storage_buffers: Vec<wgpu::Buffer>,
@@ -311,7 +326,8 @@ impl ShadowMaps {
                     dimension: wgpu::TextureDimension::D2,
                     format: DEPTH_FORMAT,
                     usage: wgpu::TextureUsages::RENDER_ATTACHMENT
-                        | wgpu::TextureUsages::TEXTURE_BINDING,
+                        | wgpu::TextureUsages::TEXTURE_BINDING
+                        | wgpu::TextureUsages::COPY_SRC,
                     view_formats: &[],
                 });
                 let view = texture.create_view(&wgpu::TextureViewDescriptor {
@@ -327,31 +343,20 @@ impl ShadowMaps {
             })
             .collect::<Vec<_>>();
 
-        #[cfg(debug_assertions)]
+        #[cfg(all(debug_assertions, feature = "debug-shadow-map"))]
         let storage_buffers = (0..count)
             .map(|_| {
                 device.create_buffer(&wgpu::BufferDescriptor {
                     label: Some("shadow_maps_storage_buffer"),
-                    size: (width * height * std::mem::size_of::<f32>() as u32) as wgpu::BufferSize,
+                    size: (width * height * std::mem::size_of::<f32>() as u32) as u64,
                     usage: wgpu::BufferUsages::STORAGE
                         | wgpu::BufferUsages::COPY_DST
-                        | wgpu::BufferUsages::COPY_SRC,
+                        | wgpu::BufferUsages::COPY_SRC
+                        | wgpu::BufferUsages::MAP_READ,
                     mapped_at_creation: false,
                 })
             })
             .collect::<Vec<_>>();
-
-        // let depth_sampler = device.create_sampler(&wgpu::SamplerDescriptor {
-        //     label: Some("shadow_maps_depth_sampler"),
-        //     address_mode_u: wgpu::AddressMode::ClampToEdge,
-        //     address_mode_v: wgpu::AddressMode::ClampToEdge,
-        //     address_mode_w: wgpu::AddressMode::ClampToEdge,
-        //     mag_filter: wgpu::FilterMode::Nearest,
-        //     min_filter: wgpu::FilterMode::Nearest,
-        //     mipmap_filter: wgpu::FilterMode::Nearest,
-        //     compare: Some(wgpu::CompareFunction::LessEqual),
-        //     ..Default::default()
-        // });
 
         let depth_sampler = device.create_sampler(&wgpu::SamplerDescriptor {
             label: Some("shadow_maps_depth_sampler"),
@@ -361,7 +366,7 @@ impl ShadowMaps {
             mag_filter: wgpu::FilterMode::Nearest,
             min_filter: wgpu::FilterMode::Nearest,
             mipmap_filter: wgpu::FilterMode::Nearest,
-            compare: None,
+            compare: Some(wgpu::CompareFunction::LessEqual),
             ..Default::default()
         });
 
@@ -374,14 +379,14 @@ impl ShadowMaps {
                     ty: wgpu::BindingType::Texture {
                         multisampled: false,
                         view_dimension: wgpu::TextureViewDimension::D2Array,
-                        sample_type: wgpu::TextureSampleType::Float { filterable: false },
+                        sample_type: wgpu::TextureSampleType::Depth,
                     },
                     count: NonZeroU32::new(n_textures),
                 },
                 wgpu::BindGroupLayoutEntry {
                     binding: 1,
                     visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::NonFiltering),
+                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Comparison),
                     count: None,
                 },
             ],
@@ -434,9 +439,18 @@ impl ShadowMaps {
             shadow_map_count: count,
             shadow_map_views,
             depth_sampler,
-            #[cfg(debug_assertions)]
+            layers_per_texture,
+            #[cfg(all(debug_assertions, feature = "debug-shadow-map"))]
             storage_buffers,
         }
+    }
+
+    /// Returns the underlying texture of the shadow map at the given index
+    /// together with the index of the layer in the texture.
+    pub fn texture(&self, index: usize) -> (&wgpu::Texture, u32) {
+        let texture_index = index / self.layers_per_texture as usize;
+        let layer_index = index % self.layers_per_texture as usize;
+        (&self.depth_textures[texture_index].0, layer_index as u32)
     }
 
     pub fn shadow_maps(&self) -> &[wgpu::TextureView] {
@@ -461,23 +475,67 @@ impl ShadowMaps {
         }
     }
 
-    /// Write the shadow maps to files for debugging.
-    #[cfg(debug_assertions)]
-    pub fn write_to_file(&self, device: &wgpu::Device, queue: &wgpu::Queue) {
+    /// Copys the shadow maps to the storage buffers.
+    #[cfg(all(debug_assertions, feature = "debug-shadow-map"))]
+    pub fn update_storage_buffers(&mut self, encoder: &mut wgpu::CommandEncoder) {
         for (i, buffer) in self.storage_buffers.iter().enumerate() {
-            let size = (self.shadow_map_size.0 * self.shadow_map_size.1 * 4) as wgpu::BufferSize;
+            let (texture, layer_idx) = self.texture(i);
+            encoder.copy_texture_to_buffer(
+                wgpu::ImageCopyTexture {
+                    texture: &texture,
+                    mip_level: 0,
+                    origin: wgpu::Origin3d {
+                        x: 0,
+                        y: 0,
+                        z: layer_idx,
+                    },
+                    aspect: wgpu::TextureAspect::DepthOnly,
+                },
+                wgpu::ImageCopyBuffer {
+                    buffer: &buffer,
+                    layout: wgpu::ImageDataLayout {
+                        offset: 0,
+                        bytes_per_row: Some(self.shadow_map_size.0 * 4),
+                        rows_per_image: Some(self.shadow_map_size.1),
+                    },
+                },
+                wgpu::Extent3d {
+                    width: self.shadow_map_size.0,
+                    height: self.shadow_map_size.1,
+                    depth_or_array_layers: 1,
+                },
+            );
+        }
+    }
+
+    /// Write the shadow maps to files for debugging.
+    #[cfg(all(debug_assertions, feature = "debug-shadow-map"))]
+    pub fn write_shadow_maps(&self, device: &wgpu::Device) {
+        for (i, buffer) in self.storage_buffers.iter().enumerate() {
             let buffer_slice = buffer.slice(..);
-            let buffer_future = buffer_slice.map_async(wgpu::MapMode::Read);
+            let (sender, receiver) = flume::bounded(1);
+            buffer_slice.map_async(wgpu::MapMode::Read, move |r| sender.send(r).unwrap());
             device.poll(wgpu::Maintain::Wait);
-            queue.submit(Some(buffer_future));
-            let data = buffer_slice.get_mapped_range();
-            let img = image::ImageBuffer::<image::Rgba<u8>, _>::from_raw(
-                self.shadow_map_size.0,
-                self.shadow_map_size.1,
-                data,
-            )
-            .unwrap();
-            img.save(format!("shadow_map_{}.png", i)).unwrap();
+            pollster::block_on(async {
+                receiver.recv_async().await.unwrap().unwrap();
+            });
+            {
+                let buffer_view = buffer_slice.get_mapped_range();
+                let (_, data, _) = unsafe { buffer_view.align_to::<f32>() };
+                let (width, height) = self.shadow_map_size;
+                let mut img = image::ImageBuffer::new(width, height);
+                for (x, y, pixel) in img.enumerate_pixels_mut() {
+                    let idx = (y * width + x) as usize;
+                    *pixel = image::Luma([(data[idx] * 255.0) as u8]);
+                }
+                img.save(format!(
+                    "shadow_map_{}_{:?}.png",
+                    i,
+                    std::time::Instant::now()
+                ))
+                .unwrap();
+            }
+            buffer.unmap();
         }
     }
 }

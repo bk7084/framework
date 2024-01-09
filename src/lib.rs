@@ -1,4 +1,5 @@
 pub mod app;
+pub mod compute;
 pub mod core;
 pub mod render;
 pub mod scene;

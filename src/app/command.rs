@@ -55,6 +55,8 @@ pub enum Command {
     UseMaterial { entity: Entity, material: u32 },
     /// Sets the entity as the main camera.
     SetAsMainCamera { entity: Entity },
+    /// Sets the direction of the directional light.
+    SetDirectionalLight { entity: Entity, direction: Vec3 },
     /// Clears the material override.
     ClearMaterialOverride { entity: Entity },
     /// Enables or disables backface culling.
@@ -63,6 +65,10 @@ pub enum Command {
     EnableWireframe(bool),
     /// Enables or disables shadwos.
     EnableShadows(bool),
+    /// Updates manually the shadow map orthographic projection.
+    UpdateShadowMapOrthoProj(f32),
+    /// Enables or disables the lighting.
+    EnableLighting(bool),
 }
 
 /// Receiver of commands.

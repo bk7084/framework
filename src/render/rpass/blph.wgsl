@@ -33,6 +33,8 @@ struct Locals {
 struct PConsts {
     instance_base_index: u32,
     material_index: u32,
+    enable_shadows: u32,
+    enable_lighting: u32,
 }
 
 struct Light {
@@ -90,6 +92,7 @@ struct VSOutput {
     @location(6) view_mat_y: vec4<f32>,
     @location(7) view_mat_z: vec4<f32>,
     @location(8) view_mat_w: vec4<f32>,
+    @location(9) pos_world: vec3<f32>,
 }
 
 @group(0) @binding(0) var<uniform> globals: Globals;
@@ -103,14 +106,14 @@ struct VSOutput {
 @group(4) @binding(0) var<storage, read> lights: LightArray;
 
 /* Sampling shadow map use depth comparision.  */
-// @group(5) @binding(0) var smap: binding_array<texture_depth_2d_array>;
-// @group(5) @binding(1) var smap_sampler: sampler_comparison;
+@group(5) @binding(0) var smap: binding_array<texture_depth_2d_array>;
+@group(5) @binding(1) var smap_sampler: sampler_comparison;
 
 /* Sampling shadow map as normal texture. */
-@group(5) @binding(0) var smap: binding_array<texture_2d_array<f32>>;
-@group(5) @binding(1) var smap_sampler: sampler;
+// @group(5) @binding(0) var smap: binding_array<texture_2d_array<f32>>;
+// @group(5) @binding(1) var smap_sampler: sampler;
 
-var<push_constant> pconsts : PConsts;
+var<push_constant> pconsts: PConsts;
 
 @vertex
 fn vs_main(vin: VSInput) -> VSOutput {
@@ -118,6 +121,7 @@ fn vs_main(vin: VSInput) -> VSOutput {
 
     var out: VSOutput;
     let model_view = globals.view * locals.model;
+    out.pos_world = (locals.model * vec4<f32>(vin.position, 1.0)).xyz;
     let pos_eye_space = model_view * vec4<f32>(vin.position, 1.0);
 
     if (locals.material_index.x != INVALID_INDEX) {
@@ -141,6 +145,10 @@ fn vs_main(vin: VSInput) -> VSOutput {
 
 /// Blinn-Phong BRDF in camera space.
 fn blinn_phong_brdf(wi: vec3<f32>, wo: vec3<f32>, n: vec3<f32>, kd: vec3<f32>, ks: vec3<f32>, ns: f32, illum: u32) -> vec3<f32> {
+    if pconsts.enable_lighting == 0u {
+        return vec3<f32>(0.0);
+    }
+
     var dot_n_wi = max(0.0, dot(n, wi));
     var diffuse = kd * dot_n_wi;
     if (illum != 2u) {
@@ -155,19 +163,26 @@ fn blinn_phong_brdf(wi: vec3<f32>, wo: vec3<f32>, n: vec3<f32>, kd: vec3<f32>, k
     return diffuse + specular;
 }
 
-fn blinn_phong_shading_eye_space(view_mat: mat4x4<f32>, pos_eye_space: vec3<f32>, n: vec3<f32>, kd: vec3<f32>, ks: vec3<f32>, ns: f32, illum: u32) -> vec3<f32> {
+fn blinn_phong_shading_eye_space(view_mat: mat4x4<f32>, pos_world: vec3<f32>, pos_eye_space: vec3<f32>, n: vec3<f32>, kd: vec3<f32>, ks: vec3<f32>, ns: f32, illum: u32) -> vec3<f32> {
     var color = vec3<f32>(0.0, 0.0, 0.0);
 
     // View direction in camera space.
     let wo = normalize(-pos_eye_space);
 
+    var dir_light_index = 0u;
     for (var i: u32 = 0u; i < lights.len; i++) {
         let light = lights.data[i];
         if (light.dir_or_pos.w == DIR_LIGHT) {
             // Light direction in view space.
             let wi = (view_mat * normalize(light.dir_or_pos)).xyz;
             let coeff = blinn_phong_brdf(wi, wo, n, kd, ks, ns, illum);
-            color += coeff * light.color;
+            let pos_light_space = light.world_to_light * vec4<f32>(pos_world, 1.0);
+            var shadow = 1.0;
+            if (pconsts.enable_shadows != 0u) {
+                shadow = fetch_shadow(dir_light_index, pos_light_space);
+            }
+            color += shadow * coeff * light.color;
+            dir_light_index += 1u;
         } else if (light.dir_or_pos.w == PNT_LIGHT) {
             // Light position in view space.
             var light_pos = view_mat * light.dir_or_pos;
@@ -204,7 +219,7 @@ fn tbn_matrix(tangent: vec4<f32>, normal: vec3<f32>) -> mat3x3<f32> {
 fn fetch_shadow(light_idx: u32, pos_light_space: vec4<f32>) -> f32 {
     if (pos_light_space.w <= 0.0) {
         // The point is outside the light frustum.
-        return 0.0;
+        return 1.0;
     }
     // Compensate for the Y-flip difference between the NDC space and the texture space.
     let flip_correction = vec2<f32>(0.5, -0.5);
@@ -212,8 +227,7 @@ fn fetch_shadow(light_idx: u32, pos_light_space: vec4<f32>) -> f32 {
     // Compute texture coordinates for shadow map lookup. Transform from [-1, 1] to [0, 1]. * 0.5 + 0.5
     let light_local = pos_light_space.xy * flip_correction * proj_correction + vec2<f32>(0.5, 0.5);
     // Fetch shadow map, use HW PCF and comparison                                    current depth
-//    return textureSampleCompareLevel(smap, smap_sampler, light_local, i32(light_idx), pos_light_space.z * proj_correction);
-    return 1.0;
+    return textureSampleCompareLevel(smap[0], smap_sampler, light_local, light_idx, pos_light_space.z * proj_correction);
 }
 
 @fragment
@@ -260,7 +274,7 @@ fn fs_main(vout : VSOutput) -> @location(0) vec4<f32> {
         n = normalize(tbn * n);
     }
     let view_mat = mat4x4<f32>(vout.view_mat_x, vout.view_mat_y, vout.view_mat_z, vout.view_mat_w);
-    color = blinn_phong_shading_eye_space(view_mat, vout.pos_eye_space, n, kd, ks, ns, material.illum);
+    color = blinn_phong_shading_eye_space(view_mat, vout.pos_world, vout.pos_eye_space, n, kd, ks, ns, material.illum);
 
     // Ambient on.
     if (material.illum != 0u) {
@@ -278,6 +292,4 @@ fn fs_main(vout : VSOutput) -> @location(0) vec4<f32> {
     }
 
     return vec4<f32>(color, 1.0);
-
-    // return vec4<f32>(textureSample(smap[0], smap_sampler, texcoord, 0).xxx, 1.0);
 }

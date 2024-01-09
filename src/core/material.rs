@@ -190,8 +190,9 @@ impl Material {
                 NormalTexture::NormalMap(path) => {
                     if let Some(resolved) = resolve_path(path.as_ref(), base) {
                         textures.insert(TextureType::MapNorm, resolved);
+                    } else {
+                        log::error!("Normal map can't be loaded: {:?}", path);
                     }
-                    log::error!("Normal map can't be loaded: {:?}", path);
                 }
             }
         }
@@ -414,11 +415,19 @@ fn resolve_path(path: &Path, base: &Path) -> Option<PathBuf> {
     } else {
         base.join(path)
     };
-    if path.exists() {
-        Some(path)
-    } else {
-        None
-    }
+    path.canonicalize()
+        .and_then(|path| {
+            log::debug!("Resolved path: {:?}", path);
+            if path.exists() {
+                Ok(path)
+            } else {
+                Err(std::io::Error::new(
+                    std::io::ErrorKind::NotFound,
+                    format!("Path does not exist: {:?}", path),
+                ))
+            }
+        })
+        .ok()
 }
 
 #[pyo3::pyclass]

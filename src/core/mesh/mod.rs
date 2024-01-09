@@ -19,6 +19,8 @@ use crate::core::{
 };
 pub use attribute::*;
 
+use super::Color;
+
 pub trait IndexType: Copy + Debug {
     fn as_u32(&self) -> u32;
     fn as_usize(&self) -> usize;
@@ -316,6 +318,79 @@ impl Mesh {
         mesh
     }
 
+    /// Creates a grid of size (w, h) with spacing (sx, sy).
+    pub fn grid(w: f32, h: f32, spacing: (f32, f32), align: Alignment, color: Color) -> Self {
+        let mut attributes = VertexAttributes::default();
+        let (sx, sy) = spacing;
+        // Generate the vertices of lines in the grid.
+        let mut vertices = Vec::new();
+        let mut indices = Vec::new();
+        let mut normals = Vec::new();
+        let mut tangents = [[0.0f32; 4]; 4];
+        // Note: created to satisfy the mesh validation.
+        let mut uvs: Vec<[f32; 2]> = Vec::new();
+        let n_w = (w / sx).ceil() as usize;
+        let n_h = (h / sy).ceil() as usize;
+        let half_w = w * 0.5;
+        let half_h = h * 0.5;
+        for i in 0..=n_w {
+            let a = -half_w + i as f32 * sx;
+            match align {
+                Alignment::XY => {
+                    vertices.push([a, -half_h, 0.0f32]);
+                    vertices.push([a, half_h, 0.0]);
+                    normals.push([0.0f32, 0.0, 1.0]);
+                }
+                Alignment::XZ => {
+                    vertices.push([a, 0.0, -half_h]);
+                    vertices.push([a, 0.0, half_h]);
+                    normals.push([0.0, 1.0, 0.0]);
+                }
+                Alignment::YZ => {
+                    vertices.push([0.0, a, -half_h]);
+                    vertices.push([0.0, a, half_h]);
+                    normals.push([1.0, 0.0, 0.0]);
+                }
+            }
+        }
+        for i in 0..=n_h {
+            let b = -half_h + i as f32 * sy;
+            match align {
+                Alignment::XY => {
+                    vertices.push([-half_w, b, 0.0]);
+                    vertices.push([half_w, b, 0.0]);
+                }
+                Alignment::XZ => {
+                    vertices.push([-half_w, 0.0, b]);
+                    vertices.push([half_w, 0.0, b]);
+                }
+                Alignment::YZ => {
+                    vertices.push([0.0, -half_w, b]);
+                    vertices.push([0.0, half_w, b]);
+                }
+            }
+        }
+        for i in 0..vertices.len() {
+            indices.push(i as u16);
+            uvs.push([0.0, 0.0]);
+        }
+        attributes.insert(VertexAttribute::POSITION, AttribContainer::new(&vertices));
+        attributes.insert(VertexAttribute::NORMAL, AttribContainer::new(&normals));
+        attributes.insert(VertexAttribute::UV, AttribContainer::new(&uvs));
+        attributes.insert(VertexAttribute::TANGENT, AttribContainer::new(&tangents));
+        let mut mesh = Mesh::new(PrimitiveTopology::LineList);
+        mesh.name = SmlString::from("bkfw_inner_grid");
+        mesh.attributes = attributes;
+        mesh.indices = Some(Indices::U16(indices));
+        let mut mat = Material::new();
+        mat.name = SmlString::from("bkfw_inner_grid");
+        // mat.diffuse = Some([color.r as f32, color.g as f32, color.b as f32]);
+        mat.diffuse = Some([1.0, 0.0, 0.0]);
+        mat.illumination_model = Some(11);
+        mesh.set_material(mat);
+        mesh
+    }
+
     /// Creates a sphere of centered at the origin.
     ///
     /// # Arguments
@@ -579,13 +654,13 @@ impl Mesh {
             .attributes
             .0
             .get(&VertexAttribute::UV)
-            .unwrap()
+            .expect("Mesh must have UVs to compute the tangents")
             .as_slice::<[f32; 2]>();
         let normals = self
             .attributes
             .0
             .get(&VertexAttribute::NORMAL)
-            .unwrap()
+            .expect("Mesh must have normals to compute the tangents")
             .as_slice::<[f32; 3]>();
         let mut tangents: Vec<Vec4> = vec![Vec4::ZERO; vertices.len()];
         match &self.indices {

@@ -8,16 +8,18 @@ pub use window::*;
 
 use crate::{
     app::command::Command,
+    compute::SunlightScore,
     core::{
         camera::{Camera, Projection},
-        mesh::Mesh,
-        Color, ConcatOrder, FxHashMap, Light, SmlString,
+        mesh::{Mesh, MeshBundle},
+        Alignment, Color, ConcatOrder, FxHashMap, Light, SmlString,
     },
     render::{rpass::BlinnPhongRenderPass, surface::Surface, GpuContext, RenderTarget, Renderer},
     scene::{Entity, NodeIdx, PyEntity, Scene},
 };
 use crossbeam_channel::Sender;
 use glam::{Mat4, Quat, Vec3};
+use legion::IntoQuery;
 use numpy as np;
 use numpy::array;
 use pyo3::{
@@ -57,6 +59,7 @@ pub struct PyAppState {
     renderer: Arc<RwLock<Renderer>>,
     scene_cmd_sender: Sender<Command>,
     renderer_cmd_sender: Sender<Command>,
+    sunlight_score: Arc<RwLock<SunlightScore>>,
     main_camera: Option<Entity>,
 }
 
@@ -79,6 +82,7 @@ impl PyAppState {
         let (renderer_cmd_sender, renderer_cmd_receiver) =
             crossbeam_channel::unbounded::<Command>();
         let renderer = Renderer::new(&context, renderer_cmd_receiver);
+        let sunlight_score = SunlightScore::new(&context.device);
         Ok(Self {
             context,
             input: InputState::default(),
@@ -92,6 +96,7 @@ impl PyAppState {
             scene_cmd_sender,
             renderer_cmd_sender,
             main_camera: None,
+            sunlight_score: Arc::new(RwLock::new(sunlight_score)),
         })
     }
 
@@ -163,6 +168,41 @@ impl PyAppState {
         self.renderer_cmd_sender
             .send(Command::EnableWireframe(enabled))
             .unwrap();
+    }
+
+    pub fn enable_lighting(&mut self, enabled: bool) {
+        self.renderer_cmd_sender
+            .send(Command::EnableLighting(enabled))
+            .unwrap();
+    }
+
+    #[deprecated(note = "Should be automatically updated by the renderer.")]
+    pub fn update_shadow_map_ortho_proj(&mut self, max_dist: f32) {
+        self.renderer_cmd_sender
+            .send(Command::UpdateShadowMapOrthoProj(max_dist))
+            .unwrap();
+    }
+
+    pub fn compute_sunlight_scores(&mut self) -> Vec<f32> {
+        profiling::scope!("compute_sunlight_score");
+        self.sunlight_score
+            .write()
+            .map(|mut score| {
+                let scene = self.scene.read().unwrap();
+                let mut mesh_bundle_query = <(&MeshBundle, &NodeIdx)>::query();
+                let meshes = mesh_bundle_query.iter(&scene.world).filter(|(_, node)| {
+                    scene.nodes[**node].is_visible() && scene.nodes[**node].cast_shadows()
+                });
+                let renderer = self.renderer.read().unwrap();
+                score.compute(
+                    &self.context.device,
+                    &self.context.queue,
+                    &scene,
+                    &renderer,
+                    meshes,
+                )
+            })
+            .unwrap()
     }
 
     /// Create a camera
@@ -583,9 +623,7 @@ pub fn run_main_loop(mut app: PyAppState, builder: PyWindowBuilder) {
                     .expect("Failed to get a frame from the surface");
                 let target = RenderTarget {
                     size: frame.texture.size(),
-                    view: frame
-                        .texture
-                        .create_view(&wgpu::TextureViewDescriptor::default()),
+                    view: frame.texture.create_view(&Default::default()),
                     format: surface.format(),
                 };
 

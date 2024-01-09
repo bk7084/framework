@@ -176,6 +176,10 @@ impl Pipelines {
         Some(&pipelines[index].1)
     }
 
+    pub fn get_by_label(&self, label: &str) -> Option<&Vec<(PipelineId, wgpu::RenderPipeline)>> {
+        self.0.get(label)
+    }
+
     /// Returns all pipelines with the given label.
     pub fn get_all(&self, label: &str) -> Option<&Vec<(PipelineId, wgpu::RenderPipeline)>> {
         self.0.get(label)

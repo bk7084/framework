@@ -184,6 +184,7 @@ dependencies = [
  "cfg-if",
  "crossbeam-channel",
  "env_logger",
+ "flume",
  "glam",
  "image",
  "legion",
