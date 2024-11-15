@@ -25,7 +25,7 @@ jobs:
     strategy:
       matrix:
         python-version: ['3.9', '3.10', '3.11', '3.12']
-        target: [x86_64]
+        target: [x86_64, aarch64]
     steps:
       - uses: actions/checkout@v3
       - uses: actions/setup-python@v4
@@ -34,7 +34,7 @@ jobs:
         with:
           target: ${{ matrix.target }}
           command: build
-          args: --release --out dist --find-interpreter --manylinux 2014
+          args: --release --out dist --find-interpreter
           manylinux: 2014
           sccache: 'true'
       - name: Upload wheels
