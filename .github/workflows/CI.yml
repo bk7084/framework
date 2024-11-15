@@ -25,22 +25,14 @@ jobs:
     strategy:
       matrix:
         python-version: ['3.9', '3.10', '3.11', '3.12']
-        target: [x86_64, aarch64]
+        target: [x86_64]
     steps:
       - uses: actions/checkout@v3
       - uses: actions/setup-python@v4
-      - name: Build wheels for x86_64
+      - name: Build wheels
         uses: PyO3/maturin-action@v1
         with:
-          target: ${{ matrix.target[0] }}
-          command: build
-          args: --release --out dist --find-interpreter --manylinux 2014
-          manylinux: 2014
-          sccache: 'true'
-      - name: Build wheels for aarch64
-        uses: PyO3/maturin-action@v1
-        with:
-          target: ${{ matrix.target[1] }}
+          target: ${{ matrix.target }}
           command: build
           args: --release --out dist --find-interpreter --manylinux 2014
           manylinux: 2014
