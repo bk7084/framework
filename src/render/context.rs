@@ -83,8 +83,13 @@ impl GpuContext {
         }
 
         if !features.contains(desired_features) {
+            for feat in desired_features.iter() {
+                if !features.contains(feat) {
+                    log::error!("Feature '{:?}' does not exist", feat);
+                }
+            }
             panic!(
-                "Desired features {:?} not supported by the adapter",
+                "Desired features {:?} not all ->supported by the adapter",
                 desired_features
             );
         }
