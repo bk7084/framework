@@ -22,41 +22,36 @@ permissions:
 jobs:
   linux:
     runs-on: ubuntu-latest
-    container: quay.io/pypa/manylinux2014_x86_64
+    strategy:
+      matrix:
+        python-version: ['3.9', '3.10', '3.11', '3.12']
+        target: [x86_64, x86, aarch64, armv7, s390x, ppc64le]
     steps:
       - uses: actions/checkout@v3
-      - name: Install Rust toolchain
-        run: |
-          curl https://sh.rustup.rs -sSf | sh -s -- -y --default-toolchain stable
+      - uses: actions/setup-python@v4
       - name: Build wheels
-        run: |
-          source $HOME/.cargo/env
-          for PYBIN in /opt/python/cp3{9..11}*/bin; do
-            "${PYBIN}/pip" install -U maturin
-            "${PYBIN}/maturin" build --release --out dist -i "${PYBIN}/python" --manylinux 2014
-          done
-      - name: Auditwheel repair
-        run: |
-          mkdir -p dist/manylinux
-          for wheel in dist/*.whl; do
-            auditwheel repair "${wheel}" -w dist/manylinux/
-          done
+        uses: PyO3/maturin-action@v1
+        with:
+          target: ${{ matrix.target }}
+          args: --release --out dist --find-interpreter --manylinux 2014
+          sccache: 'true'
       - name: Upload wheels
         uses: actions/upload-artifact@v3
         with:
           name: wheels
-          path: dist/manylinux
+          path: dist
 
   windows:
     runs-on: windows-latest
     strategy:
       matrix:
+        python-version: ['3.9', '3.10', '3.11', '3.12']
         target: [x64, x86]
     steps:
       - uses: actions/checkout@v3
       - uses: actions/setup-python@v4
         with:
-          python-version: '3.10'
+          python-version: ${{ matrix.python-version }}
           architecture: ${{ matrix.target }}
       - name: Build wheels
         uses: PyO3/maturin-action@v1
@@ -79,7 +74,7 @@ jobs:
     runs-on: macos-latest
     strategy:
       matrix:
-        python-version: ['3.9', '3.10', '3.11']
+        python-version: ['3.9', '3.10', '3.11', '3.12']
         target: [x86_64-apple-darwin, aarch64-apple-darwin]
     steps:
       - uses: actions/checkout@v3
