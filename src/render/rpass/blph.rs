@@ -756,7 +756,7 @@ impl BlinnPhongRenderPass {
         // Bind globals.
         render_pass.set_bind_group(0, &self.globals_bind_group, &[]);
         // Bind shadow maps and sampler.
-        render_pass.set_bind_group(5, &self.shadow_maps.bind_group, &[]);
+        render_pass.set_bind_group(5, Some(&self.shadow_maps.bind_group), &[]);
 
         let enable_shadows = if params.casting_shadows() { 1u32 } else { 0u32 };
         let enable_lighting = if params.enable_lighting { 1u32 } else { 0u32 };
@@ -1019,7 +1019,8 @@ impl BlinnPhongRenderPass {
             layout: Some(layout),
             vertex: wgpu::VertexState {
                 module: shader_module,
-                entry_point: "vs_main",
+                entry_point: Some("vs_main"),
+                compilation_options: Default::default(),
                 buffers: &[wgpu::VertexBufferLayout {
                     array_stride: std::mem::size_of::<[f32; 3]>() as wgpu::BufferAddress,
                     step_mode: wgpu::VertexStepMode::Vertex,
@@ -1058,6 +1059,7 @@ impl BlinnPhongRenderPass {
             },
             fragment: None,
             multiview: None,
+            cache: None,
         });
         (id, pipeline)
     }
@@ -1077,7 +1079,8 @@ impl BlinnPhongRenderPass {
             layout: Some(layout),
             vertex: wgpu::VertexState {
                 module: shader_module,
-                entry_point: "vs_main",
+                entry_point: Some("vs_main"),
+                compilation_options: Default::default(),
                 buffers: &[
                     wgpu::VertexBufferLayout {
                         array_stride: std::mem::size_of::<[f32; 3]>() as wgpu::BufferAddress,
@@ -1131,7 +1134,8 @@ impl BlinnPhongRenderPass {
             },
             fragment: Some(wgpu::FragmentState {
                 module: shader_module,
-                entry_point: "fs_main",
+                entry_point: Some("fs_main"),
+                compilation_options: Default::default(),
                 targets: &[Some(wgpu::ColorTargetState {
                     format: output_format,
                     blend: Some(wgpu::BlendState {
@@ -1169,6 +1173,7 @@ impl BlinnPhongRenderPass {
                 alpha_to_coverage_enabled: false,
             },
             multiview: None,
+            cache: None,
         });
         (id, pipeline)
     }

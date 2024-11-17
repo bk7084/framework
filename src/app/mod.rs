@@ -6,15 +6,18 @@ mod window;
 
 pub use window::*;
 
+use crate::render::rpass::BlinnPhongRenderPass;
+use crate::render::surface::Surface;
+use crate::render::RenderTarget;
 use crate::{
     app::command::Command,
     compute::SunlightScore,
     core::{
         camera::{Camera, Projection},
         mesh::{Mesh, MeshBundle},
-        Alignment, Color, ConcatOrder, FxHashMap, Light, SmlString,
+        Color, ConcatOrder, FxHashMap, Light, SmlString,
     },
-    render::{rpass::BlinnPhongRenderPass, surface::Surface, GpuContext, RenderTarget, Renderer},
+    render::{GpuContext, Renderer},
     scene::{Entity, NodeIdx, PyEntity, Scene},
 };
 use crossbeam_channel::Sender;
@@ -27,10 +30,13 @@ use pyo3::{
     types::{PyDict, PyTuple},
 };
 use std::sync::{Arc, RwLock};
+use winit::event::{Event, KeyEvent};
+use winit::event_loop::{ControlFlow, EventLoopBuilder};
+use winit::keyboard::PhysicalKey;
 use winit::{
     dpi::PhysicalSize,
-    event::{Event, KeyboardInput, WindowEvent},
-    event_loop::{EventLoop, EventLoopBuilder, EventLoopProxy},
+    event::WindowEvent,
+    event_loop::{EventLoop, EventLoopProxy},
     window::Window,
 };
 
@@ -74,8 +80,8 @@ impl PyAppState {
             wgpu::Features::POLYGON_MODE_LINE
                 | wgpu::Features::PUSH_CONSTANTS
                 | wgpu::Features::TEXTURE_BINDING_ARRAY
-                | wgpu::Features::STORAGE_RESOURCE_BINDING_ARRAY
-                | wgpu::Features::BUFFER_BINDING_ARRAY,
+                | wgpu::Features::STORAGE_RESOURCE_BINDING_ARRAY,
+            // | wgpu::Features::BUFFER_BINDING_ARRAY, //
         )));
         let (scene_cmd_sender, scene_cmd_receiver) = crossbeam_channel::unbounded::<Command>();
         let scene = Scene::new(scene_cmd_sender.clone(), scene_cmd_receiver);
@@ -413,14 +419,14 @@ impl PyAppState {
     pub fn process_input(&mut self, event: &WindowEvent) -> bool {
         profiling::scope!("process_input");
         match event {
-            WindowEvent::ModifiersChanged(state) => {
-                self.input.update_modifier_states(*state);
+            WindowEvent::ModifiersChanged(modifiers) => {
+                self.input.update_modifier_states(modifiers);
                 true
             }
             WindowEvent::KeyboardInput {
-                input:
-                    KeyboardInput {
-                        virtual_keycode: Some(keycode),
+                event:
+                    KeyEvent {
+                        physical_key: PhysicalKey::Code(keycode),
                         state,
                         ..
                     },
@@ -500,8 +506,8 @@ impl PyAppState {
             // Set a threshold to avoid jitter.
             if horiz.abs() > 0.0001 || vert.abs() > 0.0001 {
                 match (
-                    input.is_key_pressed(KeyCode::LShift),
-                    input.is_key_pressed(KeyCode::LControl),
+                    input.is_key_pressed(KeyCode::ShiftLeft),
+                    input.is_key_pressed(KeyCode::ControlLeft),
                 ) {
                     (true, true) => {
                         // Free rotate the camera around its own axis.
@@ -542,7 +548,7 @@ impl PyAppState {
 
         // Zoom in/out with the mouse wheel.
         if input.scroll_delta().is_normal() {
-            let scale = if input.is_key_pressed(KeyCode::LControl) {
+            let scale = if input.is_key_pressed(KeyCode::ControlLeft) {
                 10.0
             } else {
                 1.0
@@ -563,7 +569,16 @@ impl PyAppState {
 
 #[pyfunction]
 pub fn run_main_loop(mut app: PyAppState, builder: PyWindowBuilder) {
-    let event_loop = EventLoopBuilder::<UserEvent<()>>::with_user_event().build();
+    let event_loop = EventLoopBuilder::<UserEvent<()>>::with_user_event()
+        .build()
+        .unwrap();
+
+    // A helper struct to make sure the window and surface are all
+    // moved together.
+    struct WinSurf<'a> {
+        pub window: &'a Window,
+        pub surface: Surface<'a>,
+    }
 
     // Create the displaying window.
     let window = app.create_window(&event_loop, builder);
@@ -577,88 +592,110 @@ pub fn run_main_loop(mut app: PyAppState, builder: PyWindowBuilder) {
     // Ready to present the window.
     window.set_visible(true);
 
-    event_loop.run(move |event, _, control_flow| {
-        // ControlFlow::Poll continuously runs the event loop, even if the OS hasn't
-        // dispatched any events.
-        control_flow.set_poll();
+    let mut win_surf = WinSurf {
+        window: &window,
+        surface,
+    };
 
-        match event {
-            Event::UserEvent(_) => {
-                // todo
-            }
-            Event::WindowEvent {
-                ref event,
-                window_id,
-            } if window_id == win_id => {
-                if !app.process_input(event) {
-                    match event {
-                        WindowEvent::CloseRequested => {
-                            control_flow.set_exit();
-                        }
-                        WindowEvent::Resized(sz) => {
-                            if surface.resize(&context.device, sz.width, sz.height) {
-                                // Dispatch the resize event.
-                                app.dispatch_resize_event(sz.width, sz.height);
-                                // TODO: update camera aspect ratio
+    event_loop
+        .run(move |event, evlp| {
+            // ControlFlow::Poll continuously runs the event loop, even if the OS hasn't
+            // dispatched any events.
+            evlp.set_control_flow(ControlFlow::Poll);
+
+            match event {
+                Event::UserEvent(_) => {
+                    // todo
+                }
+                Event::WindowEvent {
+                    ref event,
+                    window_id,
+                } if window_id == win_id => {
+                    if !app.process_input(event) {
+                        match event {
+                            WindowEvent::CloseRequested => {
+                                evlp.exit();
                             }
+                            WindowEvent::Resized(sz) => {
+                                if win_surf
+                                    .surface
+                                    .resize(&context.device, sz.width, sz.height)
+                                {
+                                    // Dispatch the resize event.
+                                    app.dispatch_resize_event(sz.width, sz.height);
+                                    // TODO: update camera aspect ratio
+                                }
+                            }
+                            WindowEvent::ScaleFactorChanged { .. } => {
+                                if win_surf.surface.resize(
+                                    &context.device,
+                                    win_surf.window.inner_size().width,
+                                    win_surf.window.inner_size().height,
+                                ) {
+                                    // Dispatch the resize event.
+                                    app.dispatch_resize_event(
+                                        win_surf.window.inner_size().width,
+                                        win_surf.window.inner_size().height,
+                                    );
+                                }
+                            }
+                            WindowEvent::RedrawRequested => {
+                                // Grab a frame from the surface.
+                                let frame = win_surf
+                                    .surface
+                                    .get_current_texture()
+                                    .expect("Failed to get a frame from the surface");
+                                let target = RenderTarget {
+                                    size: frame.texture.size(),
+                                    view: frame.texture.create_view(&Default::default()),
+                                    format: win_surf.surface.format(),
+                                };
+
+                                let scene = app.scene.read().unwrap();
+                                match app.renderer.write().unwrap().render(
+                                    &scene,
+                                    &target,
+                                    &mut blph_render_pass,
+                                ) {
+                                    Ok(_) => {}
+                                    Err(
+                                        wgpu::SurfaceError::Lost | wgpu::SurfaceError::Outdated,
+                                    ) => {
+                                        win_surf.surface.resize(
+                                            &context.device,
+                                            win_surf.surface.width(),
+                                            win_surf.surface.height(),
+                                        );
+                                    }
+                                    Err(wgpu::SurfaceError::OutOfMemory) => {
+                                        evlp.exit();
+                                    }
+                                    Err(e) => eprintln!("{:?}", e),
+                                }
+
+                                frame.present();
+                            }
+                            _ => {}
                         }
-                        WindowEvent::ScaleFactorChanged { new_inner_size, .. } => {
-                            surface.resize(
-                                &context.device,
-                                new_inner_size.width,
-                                new_inner_size.height,
-                            );
+                        if app.input.is_key_pressed(KeyCode::Escape) {
+                            evlp.exit();
                         }
-                        _ => {}
-                    }
-                    if app.input.is_key_pressed(KeyCode::Escape) {
-                        control_flow.set_exit();
                     }
                 }
-            }
-            Event::RedrawRequested(window_id) if window_id == win_id => {
-                // Grab a frame from the surface.
-                let frame = surface
-                    .get_current_texture()
-                    .expect("Failed to get a frame from the surface");
-                let target = RenderTarget {
-                    size: frame.texture.size(),
-                    view: frame.texture.create_view(&Default::default()),
-                    format: surface.format(),
-                };
-
-                let scene = app.scene.read().unwrap();
-                match app
-                    .renderer
-                    .write()
-                    .unwrap()
-                    .render(&scene, &target, &mut blph_render_pass)
-                {
-                    Ok(_) => {}
-                    Err(wgpu::SurfaceError::Lost | wgpu::SurfaceError::Outdated) => {
-                        surface.resize(&context.device, surface.width(), surface.height());
-                    }
-                    Err(wgpu::SurfaceError::OutOfMemory) => {
-                        control_flow.set_exit();
-                    }
-                    Err(e) => eprintln!("{:?}", e),
+                // The main event loop has been cleared and will not be processed
+                // again until the next event needs to be handled.
+                Event::AboutToWait => {
+                    app.curr_time = std::time::Instant::now();
+                    let dt = app.delta_time();
+                    app.prev_time = app.curr_time;
+                    let t = app.start_time.elapsed().as_secs_f32();
+                    app.update(win_surf.surface.size(), dt, t);
+                    app.prepare();
+                    win_surf.window.request_redraw();
                 }
-
-                frame.present();
+                // Otherwise, just let the event pass through.
+                _ => {}
             }
-            // The main event loop has been cleared and will not be processed
-            // again until the next event needs to be handled.
-            Event::MainEventsCleared => {
-                app.curr_time = std::time::Instant::now();
-                let dt = app.delta_time();
-                app.prev_time = app.curr_time;
-                let t = app.start_time.elapsed().as_secs_f32();
-                app.update(surface.size(), dt, t);
-                app.prepare();
-                window.request_redraw();
-            }
-            // Otherwise, just let the event pass through.
-            _ => {}
-        }
-    });
+        })
+        .expect("Failed to run the main loop");
 }

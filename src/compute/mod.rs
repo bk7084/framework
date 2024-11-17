@@ -254,7 +254,9 @@ impl SunlightScore {
             label: Some("compute_pipeline"),
             layout: Some(&compute_pipeline_layout),
             module: &cpass_shader,
-            entry_point: "main",
+            entry_point: Some("main"),
+            compilation_options: Default::default(),
+            cache: None,
         });
 
         let rpass_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
@@ -281,7 +283,8 @@ impl SunlightScore {
             layout: Some(&rpass_pipeline_layout),
             vertex: wgpu::VertexState {
                 module: &rpass_shader,
-                entry_point: "vs_main",
+                entry_point: Some("vs_main"),
+                compilation_options: Default::default(),
                 buffers: &[wgpu::VertexBufferLayout {
                     array_stride: std::mem::size_of::<[f32; 3]>() as u64,
                     step_mode: wgpu::VertexStepMode::Vertex,
@@ -294,7 +297,8 @@ impl SunlightScore {
             },
             fragment: Some(wgpu::FragmentState {
                 module: &rpass_shader,
-                entry_point: "fs_main",
+                entry_point: Some("fs_main"),
+                compilation_options: Default::default(),
                 targets: &[Some(wgpu::ColorTargetState {
                     format: wgpu::TextureFormat::Rgba8Unorm,
                     blend: None,
@@ -315,6 +319,7 @@ impl SunlightScore {
                 alpha_to_coverage_enabled: false,
             },
             multiview: None,
+            cache: None,
         });
 
         Self {

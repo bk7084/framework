@@ -8,7 +8,7 @@ use crate::{
 pub use blph::*;
 use bytemuck::{Pod, Zeroable};
 use glam::Mat4;
-use std::{num::NonZeroU32, ops::Deref};
+use std::num::NonZeroU32;
 
 crate::impl_size_constant!(
     Globals,
@@ -113,11 +113,9 @@ pub struct GlobalsBindGroup {
     pub buffer: wgpu::Buffer,
 }
 
-impl Deref for GlobalsBindGroup {
-    type Target = wgpu::BindGroup;
-
-    fn deref(&self) -> &Self::Target {
-        &self.group
+impl<'a> Into<Option<&'a wgpu::BindGroup>> for &'a GlobalsBindGroup {
+    fn into(self) -> Option<&'a wgpu::BindGroup> {
+        Some(&self.group)
     }
 }
 
@@ -142,17 +140,15 @@ pub struct LocalsBindGroup<L: InstanceLocals> {
     _marker: std::marker::PhantomData<[L]>,
 }
 
-impl<L: InstanceLocals> Deref for LocalsBindGroup<L> {
-    type Target = wgpu::BindGroup;
-
-    fn deref(&self) -> &Self::Target {
-        &self.group
-    }
-}
-
 impl<L: InstanceLocals> LocalsBindGroup<L> {
     /// Initial instance capacity for mesh entities.
     pub const INITIAL_INSTANCE_CAPACITY: usize = 1024;
+}
+
+impl<'a, L: InstanceLocals> Into<Option<&'a wgpu::BindGroup>> for &'a LocalsBindGroup<L> {
+    fn into(self) -> Option<&'a wgpu::BindGroup> {
+        Some(&self.group)
+    }
 }
 
 /// Light information for the shader.
@@ -209,11 +205,9 @@ pub struct LightsBindGroup {
     lights: LightArray,
 }
 
-impl Deref for LightsBindGroup {
-    type Target = wgpu::BindGroup;
-
-    fn deref(&self) -> &Self::Target {
-        &self.group
+impl<'a> Into<Option<&'a wgpu::BindGroup>> for &'a LightsBindGroup {
+    fn into(self) -> Option<&'a wgpu::BindGroup> {
+        Some(&self.group)
     }
 }
 

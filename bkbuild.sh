@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/bin/env bash
 
 # Check if a command exists
 command_exists() {
@@ -20,38 +20,76 @@ check_rust_toolchain() {
   fi
 }
 
+# Resolve a relative path to an absolute path
+resolve_path() {
+  echo "$(cd "$1" && pwd)"
+}
+
 # Check if the virtual environment path is valid
 is_valid_venv_path() {
   local venv_path=$1
+  echo $venv_path
   [ -d "$venv_path" ] && [ -f "$venv_path/bin/activate" ] && [ -d "$venv_path/lib" ]
+}
+
+# List all virtual environments in the current directory
+list_virtual_envs() {
+  echo "Searching for virtual environments in the current directory..."
+  local venvs=$(find . -maxdepth 1 -type d -name ".*" -exec test -e "{}/bin/activate" \; -print)
+  if [ -z "$venvs" ]; then
+    echo "No virtual environments found."
+  else
+    echo "Virtual environments found:"
+    echo "$venvs"
+  fi
+}
+
+create_virtual_env() {
+  while true; do
+    read -p "Enter a name for the new virtual environment: " venv_name
+    if [[ "$venv_name" != .* ]]; then
+      venv_name=".$venv_name"
+    fi
+
+    if [ -d "$venv_name" ]; then
+      echo "Error: A virtual environment with the name '$venv_name' already exists. Please choose a different name."
+    else
+      break
+    fi
+  done
+
+  read -p "Enter the desired Python version for the virtual environment (>= 3.9): " python_version
+  if command_exists "python$python_version"; then
+    python -m venv .venv
+    source .venv/bin/activate
+    echo "Virtual environment (.venv) created and activated."
+    pip install -r requirements-dev.txt
+  else
+    echo "Error: Python version $python_version is not installed."
+    exit 1
+  fi
 }
 
 # Check if the Python toolchain is installed
 check_python_toolchain() {
   if [ -n "$VIRTUAL_ENV" ]; then
-    echo "Already in a virtual environment."
+    echo "Already in a virtual environment: $VIRTUAL_ENV"
   else
     read -p "You are not in a virtual environment. Do you want to load an existing one or create a new one? (load/create/n): " choice
     if [ "$choice" == "load" ]; then
+      list_virtual_envs
       read -p "Enter the path to the existing virtual environment: " venv_path
       if is_valid_venv_path "$venv_path"; then
+        venv_path=$(resolve_path "$venv_path")
+        echo "Activating virtual environment '$venv_path'..."
         source "$venv_path/bin/activate" || (echo "Error: Unable to activate the virtual environment." && exit 1)
-        echo "Virtual environment loaded."
+        echo "Virtual environment '$venv_path' loaded."
       else
         echo "Error: Invalid virtual environment path."
         exit 1
       fi
     elif [ "$choice" == "create" ]; then
-      read -p "Enter the desired Python version for the virtual environment (>= 3.9): " python_version
-      if command_exists "python$python_version"; then
-        python -m venv .venv
-        source .venv/bin/activate
-        echo "Virtual environment created and activated."
-        pip install -r requirements-dev.txt
-      else
-        echo "Error: Python version $python_version is not installed."
-        exit 1
-      fi
+      create_virtual_env
     else
       echo "You need to create or load the virtual environment yourself."
       exit 1

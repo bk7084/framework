@@ -103,8 +103,9 @@ impl GpuContext {
                 .request_device(
                     &wgpu::DeviceDescriptor {
                         label: Some("BK7084RS GPU Logical Device"),
-                        features,
-                        limits: limits.clone(),
+                        required_features: features,
+                        required_limits: limits.clone(),
+                        memory_hints: Default::default(),
                     },
                     None,
                 )

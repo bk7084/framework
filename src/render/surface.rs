@@ -7,15 +7,13 @@ use winit::window::Window;
 /// Wraps a `wgpu::Surface` and its configuration.
 pub struct Surface<'w> {
     /// Surface created from the window.
-    pub inner: wgpu::Surface,
+    pub inner: wgpu::Surface<'w>,
     /// Configuration of the surface (size, format, etc.).
     pub config: wgpu::SurfaceConfiguration,
-    /// Phantom data to tie the lifetime of the surface to the window.
-    _marker: std::marker::PhantomData<&'w ()>,
 }
 
 impl<'w> Deref for Surface<'w> {
-    type Target = wgpu::Surface;
+    type Target = wgpu::Surface<'w>;
 
     fn deref(&self) -> &Self::Target {
         &self.inner
@@ -62,7 +60,7 @@ impl<'w> Surface<'w> {
 
 impl<'w> Surface<'w> {
     /// Creates a new surface from a window and configures it.
-    pub fn new(context: &GpuContext, window: &Window) -> Self {
+    pub fn new(context: &GpuContext, window: &'w Window) -> Self {
         profiling::scope!("Surface::new");
         let surface = unsafe { context.instance.create_surface(window).unwrap() };
         let caps = surface.get_capabilities(&context.adapter);
@@ -82,6 +80,7 @@ impl<'w> Surface<'w> {
             width: window.inner_size().width,
             height: window.inner_size().height,
             present_mode: wgpu::PresentMode::AutoVsync,
+            desired_maximum_frame_latency: 2,
             alpha_mode: wgpu::CompositeAlphaMode::Auto,
             view_formats: vec![],
         };
@@ -91,7 +90,6 @@ impl<'w> Surface<'w> {
         Self {
             inner: surface,
             config,
-            _marker: Default::default(),
         }
     }
 

@@ -18,26 +18,26 @@ debug-sunlight-map = []
 
 [dependencies]
 arrayvec = "0.7"
-bytemuck = {  version = "1", features = ["derive"] }
+bytemuck = { version = "1", features = ["derive"] }
 cfg-if = "1"
 crossbeam-channel = "0.5"
-env_logger = "0.10"
-image = "0.24"
+env_logger = "0.11"
+image = "0.25"
 flume = "0.11"
-glam = {  version = "0.24", features = ["bytecheck"] }
+glam = { version = "0.29", features = ["bytecheck"] }
 legion = { git = "https://github.com/matthiascy/legion.git", branch = "master" }
 log = "0.4"
 numpy = "0.20"
-pollster = "0.3"
+pollster = "0.4"
 pyo3 = { version = "0.20", features = ["extension-module", "generate-import-lib"] }
 profiling = "1.0"
 range-alloc = "0.1"
-rustc-hash = "1"
+rustc-hash = "2.0"
 static_assertions = "1"
 smartstring = "1"
 tobj = { git = "https://github.com/matthiascy/tobj.git", branch = "master" }
-winit = "0.28"
-wgpu = "0.18"
+winit = { version = "0.29", features = ["rwh_05"] }
+wgpu = "23.0"
 
 [target.'cfg(target_os = "macos")']
 rustflags = ["-C", "link-arg=-undefined", "-C", "link-arg=dynamic_lookup"]
