@@ -37,7 +37,7 @@ static_assertions = "1"
 smartstring = "1"
 tobj = { git = "https://github.com/matthiascy/tobj.git", branch = "master" }
 winit = { version = "0.29", features = ["rwh_05"] }
-wgpu = "23.0"
+wgpu = { version = "23.0", features = ["vulkan-portability"] }
 
 [target.'cfg(target_os = "macos")']
 rustflags = ["-C", "link-arg=-undefined", "-C", "link-arg=dynamic_lookup"]
