@@ -1,4 +1,4 @@
-#!/bin/env bash
+#!/bin/bash
 
 # Check if a command exists
 command_exists() {
