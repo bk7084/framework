@@ -80,8 +80,8 @@ impl PyAppState {
             wgpu::Features::POLYGON_MODE_LINE
                 | wgpu::Features::PUSH_CONSTANTS
                 | wgpu::Features::TEXTURE_BINDING_ARRAY
-                | wgpu::Features::STORAGE_RESOURCE_BINDING_ARRAY
-                | wgpu::Features::BUFFER_BINDING_ARRAY,
+                | wgpu::Features::STORAGE_RESOURCE_BINDING_ARRAY,
+            //    | wgpu::Features::BUFFER_BINDING_ARRAY,
         )));
         let (scene_cmd_sender, scene_cmd_receiver) = crossbeam_channel::unbounded::<Command>();
         let scene = Scene::new(scene_cmd_sender.clone(), scene_cmd_receiver);
