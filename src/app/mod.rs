@@ -80,8 +80,8 @@ impl PyAppState {
             wgpu::Features::POLYGON_MODE_LINE
                 | wgpu::Features::PUSH_CONSTANTS
                 | wgpu::Features::TEXTURE_BINDING_ARRAY
-                | wgpu::Features::STORAGE_RESOURCE_BINDING_ARRAY,
-            // | wgpu::Features::BUFFER_BINDING_ARRAY, //
+                | wgpu::Features::STORAGE_RESOURCE_BINDING_ARRAY
+                | wgpu::Features::BUFFER_BINDING_ARRAY,
         )));
         let (scene_cmd_sender, scene_cmd_receiver) = crossbeam_channel::unbounded::<Command>();
         let scene = Scene::new(scene_cmd_sender.clone(), scene_cmd_receiver);
@@ -586,7 +586,7 @@ pub fn run_main_loop(mut app: PyAppState, builder: PyWindowBuilder) {
     let context = app.context.clone();
 
     // Create the surface to render to.
-    let mut surface = Surface::new(&context, &window);
+    let surface = Surface::new(&context, &window);
     let mut blph_render_pass =
         BlinnPhongRenderPass::new(&context.device, &context.limits, surface.format());
     // Ready to present the window.
@@ -596,13 +596,12 @@ pub fn run_main_loop(mut app: PyAppState, builder: PyWindowBuilder) {
         window: &window,
         surface,
     };
+    // ControlFlow::Poll continuously runs the event loop, even if the OS hasn't
+    // dispatched any events.
+    event_loop.set_control_flow(ControlFlow::Poll);
 
     event_loop
         .run(move |event, evlp| {
-            // ControlFlow::Poll continuously runs the event loop, even if the OS hasn't
-            // dispatched any events.
-            evlp.set_control_flow(ControlFlow::Poll);
-
             match event {
                 Event::UserEvent(_) => {
                     // todo

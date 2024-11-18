@@ -90,7 +90,6 @@ impl RenderParams {
 pub struct Renderer {
     pub device: Arc<wgpu::Device>,
     pub queue: Arc<wgpu::Queue>,
-    features: wgpu::Features,
     limits: wgpu::Limits,
     pub(crate) meshes: GpuMeshAssets,
     textures: TextureAssets,
@@ -126,7 +125,6 @@ impl Renderer {
         profiling::scope!("Renderer::new");
         let device = context.device.clone();
         let queue = context.queue.clone();
-        let features = context.features;
         let limits = context.limits.clone();
         let meshes = GpuMeshAssets::new(&device);
         let textures = TextureAssets::new(&context.device, &context.queue);
@@ -168,7 +166,6 @@ impl Renderer {
         Self {
             device,
             queue,
-            features,
             limits,
             meshes,
             material_bundles,

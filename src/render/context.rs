@@ -107,7 +107,7 @@ impl GpuContext {
                         required_limits: limits.clone(),
                         memory_hints: Default::default(),
                     },
-                    None,
+                    Some(std::path::Path::new("./bk7084_trace.log")),
                 )
                 .await
                 .expect("Failed to create device")

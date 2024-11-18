@@ -62,7 +62,7 @@ impl<'w> Surface<'w> {
     /// Creates a new surface from a window and configures it.
     pub fn new(context: &GpuContext, window: &'w Window) -> Self {
         profiling::scope!("Surface::new");
-        let surface = unsafe { context.instance.create_surface(window).unwrap() };
+        let surface = context.instance.create_surface(window).unwrap();
         let caps = surface.get_capabilities(&context.adapter);
         let mut format = caps.formats[0];
         for fmt in caps.formats {
@@ -80,7 +80,7 @@ impl<'w> Surface<'w> {
             width: window.inner_size().width,
             height: window.inner_size().height,
             present_mode: wgpu::PresentMode::AutoVsync,
-            desired_maximum_frame_latency: 2,
+            desired_maximum_frame_latency: 3,
             alpha_mode: wgpu::CompositeAlphaMode::Auto,
             view_formats: vec![],
         };
