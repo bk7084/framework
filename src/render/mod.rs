@@ -10,8 +10,10 @@ mod context;
 mod pipeline;
 pub use pipeline::*;
 pub mod rpass;
+mod sampler;
 pub mod surface;
 mod target;
+pub use sampler::*;
 
 pub use target::*;
 
@@ -29,7 +31,6 @@ use crate::{
     scene::{NodeIdx, Scene},
 };
 pub use context::*;
-
 // TODO: render bundles enables us to create N uniform buffers and dispatch N
 // render calls, which is a bit slow if we iterate over all of them every frame,
 // but render bundles can speed this up.
@@ -96,6 +97,7 @@ pub struct Renderer {
 
     material_bundles: MaterialBundleAssets,
     texture_bundles: TextureBundleAssets,
+    // samplers: FxHashMap<SmlString, wgpu::Sampler>,
 
     // TODO: remove these default bundles, make them inside the assets.
     default_material_bundle: Handle<MaterialBundle>,
@@ -103,12 +105,11 @@ pub struct Renderer {
     aesthetic_bundles: Vec<AestheticBundle>,
     /// Nodes that use instancing for each mesh bundle.
     pub(crate) instancing: FxHashMap<MeshBundle, Vec<NodeIdx>>,
-
-    samplers: FxHashMap<SmlString, wgpu::Sampler>,
+    samplers: FxHashMap<SmlString, Sampler>,
     params: RenderParams,
     cmd_receiver: Receiver<Command>,
 
-    // Variable controling the scale of the orthographic projection matrix
+    // Variable controlling the scale of the orthographic projection matrix
     // of the shadow map.
     //
     // TODO: shadow map projection should be automatically calculated according
@@ -128,37 +129,14 @@ impl Renderer {
         let limits = context.limits.clone();
         let meshes = GpuMeshAssets::new(&device);
         let textures = TextureAssets::new(&context.device, &context.queue);
-        let mut samplers = FxHashMap::default();
-        let default_sampler = context.device.create_sampler(&wgpu::SamplerDescriptor {
-            label: Some("sampler_default"),
-            address_mode_u: wgpu::AddressMode::Repeat,
-            address_mode_v: wgpu::AddressMode::Repeat,
-            address_mode_w: wgpu::AddressMode::Repeat,
-            mag_filter: wgpu::FilterMode::Linear,
-            min_filter: wgpu::FilterMode::Linear,
-            mipmap_filter: wgpu::FilterMode::Linear,
-            ..Default::default()
-        });
-        let depth_sampler = context.device.create_sampler(&wgpu::SamplerDescriptor {
-            label: Some("sampler_depth"),
-            address_mode_u: wgpu::AddressMode::ClampToEdge,
-            address_mode_v: wgpu::AddressMode::ClampToEdge,
-            address_mode_w: wgpu::AddressMode::ClampToEdge,
-            mag_filter: wgpu::FilterMode::Nearest,
-            min_filter: wgpu::FilterMode::Nearest,
-            mipmap_filter: wgpu::FilterMode::Nearest,
-            compare: Some(wgpu::CompareFunction::LessEqual),
-            ..Default::default()
-        });
-        samplers.insert(SmlString::from("default"), default_sampler);
-        samplers.insert(SmlString::from("default_depth"), depth_sampler);
+        let samplers = Self::create_samplers(&context.device);
         let mut material_bundles = MaterialBundleAssets::new();
         let default_material_bundle =
             material_bundles.add(MaterialBundle::default(&context.device));
         let mut texture_bundles = TextureBundleAssets::new();
         let default_texture_bundle = texture_bundles.add(TextureBundle {
             textures: vec![textures.default_texture()],
-            samplers: vec!["default".into()],
+            samplers: vec!["linear".into()],
             bind_group: None,
             sampler_index_buffer: None,
         });
@@ -189,6 +167,60 @@ impl Renderer {
             texture_bundles,
             light_proj_scale: 1.0,
         }
+    }
+
+    fn create_samplers(device: &wgpu::Device) -> FxHashMap<SmlString, Sampler> {
+        let mut samplers = FxHashMap::default();
+        samplers.insert(
+            SmlString::from("linear"),
+            Sampler::new(
+                &device,
+                wgpu::SamplerDescriptor {
+                    label: Some("linear_repeat_sampler"),
+                    address_mode_u: wgpu::AddressMode::Repeat,
+                    address_mode_v: wgpu::AddressMode::Repeat,
+                    address_mode_w: wgpu::AddressMode::Repeat,
+                    mag_filter: wgpu::FilterMode::Linear,
+                    min_filter: wgpu::FilterMode::Linear,
+                    mipmap_filter: wgpu::FilterMode::Linear,
+                    ..Default::default()
+                },
+            ),
+        );
+        samplers.insert(
+            SmlString::from("nearest"),
+            Sampler::new(
+                &device,
+                wgpu::SamplerDescriptor {
+                    label: Some("nearest_repeat_sampler"),
+                    address_mode_u: wgpu::AddressMode::Repeat,
+                    address_mode_v: wgpu::AddressMode::Repeat,
+                    address_mode_w: wgpu::AddressMode::Repeat,
+                    mag_filter: wgpu::FilterMode::Nearest,
+                    min_filter: wgpu::FilterMode::Nearest,
+                    mipmap_filter: wgpu::FilterMode::Nearest,
+                    ..Default::default()
+                },
+            ),
+        );
+        samplers.insert(
+            SmlString::from("depth"),
+            Sampler::new(
+                &device,
+                wgpu::SamplerDescriptor {
+                    label: Some("depth_sampler"),
+                    address_mode_u: wgpu::AddressMode::ClampToEdge,
+                    address_mode_v: wgpu::AddressMode::ClampToEdge,
+                    address_mode_w: wgpu::AddressMode::ClampToEdge,
+                    mag_filter: wgpu::FilterMode::Nearest,
+                    min_filter: wgpu::FilterMode::Nearest,
+                    mipmap_filter: wgpu::FilterMode::Nearest,
+                    compare: Some(wgpu::CompareFunction::LessEqual),
+                    ..Default::default()
+                },
+            ),
+        );
+        samplers
     }
 
     /// Uploads a mesh to the GPU, creates `GpuMesh` from `Mesh` then adds it to
@@ -397,7 +429,7 @@ impl Renderer {
 
         let mut sampler_indices = [0u32; BlinnPhongRenderPass::MAX_TEXTURE_ARRAY_LEN];
         let default_texture = self.textures.get(self.textures.default_texture()).unwrap();
-        let default_sampler = self.samplers.get("default").unwrap();
+        let default_sampler = self.samplers.get("linear").unwrap();
         let default_texture_view = &default_texture.view;
         // Create bind groups for each texture bundle.
         for bundle in self.texture_bundles.iter_mut() {
@@ -408,7 +440,8 @@ impl Renderer {
 
             // Populate texture views and samplers with default values.
             let mut views = [default_texture_view; BlinnPhongRenderPass::MAX_TEXTURE_ARRAY_LEN];
-            let mut samplers = [default_sampler; BlinnPhongRenderPass::MAX_SAMPLER_ARRAY_LEN];
+            let mut samplers =
+                [&default_sampler.sampler; BlinnPhongRenderPass::MAX_SAMPLER_ARRAY_LEN];
 
             for (i, hdl) in bundle.textures.iter().enumerate() {
                 let texture = self.textures.get(*hdl).unwrap();

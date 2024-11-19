@@ -10,7 +10,6 @@ use crate::core::{
 pub use handle::*;
 use std::path::Path;
 use tobj::Material;
-use wgpu::TextureFormat;
 
 /// Trait for representing an asset.
 pub trait Asset: Send + Sync {}
@@ -253,6 +252,10 @@ impl Assets<Texture, Vec<Option<Texture>>> {
         }
     }
 
+    /// Loads a texture from bytes.
+    ///
+    /// If the format is not specified, it defaults to `wgpu::TextureFormat::Rgba8UnormSrgb`.
+    /// The sampler is set to `linear`.
     pub fn load_from_bytes(
         &mut self,
         device: &wgpu::Device,
@@ -277,7 +280,7 @@ impl Assets<Texture, Vec<Option<Texture>>> {
             mip_level_count: 1,
             sample_count: 1,
             dimension: wgpu::TextureDimension::D2,
-            format: format.unwrap_or(TextureFormat::Rgba8UnormSrgb),
+            format: format.unwrap_or(wgpu::TextureFormat::Rgba8UnormSrgb),
             usage: wgpu::TextureUsages::COPY_DST | wgpu::TextureUsages::TEXTURE_BINDING,
             view_formats: &[],
         };
@@ -302,7 +305,7 @@ impl Assets<Texture, Vec<Option<Texture>>> {
             raw,
             view,
             size,
-            sampler: SmlString::from("default"),
+            sampler: SmlString::from("linear"),
         };
         self.add(texture)
     }
@@ -322,6 +325,7 @@ impl Assets<Texture, Vec<Option<Texture>>> {
     }
 }
 
+/// A collection of texture bundles, including textures and samplers.
 pub type TextureBundleAssets = Assets<TextureBundle, Vec<Option<TextureBundle>>>;
 
 impl Assets<TextureBundle, Vec<Option<TextureBundle>>> {

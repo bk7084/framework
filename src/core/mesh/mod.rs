@@ -6,7 +6,6 @@ use std::{
     path::{Path, PathBuf},
     sync::atomic::AtomicU64,
 };
-use wgpu::PrimitiveTopology;
 
 mod attribute;
 
@@ -173,7 +172,7 @@ pub struct VertexBufferLayout {
 }
 
 impl Mesh {
-    pub fn new(topology: PrimitiveTopology) -> Self {
+    pub fn new(topology: wgpu::PrimitiveTopology) -> Self {
         Self {
             name: SmlString::from(format!(
                 "mesh_{}",
@@ -188,7 +187,7 @@ impl Mesh {
         }
     }
 
-    pub fn new_with_name(name: &str, topology: PrimitiveTopology) -> Self {
+    pub fn new_with_name(name: &str, topology: wgpu::PrimitiveTopology) -> Self {
         Self {
             name: SmlString::from(name),
             topology,
@@ -262,7 +261,7 @@ impl Mesh {
         attributes.insert(VertexAttribute::POSITION, AttribContainer::new(&vertices));
         attributes.insert(VertexAttribute::NORMAL, AttribContainer::new(&normals));
         attributes.insert(VertexAttribute::UV, AttribContainer::new(&uvs));
-        let mut mesh = Mesh::new(PrimitiveTopology::TriangleList);
+        let mut mesh = Mesh::new(wgpu::PrimitiveTopology::TriangleList);
         mesh.attributes = attributes;
         mesh.indices = Some(Indices::U16(indices));
         mesh.compute_tangents();
@@ -311,7 +310,7 @@ impl Mesh {
         attributes.insert(VertexAttribute::POSITION, AttribContainer::new(&vertices));
         attributes.insert(VertexAttribute::NORMAL, AttribContainer::new(&normals));
         attributes.insert(VertexAttribute::UV, AttribContainer::new(&uvs));
-        let mut mesh = Mesh::new(PrimitiveTopology::TriangleList);
+        let mut mesh = Mesh::new(wgpu::PrimitiveTopology::TriangleList);
         mesh.attributes = attributes;
         mesh.indices = Some(Indices::U16(indices));
         mesh.compute_tangents();
@@ -378,7 +377,7 @@ impl Mesh {
         attributes.insert(VertexAttribute::NORMAL, AttribContainer::new(&normals));
         attributes.insert(VertexAttribute::UV, AttribContainer::new(&uvs));
         attributes.insert(VertexAttribute::TANGENT, AttribContainer::new(&tangents));
-        let mut mesh = Mesh::new(PrimitiveTopology::LineList);
+        let mut mesh = Mesh::new(wgpu::PrimitiveTopology::LineList);
         mesh.name = SmlString::from("bkfw_inner_grid");
         mesh.attributes = attributes;
         mesh.indices = Some(Indices::U16(indices));
@@ -447,7 +446,7 @@ impl Mesh {
         attributes.insert(VertexAttribute::POSITION, AttribContainer::new(&vertices));
         attributes.insert(VertexAttribute::NORMAL, AttribContainer::new(&normals));
         attributes.insert(VertexAttribute::UV, AttribContainer::new(&uvs));
-        let mut mesh = Mesh::new(PrimitiveTopology::TriangleList);
+        let mut mesh = Mesh::new(wgpu::PrimitiveTopology::TriangleList);
         mesh.attributes = attributes;
         mesh.indices = Some(Indices::U32(indices));
         mesh.compute_tangents();
@@ -475,7 +474,7 @@ impl Mesh {
         attributes.insert(VertexAttribute::POSITION, AttribContainer::new(&vertices));
         attributes.insert(VertexAttribute::NORMAL, AttribContainer::new(&normals));
         attributes.insert(VertexAttribute::UV, AttribContainer::new(&uvs));
-        let mut mesh = Mesh::new(PrimitiveTopology::TriangleList);
+        let mut mesh = Mesh::new(wgpu::PrimitiveTopology::TriangleList);
         mesh.attributes = attributes;
         mesh.indices = Some(Indices::U32(indices));
         mesh.compute_tangents();
@@ -586,7 +585,7 @@ impl Mesh {
         log::debug!("- Processed materials: {:?}", materials);
         log::debug!("- Loaded submeshes: {:?}", sub_meshes);
 
-        let mut mesh = Mesh::new(PrimitiveTopology::TriangleList);
+        let mut mesh = Mesh::new(wgpu::PrimitiveTopology::TriangleList);
         mesh.name = SmlString::from(path.as_ref().file_name().unwrap().to_str().unwrap());
         mesh.attributes = attributes;
         mesh.indices = if !indices.is_empty() {

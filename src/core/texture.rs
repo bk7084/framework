@@ -26,7 +26,7 @@ pub struct Texture {
     pub view: wgpu::TextureView,
     /// Size of the texture.
     pub size: wgpu::Extent3d,
-    /// Name of the sampler to be used by the texture.
+    /// The name of the sampler to be used by the texture.
     pub sampler: SmlString,
 }
 

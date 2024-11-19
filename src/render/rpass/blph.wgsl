@@ -103,6 +103,9 @@ struct VSOutput {
 @group(3) @binding(1) var<storage, read> texture_sampler_ids: array<u32>;
 @group(3) @binding(2) var samplers: binding_array<sampler>;
 
+//@group(3) @binding(2) var linear_sampler: sampler;
+//@group(3) @binding(3) var nearest_sampler: sampler;
+
 @group(4) @binding(0) var<storage, read> lights: LightArray;
 
 /* Sampling shadow map use depth comparision.  */

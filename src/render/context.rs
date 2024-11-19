@@ -71,6 +71,14 @@ impl GpuContext {
         let adapter = adapters.remove(0);
 
         let features = adapter.features;
+        log::info!(
+            "Max textures: {}",
+            adapter.limits.max_sampled_textures_per_shader_stage
+        );
+        log::info!(
+            "Max samplers: {}",
+            adapter.limits.max_samplers_per_shader_stage
+        );
 
         let mut desired_features = desired_features.unwrap_or_else(wgpu::Features::empty);
         log::debug!("Desired features: {:#?}", desired_features);
