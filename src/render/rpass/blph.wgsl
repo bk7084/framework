@@ -97,26 +97,12 @@ struct VSOutput {
 
 @group(0) @binding(0) var<uniform> globals: Globals;
 @group(1) @binding(0) var<storage, read> instances: array<Locals>;
-
 @group(2) @binding(0) var<storage, read> materials: array<Material>;
+@group(3) @binding(0) var<storage, read> lights: LightArray;
 
-// #if !constant_sized_binding_array
-@group(3) @binding(0) var textures: binding_array<texture_2d<f32>>;
-// #else
-@group(3) @binding(0) var textures: array<texture_2d<f32>, 64>;
-// #fi
-
-@group(3) @binding(1) var<storage, read> texture_sampler_ids: array<u32>;
-// #if !constant_sized_binding_array
-@group(3) @binding(2) var samplers: binding_array<sampler>;
-// #else
-@group(3) @binding(2) var samplers: array<sampler, 8>;
-
-
-//@group(3) @binding(2) var linear_sampler: sampler;
-//@group(3) @binding(3) var nearest_sampler: sampler;
-
-@group(4) @binding(0) var<storage, read> lights: LightArray;
+@group(4) @binding(0) var textures: binding_array<texture_2d<f32>>;
+@group(4) @binding(1) var<storage, read> texture_sampler_ids: array<u32>;
+@group(4) @binding(2) var samplers: binding_array<sampler>;
 
 /* Sampling shadow map use depth comparision.  */
 @group(5) @binding(0) var smap: binding_array<texture_depth_2d_array>;

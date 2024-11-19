@@ -471,8 +471,8 @@ impl BlinnPhongRenderPass {
                         &globals_bind_group.layout,
                         &locals_bind_group.layout,
                         &materials_bind_group_layout,
-                        &textures_bind_group_layout,
                         &lights_bind_group.layout,
+                        &textures_bind_group_layout,
                         &shadow_maps.bind_group_layout,
                     ],
                     push_constant_ranges: &[wgpu::PushConstantRange {
@@ -825,7 +825,7 @@ impl BlinnPhongRenderPass {
             // Bind instance locals.
             render_pass.set_bind_group(1, &self.locals_bind_group, &[]);
             // Bind lights storage buffer.
-            render_pass.set_bind_group(4, &self.lights_bind_group, &[]);
+            render_pass.set_bind_group(3, &self.lights_bind_group, &[]);
 
             // Preparing locals for each mesh.
             let mut locals = vec![Locals::identity(); n_inst as usize];
@@ -917,7 +917,7 @@ impl BlinnPhongRenderPass {
                             // Bind material.
                             render_pass.set_bind_group(2, &mtls.bind_group, &[]);
                             // Bind textures.
-                            render_pass.set_bind_group(3, texs.bind_group.as_ref().unwrap(), &[]);
+                            render_pass.set_bind_group(4, texs.bind_group.as_ref().unwrap(), &[]);
 
                             // TODO: ad-hoc solution for line meshes. Need to refactor.
                             if mesh.topology == wgpu::PrimitiveTopology::LineList {

@@ -565,6 +565,6 @@ impl BlinnPhongRenderPass {
     pub const MAX_LIGHTS: usize = Self::MAX_DIR_LIGHTS + Self::MAX_PNT_LIGHTS;
     /// Maximum number of textures in a texture binding array.
     pub const MAX_TEXTURE_ARRAY_LEN: usize = 64;
-    /// Maximum number of texture sampler in a texture sampler binding array.
+    /// Maximum number of texture sampler in a texture sampler bindingr array.
     pub const MAX_SAMPLER_ARRAY_LEN: usize = 8;
 }

@@ -81,18 +81,22 @@ impl GpuContext {
             "Max samplers: {}",
             adapter.limits.max_samplers_per_shader_stage
         );
+        let constant_sized_binding_array = !features.contains(wgpu::Features::BUFFER_BINDING_ARRAY);
+        log::info!(
+            "Constant sized binding array: {}",
+            constant_sized_binding_array
+        );
 
         let mut desired_features = desired_features.unwrap_or_else(wgpu::Features::empty);
         log::debug!("Desired features: {:#?}", desired_features);
 
         // Only enable mappable primary buffers on macOS with unified memory
         // architecture.
-        #[cfg(not(all(target_os = "macos", target_arch = "aarch64")))]
+        #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
         if desired_features.contains(wgpu::Features::MAPPABLE_PRIMARY_BUFFERS) {
             desired_features.remove(wgpu::Features::MAPPABLE_PRIMARY_BUFFERS);
         }
 
-        let constant_sized_binding_array = !features.contains(wgpu::Features::BUFFER_BINDING_ARRAY);
         if !features.contains(desired_features) {
             for feat in desired_features.iter() {
                 if !features.contains(feat) {
