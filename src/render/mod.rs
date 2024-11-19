@@ -13,6 +13,8 @@ pub mod rpass;
 mod sampler;
 pub mod surface;
 mod target;
+pub mod util;
+
 pub use sampler::*;
 
 pub use target::*;

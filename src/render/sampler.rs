@@ -1,5 +1,3 @@
-use crate::core::SmlString;
-use rustc_hash::FxHashMap;
 use std::default::Default;
 use std::ops::Deref;
 

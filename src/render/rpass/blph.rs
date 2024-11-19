@@ -1,3 +1,5 @@
+use crate::render::util::preprocess_wgsl;
+use crate::render::GpuContext;
 use crate::{
     core::{
         camera::Camera,
@@ -16,6 +18,7 @@ use crate::{
 };
 use glam::{Mat4, Vec3};
 use legion::IntoQuery;
+use rustc_hash::FxHashMap;
 use std::num::{NonZeroU32, NonZeroU64};
 
 impl GlobalsBindGroup {
@@ -224,72 +227,90 @@ impl LightsBindGroup {
 
 impl BlinnPhongRenderPass {
     /// Creates a new blinn-phong shading render pass.
-    pub fn new(device: &wgpu::Device, limits: &wgpu::Limits, format: wgpu::TextureFormat) -> Self {
-        let shader_module = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-            label: Some("shading_shader_module"),
-            source: wgpu::ShaderSource::Wgsl(include_str!("blph.wgsl").into()),
-        });
+    pub fn new(context: &GpuContext, format: wgpu::TextureFormat) -> Self {
+        let mut conditions = FxHashMap::default();
+        conditions.insert(
+            "constant_sized_binding_array",
+            context.constant_sized_binding_array,
+        );
 
-        let globals_bind_group = GlobalsBindGroup::new(device);
-        let locals_bind_group = LocalsBindGroup::new(device);
-        let shadow_pass_locals_bind_group = LocalsBindGroup::new(device);
+        let blinn_phong_shader = preprocess_wgsl(include_str!("blph.wgsl"), &conditions);
 
-        let materials_bind_group_layout =
-            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-                label: Some("shading_materials_bind_group_layout"),
-                entries: &[wgpu::BindGroupLayoutEntry {
-                    binding: 0,
-                    visibility: wgpu::ShaderStages::VERTEX_FRAGMENT,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Storage { read_only: true },
-                        has_dynamic_offset: false,
-                        min_binding_size: wgpu::BufferSize::new(GpuMaterial::SIZE),
-                    },
-                    count: None,
-                }],
+        log::debug!("Blinn-Phong shading shader:\n{}", blinn_phong_shader);
+
+        let shader_module = context
+            .device
+            .create_shader_module(wgpu::ShaderModuleDescriptor {
+                label: Some("shading_shader_module"),
+                source: wgpu::ShaderSource::Wgsl(blinn_phong_shader.into()),
             });
 
-        let textures_bind_group_layout = texture_bundle_bind_group_layout(device);
+        let globals_bind_group = GlobalsBindGroup::new(&context.device);
+        let locals_bind_group = LocalsBindGroup::new(&context.device);
+        let shadow_pass_locals_bind_group = LocalsBindGroup::new(&context.device);
 
-        let lights_bind_group = LightsBindGroup::new(device);
+        let materials_bind_group_layout =
+            context
+                .device
+                .create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                    label: Some("shading_materials_bind_group_layout"),
+                    entries: &[wgpu::BindGroupLayoutEntry {
+                        binding: 0,
+                        visibility: wgpu::ShaderStages::VERTEX_FRAGMENT,
+                        ty: wgpu::BindingType::Buffer {
+                            ty: wgpu::BufferBindingType::Storage { read_only: true },
+                            has_dynamic_offset: false,
+                            min_binding_size: wgpu::BufferSize::new(GpuMaterial::SIZE),
+                        },
+                        count: None,
+                    }],
+                });
+
+        let textures_bind_group_layout = texture_bundle_bind_group_layout(&context.device);
+
+        let lights_bind_group = LightsBindGroup::new(&context.device);
 
         let mut pipelines = Pipelines::new();
 
         // Create shadow maps pass pipeline. This pipeline is used to evaluate
         // shadow maps for all meshes that cast shadows.
         {
-            let shader_module = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-                label: Some("shadow_maps_shader_module"),
-                source: wgpu::ShaderSource::Wgsl(include_str!("shadow.wgsl").into()),
-            });
-            let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-                label: Some("blinn_phong_shadow_maps_pipeline_layout"),
-                bind_group_layouts: &[&locals_bind_group.layout, &lights_bind_group.layout],
-                push_constant_ranges: &[wgpu::PushConstantRange {
-                    stages: wgpu::ShaderStages::VERTEX,
-                    range: 0..PConstsShadowPass::SIZE as u32,
-                }],
-            });
+            let shader_module = context
+                .device
+                .create_shader_module(wgpu::ShaderModuleDescriptor {
+                    label: Some("shadow_maps_shader_module"),
+                    source: wgpu::ShaderSource::Wgsl(include_str!("shadow.wgsl").into()),
+                });
+            let layout = context
+                .device
+                .create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                    label: Some("blinn_phong_shadow_maps_pipeline_layout"),
+                    bind_group_layouts: &[&locals_bind_group.layout, &lights_bind_group.layout],
+                    push_constant_ranges: &[wgpu::PushConstantRange {
+                        stages: wgpu::ShaderStages::VERTEX,
+                        range: 0..PConstsShadowPass::SIZE as u32,
+                    }],
+                });
             let (id, pipeline) =
-                Self::create_shadow_maps_pass_pipeline(device, &layout, &shader_module);
+                Self::create_shadow_maps_pass_pipeline(&context.device, &layout, &shader_module);
             pipelines.insert("shadow", id, pipeline);
         }
 
         let shadow_maps = {
-            let limits = limits;
+            // let limits = context.limits;
             let width = 1024;
             let height = 1024;
             let count = 1;
             debug_assert!(
-                width <= limits.max_texture_dimension_1d,
+                width <= context.limits.max_texture_dimension_1d,
                 "Shadow map width exceeds the limit."
             );
             debug_assert!(
-                height <= limits.max_texture_dimension_1d,
+                height <= context.limits.max_texture_dimension_1d,
                 "Shadow map height exceeds the limit."
             );
 
-            let layers_per_texture = limits.max_texture_array_layers;
+            let layers_per_texture = context.limits.max_texture_array_layers;
             let n_textures = (count + layers_per_texture - 1) / layers_per_texture;
             let last_texture_layers = count % layers_per_texture;
 
@@ -302,7 +323,7 @@ impl BlinnPhongRenderPass {
                     } else {
                         layers_per_texture
                     };
-                    let texture = device.create_texture(&wgpu::TextureDescriptor {
+                    let texture = context.device.create_texture(&wgpu::TextureDescriptor {
                         label: Some("shadow_maps_depth_texture"),
                         size: wgpu::Extent3d {
                             width,
@@ -334,7 +355,7 @@ impl BlinnPhongRenderPass {
             #[cfg(all(debug_assertions, feature = "debug-shadow-map"))]
             let storage_buffers = (0..count)
                 .map(|_| {
-                    device.create_buffer(&wgpu::BufferDescriptor {
+                    context.device.create_buffer(&wgpu::BufferDescriptor {
                         label: Some("shadow_maps_storage_buffer"),
                         size: (width * height * std::mem::size_of::<f32>() as u32) as u64,
                         usage: wgpu::BufferUsages::STORAGE
@@ -346,7 +367,7 @@ impl BlinnPhongRenderPass {
                 })
                 .collect::<Vec<_>>();
 
-            let depth_sampler = device.create_sampler(&wgpu::SamplerDescriptor {
+            let depth_sampler = context.device.create_sampler(&wgpu::SamplerDescriptor {
                 label: Some("shadow_maps_depth_sampler"),
                 address_mode_u: wgpu::AddressMode::ClampToEdge,
                 address_mode_v: wgpu::AddressMode::ClampToEdge,
@@ -359,27 +380,31 @@ impl BlinnPhongRenderPass {
             });
 
             let bind_group_layout =
-                device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-                    label: Some("shadow_maps_bind_group_layout"),
-                    entries: &[
-                        wgpu::BindGroupLayoutEntry {
-                            binding: 0,
-                            visibility: wgpu::ShaderStages::FRAGMENT,
-                            ty: wgpu::BindingType::Texture {
-                                multisampled: false,
-                                view_dimension: wgpu::TextureViewDimension::D2Array,
-                                sample_type: wgpu::TextureSampleType::Depth,
+                context
+                    .device
+                    .create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                        label: Some("shadow_maps_bind_group_layout"),
+                        entries: &[
+                            wgpu::BindGroupLayoutEntry {
+                                binding: 0,
+                                visibility: wgpu::ShaderStages::FRAGMENT,
+                                ty: wgpu::BindingType::Texture {
+                                    multisampled: false,
+                                    view_dimension: wgpu::TextureViewDimension::D2Array,
+                                    sample_type: wgpu::TextureSampleType::Depth,
+                                },
+                                count: NonZeroU32::new(n_textures),
                             },
-                            count: NonZeroU32::new(n_textures),
-                        },
-                        wgpu::BindGroupLayoutEntry {
-                            binding: 1,
-                            visibility: wgpu::ShaderStages::FRAGMENT,
-                            ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Comparison),
-                            count: None,
-                        },
-                    ],
-                });
+                            wgpu::BindGroupLayoutEntry {
+                                binding: 1,
+                                visibility: wgpu::ShaderStages::FRAGMENT,
+                                ty: wgpu::BindingType::Sampler(
+                                    wgpu::SamplerBindingType::Comparison,
+                                ),
+                                count: None,
+                            },
+                        ],
+                    });
 
             // Create the bind group for using the shadow maps in the main pass.
             let views = depth_textures
@@ -387,20 +412,22 @@ impl BlinnPhongRenderPass {
                 .map(|(_, view)| view)
                 .collect::<Vec<_>>();
 
-            let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-                label: Some("shadow_maps_bind_group"),
-                layout: &bind_group_layout,
-                entries: &[
-                    wgpu::BindGroupEntry {
-                        binding: 0,
-                        resource: wgpu::BindingResource::TextureViewArray(&views),
-                    },
-                    wgpu::BindGroupEntry {
-                        binding: 1,
-                        resource: wgpu::BindingResource::Sampler(&depth_sampler),
-                    },
-                ],
-            });
+            let bind_group = context
+                .device
+                .create_bind_group(&wgpu::BindGroupDescriptor {
+                    label: Some("shadow_maps_bind_group"),
+                    layout: &bind_group_layout,
+                    entries: &[
+                        wgpu::BindGroupEntry {
+                            binding: 0,
+                            resource: wgpu::BindingResource::TextureViewArray(&views),
+                        },
+                        wgpu::BindGroupEntry {
+                            binding: 1,
+                            resource: wgpu::BindingResource::Sampler(&depth_sampler),
+                        },
+                    ],
+                });
 
             let shadow_map_views = (0..count)
                 .map(|i| {
@@ -436,26 +463,28 @@ impl BlinnPhongRenderPass {
 
         // Create main render pass pipeline.
         {
-            let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-                label: Some("blinn_phong_shading_pipeline_layout"),
-                bind_group_layouts: &[
-                    &globals_bind_group.layout,
-                    &locals_bind_group.layout,
-                    &materials_bind_group_layout,
-                    &textures_bind_group_layout,
-                    &lights_bind_group.layout,
-                    &shadow_maps.bind_group_layout,
-                ],
-                push_constant_ranges: &[wgpu::PushConstantRange {
-                    stages: wgpu::ShaderStages::VERTEX_FRAGMENT,
-                    range: 0..PConsts::SIZE as u32,
-                }],
-            });
+            let layout = context
+                .device
+                .create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                    label: Some("blinn_phong_shading_pipeline_layout"),
+                    bind_group_layouts: &[
+                        &globals_bind_group.layout,
+                        &locals_bind_group.layout,
+                        &materials_bind_group_layout,
+                        &textures_bind_group_layout,
+                        &lights_bind_group.layout,
+                        &shadow_maps.bind_group_layout,
+                    ],
+                    push_constant_ranges: &[wgpu::PushConstantRange {
+                        stages: wgpu::ShaderStages::VERTEX_FRAGMENT,
+                        range: 0..PConsts::SIZE as u32,
+                    }],
+                });
 
             for cull_mode in [Some(wgpu::Face::Back), None] {
                 for polygon_mode in [wgpu::PolygonMode::Fill, wgpu::PolygonMode::Line] {
                     let (id, pipeline) = Self::create_main_render_pass_pipeline(
-                        device,
+                        &context.device,
                         &layout,
                         format,
                         &shader_module,
@@ -470,7 +499,7 @@ impl BlinnPhongRenderPass {
             // Pipeline for drawing line segments, same as the main render pass pipeline,
             // except the topology is line list.
             let (id, pipeline) = Self::create_main_render_pass_pipeline(
-                device,
+                &context.device,
                 &layout,
                 format,
                 &shader_module,

@@ -18,6 +18,8 @@ pub struct GpuContext {
     pub features: wgpu::Features,
     /// Limits of the device.
     pub limits: wgpu::Limits,
+    /// Whether the adapter supports constant sized binding arrays.
+    pub constant_sized_binding_array: bool,
 }
 
 /// Potential adapter to use.
@@ -90,6 +92,7 @@ impl GpuContext {
             desired_features.remove(wgpu::Features::MAPPABLE_PRIMARY_BUFFERS);
         }
 
+        let constant_sized_binding_array = !features.contains(wgpu::Features::BUFFER_BINDING_ARRAY);
         if !features.contains(desired_features) {
             for feat in desired_features.iter() {
                 if !features.contains(feat) {
@@ -128,6 +131,7 @@ impl GpuContext {
             queue: Arc::new(queue),
             features,
             limits,
+            constant_sized_binding_array,
         }
     }
 }
