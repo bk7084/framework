@@ -318,14 +318,15 @@ impl Mesh {
     }
 
     /// Creates a grid of size (w, h) with spacing (sx, sy).
-    pub fn grid(w: f32, h: f32, spacing: (f32, f32), align: Alignment, color: Color) -> Self {
+    pub fn grid(w: f32, h: f32, spacing: (f32, f32), align: Alignment, _color: Color) -> Self {
         let mut attributes = VertexAttributes::default();
         let (sx, sy) = spacing;
         // Generate the vertices of lines in the grid.
         let mut vertices = Vec::new();
         let mut indices = Vec::new();
         let mut normals = Vec::new();
-        let mut tangents = [[0.0f32; 4]; 4];
+        // TODO: Compute tangents.
+        let tangents = [[0.0f32; 4]; 4];
         // Note: created to satisfy the mesh validation.
         let mut uvs: Vec<[f32; 2]> = Vec::new();
         let n_w = (w / sx).ceil() as usize;

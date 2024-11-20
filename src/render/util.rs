@@ -28,7 +28,7 @@ pub fn preprocess_wgsl(source: &str, conditions: &FxHashMap<&str, bool>) -> Stri
                 include = *conditions.get(condition).unwrap_or(&false);
             }
             inside_else = false;
-        } else if let Some(condition) = line.strip_prefix("// #else") {
+        } else if let Some(_) = line.strip_prefix("// #else") {
             include = !inside_else && !include; // Only include if not already in an else block
             inside_else = true;
         } else if line.contains("// #fi") {

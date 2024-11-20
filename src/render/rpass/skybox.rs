@@ -84,11 +84,11 @@ impl EnvironmentMap {
 
     /// Creates a new environment map from a single equirectangular image.
     pub fn new_from_equirectangular(
-        device: &wgpu::Device,
-        queue: &wgpu::Queue,
-        width: u32,
-        height: u32,
-        image: image::RgbaImage,
+        _device: &wgpu::Device,
+        _queue: &wgpu::Queue,
+        _width: u32,
+        _height: u32,
+        _image: image::RgbaImage,
     ) -> Self {
         todo!()
     }
@@ -109,6 +109,7 @@ pub struct SkyboxRenderPass<'a> {
     pub pipeline: wgpu::RenderPipeline,
 }
 
+// TODO: Implement the skybox render pass.
 impl<'a> SkyboxRenderPass<'a> {
     /// Creates a new skybox render pass.
     ///
@@ -117,10 +118,10 @@ impl<'a> SkyboxRenderPass<'a> {
     /// * `globals` - The global uniform buffer, which contains the view and
     ///   projection matrices.
     pub fn new(
-        device: &wgpu::Device,
-        queue: &wgpu::Queue,
-        globals: &'a wgpu::Buffer,
-        output_format: wgpu::TextureFormat,
+        _device: &wgpu::Device,
+        _queue: &wgpu::Queue,
+        _globals: &'a wgpu::Buffer,
+        _output_format: wgpu::TextureFormat,
     ) -> Self {
         // let env_map = EnvironmentMap::new_from_images(
         //     device,

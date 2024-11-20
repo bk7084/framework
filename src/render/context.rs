@@ -87,7 +87,7 @@ impl GpuContext {
             constant_sized_binding_array
         );
 
-        let mut desired_features = desired_features.unwrap_or_else(wgpu::Features::empty);
+        let desired_features = desired_features.unwrap_or_else(wgpu::Features::empty);
         log::debug!("Desired features: {:#?}", desired_features);
 
         // Only enable mappable primary buffers on macOS with unified memory
