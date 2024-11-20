@@ -228,23 +228,6 @@ impl LightsBindGroup {
 impl BlinnPhongRenderPass {
     /// Creates a new blinn-phong shading render pass.
     pub fn new(context: &GpuContext, format: wgpu::TextureFormat) -> Self {
-        let mut conditions = FxHashMap::default();
-        conditions.insert(
-            "constant_sized_binding_array",
-            context.constant_sized_binding_array,
-        );
-
-        let blinn_phong_shader = preprocess_wgsl(include_str!("blph.wgsl"), &conditions);
-
-        log::debug!("Blinn-Phong shading shader:\n{}", blinn_phong_shader);
-
-        let shader_module = context
-            .device
-            .create_shader_module(wgpu::ShaderModuleDescriptor {
-                label: Some("shading_shader_module"),
-                source: wgpu::ShaderSource::Wgsl(blinn_phong_shader.into()),
-            });
-
         let globals_bind_group = GlobalsBindGroup::new(&context.device);
         let locals_bind_group = LocalsBindGroup::new(&context.device);
         let shadow_pass_locals_bind_group = LocalsBindGroup::new(&context.device);
@@ -269,9 +252,7 @@ impl BlinnPhongRenderPass {
         let textures_bind_group_layout = texture_bundle_bind_group_layout(&context.device);
 
         let lights_bind_group = LightsBindGroup::new(&context.device);
-
         let mut pipelines = Pipelines::new();
-
         // Create shadow maps pass pipeline. This pipeline is used to evaluate
         // shadow maps for all meshes that cast shadows.
         {
@@ -297,7 +278,6 @@ impl BlinnPhongRenderPass {
         }
 
         let shadow_maps = {
-            // let limits = context.limits;
             let width = 1024;
             let height = 1024;
             let count = 1;
@@ -357,7 +337,7 @@ impl BlinnPhongRenderPass {
                 .map(|_| {
                     context.device.create_buffer(&wgpu::BufferDescriptor {
                         label: Some("shadow_maps_storage_buffer"),
-                        size: (width * height * std::mem::size_of::<f32>() as u32) as u64,
+                        size: (width * height * size_of::<f32>() as u32) as u64,
                         usage: wgpu::BufferUsages::STORAGE
                             | wgpu::BufferUsages::COPY_DST
                             | wgpu::BufferUsages::COPY_SRC
@@ -460,6 +440,23 @@ impl BlinnPhongRenderPass {
                 storage_buffers,
             }
         };
+
+        let mut conditions = FxHashMap::default();
+        conditions.insert(
+            "constant_sized_binding_array",
+            context.constant_sized_binding_array,
+        );
+
+        let blinn_phong_shader = preprocess_wgsl(include_str!("blph.wgsl"), &conditions);
+
+        log::debug!("Blinn-Phong shading shader:\n{}", blinn_phong_shader);
+
+        let shader_module = context
+            .device
+            .create_shader_module(wgpu::ShaderModuleDescriptor {
+                label: Some("shading_shader_module"),
+                source: wgpu::ShaderSource::Wgsl(blinn_phong_shader.into()),
+            });
 
         // Create main render pass pipeline.
         {
