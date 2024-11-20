@@ -87,7 +87,12 @@ impl GpuContext {
             constant_sized_binding_array
         );
 
+        #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
+        let mut desired_features = desired_features.unwrap_or_else(wgpu::Features::empty);
+
+        #[cfg(not(all(target_os = "macos", target_arch = "aarch64")))]
         let desired_features = desired_features.unwrap_or_else(wgpu::Features::empty);
+
         log::debug!("Desired features: {:#?}", desired_features);
 
         // Only enable mappable primary buffers on macOS with unified memory
