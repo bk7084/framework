@@ -112,7 +112,7 @@ struct VSOutput {
 @group(4) @binding(2) var samplers: binding_array<sampler, 8>;
 @group(5) @binding(0) var shadow: binding_array<texture_depth_2d_array, 1>;
 @group(5) @binding(1) var shadow_sampler: sampler_comparison;
-// #endif
+// #fi
 
 /* Sampling shadow map as normal texture. */
 // @group(5) @binding(0) var shadow: binding_array<texture_2d_array<f32>>;

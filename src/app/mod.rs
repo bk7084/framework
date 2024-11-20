@@ -497,13 +497,15 @@ impl PyAppState {
         let input = self.input.take();
 
         // Rotate the camera with the middle mouse button.
-        if input.is_mouse_pressed(MouseButton::Middle) {
+        if input.is_mouse_pressed(MouseButton::Middle)
+            || (input.is_mouse_pressed(MouseButton::Left) && input.is_alt_pressed())
+        {
             let delta = input.cursor_delta();
             // Make the rotation the same direction as the mouse movement.
             let horiz = -delta[0] / win_size.0 as f32 * std::f32::consts::TAU * 2.0;
             let vert = -delta[1] / win_size.1 as f32 * std::f32::consts::TAU * 2.0;
             // Set a threshold to avoid jitter.
-            if horiz.abs() > 0.0001 || vert.abs() > 0.0001 {
+            if horiz.abs() > 0.001 || vert.abs() > 0.001 {
                 match (
                     input.is_key_pressed(KeyCode::ShiftLeft),
                     input.is_key_pressed(KeyCode::ControlLeft),
